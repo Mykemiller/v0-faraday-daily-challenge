@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-forest: #1c3424;
+  --color-forest-mid: #244228;
+  --color-forest-light: #325638;
+  --color-gold: #c4922a;
+  --color-gold-light: #dab050;
+  --color-warm-white: #f8f5f0;
+  --color-warm-cream: #eee6da;
+  --color-near-black: #141210;
+  --color-sage: #8ca68a;
+  --color-deep-amber: #b8710a;
+  --color-warm-gray: #b2a898;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Georgia', 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-warm-white);
+  color: var(--color-near-black);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+/* Double Rule — Faraday editorial signature */
+.double-rule {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12px;
+  margin: 1.5rem 0;
+}
+.double-rule::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background-color: var(--color-forest);
+}
+.double-rule::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-gold);
+}
+
+/* Brand gradient */
+.brand-gradient {
+  background: linear-gradient(135deg, var(--color-forest) 0%, var(--color-forest-mid) 100%);
+}
