@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://www.faraday-intelligence.ai/daily-challenge",
+      "permanent": false
+    }
+  ]
+}
