@@ -3,6 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs, GAME_NEON } from "@/components/GameIcon";
+import {
+  EDGE_FUNCTIONS_BASE,
+  SESSION_STORAGE_KEY,
+  EMAIL_STORAGE_KEY,
+} from "@/lib/supabase";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -990,15 +995,26 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
   const copy = headlines[trigger] || headlines.default;
 
   async function submit() {
-    if (!email || !email.includes("@")) { setError("Enter a valid email address"); return; }
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !normalized.includes("@")) { setError("Enter a valid email address"); return; }
     setLoading(true);
     setError("");
-    // In production: POST to your magic link endpoint (challenge@faradayintelligence.com flow)
-    // For now: simulate the registration
-    await new Promise(r => setTimeout(r, 1200));
-    setSent(true);
-    setLoading(false);
-    if (onRegister) onRegister(email);
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await fetch(`${EDGE_FUNCTIONS_BASE}/register-with-magic-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalized, source: `dailychallenge-${trigger || "default"}`, timezone }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Registration failed — please try again");
+      setSent(true);
+      if (onRegister) onRegister(normalized);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong — please try again");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (sent) return (
@@ -1097,6 +1113,11 @@ export default function DailyChallenge() {
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
+  // Verified subscriber session (set by /auth after a magic link). When
+  // present, streak/MW/completions are hydrated from and persisted to
+  // Supabase — the masthead chips and stat line show real results.
+  const [sessionToken,     setSessionToken]     = useState(null);
+  const [todayCompletions, setTodayCompletions] = useState({});
 
   // Live puzzles + tip from the Airtable Puzzle Bank (via /api/challenge/today).
   // Each falls back to built-in mock data if the fetch fails or a type is absent,
@@ -1114,6 +1135,39 @@ export default function DailyChallenge() {
         if (data.tip) setTipOfTheDay(data.tip);
       })
       .catch(() => { /* keep mock fallback */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Hydrate the subscriber's real state (play streak, MW balance, today's
+  // completions) from Supabase when a verified session exists in storage.
+  useEffect(() => {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    if (!token) return;
+
+    let cancelled = false;
+    fetch(`${EDGE_FUNCTIONS_BASE}/get-subscriber-state?token=${encodeURIComponent(token)}`)
+      .then(r => r.json().then(data => ({ ok: r.ok, status: r.status, data })))
+      .then(({ ok, status, data }) => {
+        if (cancelled) return;
+        if (!ok) {
+          // Expired/invalid session: clear it so the gate offers sign-in again.
+          if (status === 401) {
+            try {
+              localStorage.removeItem(SESSION_STORAGE_KEY);
+              localStorage.removeItem(EMAIL_STORAGE_KEY);
+            } catch { /* ignore */ }
+          }
+          return;
+        }
+        setSessionToken(token);
+        setEmail(data.email);
+        setStreak(data.playStreak || 0);
+        setMwBalance(data.mwBalance || 0);
+        setTodayCompletions(data.todayCompletions || {});
+        setGamesPlayed(Object.keys(data.todayCompletions || {}).length);
+      })
+      .catch(() => { /* offline — keep anonymous session counters */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -1147,10 +1201,33 @@ export default function DailyChallenge() {
   }
 
   function onGameComplete(score) {
+    const playedGame = activeGame;
+    const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
     setLastScore(score);
     setGamesPlayed(g => g+1);
-    setMwBalance(b => b + MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0));
+    setMwBalance(b => b + mwEarned);
     setStreak(s => s+1);
+    // Signed-in players: persist the completion; the server's streak/MW
+    // response then overwrites the optimistic local increments above.
+    if (sessionToken && playedGame) {
+      setTodayCompletions(prev => ({
+        ...prev,
+        [playedGame]: { score, completedAt: new Date().toISOString() },
+      }));
+      fetch(`${EDGE_FUNCTIONS_BASE}/complete-puzzle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken, puzzleType: playedGame, score, mwEarned }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.ok && typeof data.playStreak === "number") {
+            setStreak(data.playStreak);
+            setMwBalance(data.mwBalance);
+          }
+        })
+        .catch(() => { /* offline — keep optimistic counters */ });
+    }
     // Show social gate after first game if not registered
     if (!email && gamesPlayed === 0) {
       setGateReason("leaderboard");
@@ -1160,9 +1237,10 @@ export default function DailyChallenge() {
     }
   }
 
-  function onRegister(emailAddr) {
-    setEmail(emailAddr);
-    setTimeout(() => setScreen("lobby"), 2000);
+  function onRegister() {
+    // Registration only sends the magic link — the player isn't signed in
+    // until /auth verifies it and stores the session. Leave the
+    // "check your inbox" panel up; its Continue button dismisses the gate.
   }
 
   function onGateDismiss() {
@@ -1259,12 +1337,13 @@ export default function DailyChallenge() {
               ))}
             </div>
 
-            {/* Signed-in confirmation (only real session data is shown — no mock
-                engagement stats. The aggregate stats strip was removed: those
-                numbers were hardcoded mock values, not live Supabase data.) */}
+            {/* Subscriber stat line — real Supabase results only (no mock
+                engagement stats): play streak, MW balance, and today's
+                completion count come from get-subscriber-state / complete-puzzle. */}
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"11px", color:C.forest }}>
-                Signed in as {email}
+                Signed in as {email} · {streak}-day streak · {mwBalance} MW banked
+                · {Object.keys(todayCompletions).length}/7 puzzles today
               </div>
             )}
 
