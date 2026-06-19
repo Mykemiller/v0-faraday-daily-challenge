@@ -1,14 +1,6 @@
 {
   "crons": [
-    { "path": "/daily-challenge/api/cron/rotate", "schedule": "0 5 * * *" },
-    { "path": "/daily-challenge/api/cron/rotate", "schedule": "0 6 * * *" }
-  ],
-  "redirects": [
-    {
-      "source": "/(.*)",
-      "has": [{ "type": "host", "value": "(www\\.)?faradaydailychallenge\\.com" }],
-      "destination": "https://faraday-intelligence.ai/daily-challenge",
-      "statusCode": 301
-    }
+    { "path": "/api/cron/rotate", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/rotate", "schedule": "0 6 * * *" }
   ]
 }
