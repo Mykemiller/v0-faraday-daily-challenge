@@ -1098,6 +1098,103 @@ function GameTile({ config, onPlay }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TEAM LEADERBOARD — teams_v1 standings, wired to per-player MW
+// ══════════════════════════════════════════════════════════════════════════════
+// Reads the seasonal team standings (public.team_leaderboard via the
+// get-team-leaderboard edge function). Each player's puzzle MW feeds their
+// team's total through a DB trigger, so these numbers are real results — no
+// mock data. Signed-in players can start or join a team to put MW on the board.
+function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate, onJoin, onLeave }) {
+  const [mode, setMode] = useState(null); // null | "create" | "join"
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const rows = Array.isArray(leaderboard) ? leaderboard : [];
+
+  const ghostBtn = { ...mono, fontSize:"11px", color:C.forest, background:"transparent",
+    border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 12px",
+    cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1, whiteSpace:"nowrap" };
+  const input = { ...mono, fontSize:"12px", color:C.black, background:C.cream,
+    border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 10px", flex:"1 1 160px", minWidth:"120px" };
+
+  return (
+    <section style={{ margin:"28px 0 0", background:C.white, border:`1px solid ${C.gray}`,
+      borderRadius:"12px", padding:"20px 22px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:"10px", flexWrap:"wrap" }}>
+        <span style={{ ...mono, fontSize:"11px", letterSpacing:"0.14em", color:C.deepAmber, textTransform:"uppercase" }}>
+          Team Leaderboard
+        </span>
+        <span style={{ ...mono, fontSize:"9px", color:"rgba(20,18,16,0.5)" }}>Ranked by MW earned this season</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)", marginTop:"14px" }}>
+          No teams yet — be the first to start one.
+        </div>
+      ) : (
+        <div style={{ marginTop:"14px", display:"flex", flexDirection:"column", gap:"4px" }}>
+          {rows.map(t => {
+            const mine = myTeam && t.team_id === myTeam.team_id;
+            return (
+              <div key={t.team_id} style={{ display:"flex", alignItems:"center", gap:"10px",
+                padding:"8px 10px", borderRadius:"6px",
+                background: mine ? "rgba(196,146,42,0.12)" : "transparent",
+                border:`1px solid ${mine ? "rgba(196,146,42,0.4)" : "transparent"}` }}>
+                <span style={{ ...mono, fontSize:"12px", color:C.deepAmber, width:"26px" }}>#{t.rank}</span>
+                <span style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.black, flex:1, minWidth:0,
+                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</span>
+                <span style={{ ...mono, fontSize:"10px", color:"rgba(20,18,16,0.55)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
+                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw} MW</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ marginTop:"16px", borderTop:`1px solid ${C.gray}`, paddingTop:"14px" }}>
+        {!signedIn ? (
+          <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)" }}>
+            Sign in to start or join a team and put your MW on the board.
+          </div>
+        ) : myTeam ? (
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
+            <span style={{ ...mono, fontSize:"11px", color:C.forest }}>
+              On <b>{myTeam.name}</b> · code <b>{myTeam.code}</b>
+              {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total} MW
+              {typeof myTeam.my_mw === "number" ? ` (you: ${myTeam.my_mw})` : ""}
+            </span>
+            <button onClick={onLeave} disabled={busy} style={ghostBtn}>Leave team</button>
+          </div>
+        ) : mode === null ? (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <button onClick={() => setMode("create")} disabled={busy} style={ghostBtn}>Start a team</button>
+            <button onClick={() => setMode("join")} disabled={busy} style={ghostBtn}>Join with code</button>
+          </div>
+        ) : mode === "create" ? (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Team name" style={input}
+              onKeyDown={e => e.key === "Enter" && name.trim() && onCreate(name.trim())} />
+            <button onClick={() => name.trim() && onCreate(name.trim())} disabled={busy || !name.trim()} style={ghostBtn}>
+              {busy ? "…" : "Create"}
+            </button>
+            <button onClick={() => { setMode(null); setName(""); }} disabled={busy} style={ghostBtn}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <input value={code} onChange={e => setCode(e.target.value)} placeholder="Team code" style={input}
+              onKeyDown={e => e.key === "Enter" && code.trim() && onJoin(code.trim())} />
+            <button onClick={() => code.trim() && onJoin(code.trim())} disabled={busy || !code.trim()} style={ghostBtn}>
+              {busy ? "…" : "Join"}
+            </button>
+            <button onClick={() => { setMode(null); setCode(""); }} disabled={busy} style={ghostBtn}>Cancel</button>
+          </div>
+        )}
+        {error && <div style={{ ...mono, fontSize:"10px", color:C.red, marginTop:"8px" }}>{error}</div>}
+      </div>
+    </section>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
 export default function DailyChallenge() {
@@ -1118,6 +1215,12 @@ export default function DailyChallenge() {
   // Supabase — the masthead chips and stat line show real results.
   const [sessionToken,     setSessionToken]     = useState(null);
   const [todayCompletions, setTodayCompletions] = useState({});
+  // Team leaderboard (teams_v1) wired to per-player MW: public standings, plus
+  // the caller's team when signed in. Refreshed after each completion.
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [myTeam,      setMyTeam]      = useState(null);
+  const [teamBusy,    setTeamBusy]    = useState(false);
+  const [teamError,   setTeamError]   = useState("");
 
   // Live puzzles + tip from the Airtable Puzzle Bank (via /api/challenge/today).
   // Each falls back to built-in mock data if the fetch fails or a type is absent,
@@ -1170,6 +1273,47 @@ export default function DailyChallenge() {
       .catch(() => { /* offline — keep anonymous session counters */ });
     return () => { cancelled = true; };
   }, []);
+
+  // Team standings — public board, plus the caller's team/rank when a session
+  // token is present. Non-critical: failures leave the panel empty silently.
+  const refreshLeaderboard = useCallback(() => {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    const qs = new URLSearchParams({ limit: "10" });
+    if (token) qs.set("token", token);
+    return fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?${qs.toString()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!data) return;
+        if (Array.isArray(data.leaderboard)) setLeaderboard(data.leaderboard);
+        setMyTeam(data.myTeam || null);
+      })
+      .catch(() => { /* leaderboard is non-critical */ });
+  }, []);
+
+  useEffect(() => { refreshLeaderboard(); }, [refreshLeaderboard]);
+
+  // Team membership actions (create/join/leave) — session-gated via team-action.
+  function teamAction(action, payload) {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    if (!token) { setTeamError("Sign in first"); return; }
+    setTeamBusy(true);
+    setTeamError("");
+    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: token, action, ...payload }),
+    })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) { setTeamError(data?.error || "Team action failed"); return; }
+        setMyTeam(data.myTeam || null);
+        refreshLeaderboard();
+      })
+      .catch(() => setTeamError("Network error — try again"))
+      .finally(() => setTeamBusy(false));
+  }
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1225,6 +1369,8 @@ export default function DailyChallenge() {
             setStreak(data.playStreak);
             setMwBalance(data.mwBalance);
           }
+          // Completion fed the player's team MW (DB trigger) — refresh standings.
+          refreshLeaderboard();
         })
         .catch(() => { /* offline — keep optimistic counters */ });
     }
@@ -1346,6 +1492,18 @@ export default function DailyChallenge() {
                 · {Object.keys(todayCompletions).length}/7 puzzles today
               </div>
             )}
+
+            {/* Team leaderboard — real per-player MW, wired via DB trigger */}
+            <TeamLeaderboard
+              leaderboard={leaderboard}
+              myTeam={myTeam}
+              signedIn={!!email}
+              busy={teamBusy}
+              error={teamError}
+              onCreate={(name) => teamAction("create", { name })}
+              onJoin={(code) => teamAction("join", { code })}
+              onLeave={() => teamAction("leave", {})}
+            />
 
             {/* Tip of the day — Faraday's Take treatment */}
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
