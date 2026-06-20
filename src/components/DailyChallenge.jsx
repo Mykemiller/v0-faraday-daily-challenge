@@ -1344,6 +1344,17 @@ export default function DailyChallenge() {
     setScreen("game");
   }
 
+  // Deep-link: /daily-challenge?game=<type> opens that puzzle directly (from the
+  // homepage neon icons) instead of landing on the lobby. Runs once on mount.
+  useEffect(() => {
+    let g = null;
+    try { g = new URLSearchParams(window.location.search).get("game"); } catch { /* no search */ }
+    if (!g) return;
+    const match = GAME_CONFIGS.find(c => c.type.toLowerCase() === g.toLowerCase());
+    if (match) startGame(match.type);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function onGameComplete(score) {
     const playedGame = activeGame;
     const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
