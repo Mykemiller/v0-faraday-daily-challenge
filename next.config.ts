@@ -1,17 +1,17 @@
 import type { NextConfig } from "next";
 
-// Canonical Daily Challenge engine. Mounted under /daily-challenge so the whole
-// app (pages, API routes, _next assets) lives under that path and can be proxied
-// cleanly from faraday-intelligence.ai/daily-challenge. The host-conditioned 301
-// that retires faradaydailychallenge.com lives in vercel.json (edge-level, so it
-// can emit a real 301 — next.config redirects only emit 307/308).
+// Engine-as-site: this app now serves the whole faraday-intelligence.ai surface
+// at the domain root (no basePath) — storefront homepage at /, the Daily
+// Challenge at /daily-challenge, the per-product storefront pages, and the ported
+// brand APIs. The faradaydailychallenge.com retirement 301 lives in vercel.json
+// (edge-level, so it can emit a real 301).
 const nextConfig: NextConfig = {
-  basePath: "/daily-challenge",
-  async redirects() {
+  async rewrites() {
     return [
-      // Standalone correctness: land the bare engine path on the lobby.
-      // basePath-aware: /daily-challenge -> /daily-challenge/challenge.
-      { source: "/", destination: "/challenge", permanent: false },
+      // Preserve the canonical Daily Challenge URL without a basePath: serve the
+      // /challenge lobby in place at /daily-challenge (no client-visible bounce).
+      { source: "/daily-challenge", destination: "/challenge" },
+      { source: "/daily-challenge/:path*", destination: "/challenge/:path*" },
     ];
   },
 };
