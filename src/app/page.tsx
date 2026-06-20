@@ -21,7 +21,7 @@ const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string }[]
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Live Agent", href: "/live-agent", blurb: "Conversational intelligence — ask Faraday anything about the AI data center economy, live." },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis." },
-  { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
+  { name: "Jurisdiction Watch", href: "https://jurisdiction-watch.com", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
   { name: "Signal Room", href: "/signal-room", blurb: "The live room where raw market signals are read, sourced, and turned into intelligence." },
   { name: "Thought Forge", href: "/thought-forge", blurb: "Turn Faraday intelligence into your own briefs, memos, and models." },
 ];
