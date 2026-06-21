@@ -1445,6 +1445,12 @@ export default function DailyChallenge() {
               borderRadius:"5px", padding:"6px 10px", whiteSpace:"nowrap" }}>
               <b style={{ color:C.goldLight, fontWeight:500 }}>{mwBalance}</b> MW
             </span>
+            <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
+              style={{ ...mono, fontSize:"11px", color:C.forest, background:C.goldLight,
+                border:`1px solid ${C.goldLight}`, borderRadius:"5px", padding:"6px 10px",
+                whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
+              Academy →
+            </a>
             {!email && screen === "lobby" && (
               <button onClick={() => { setGateReason("default"); setScreen("gate"); }} style={{
                 ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
