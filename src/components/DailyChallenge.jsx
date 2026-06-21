@@ -1210,6 +1210,12 @@ export default function DailyChallenge() {
               borderRadius:"5px", padding:"6px 10px", whiteSpace:"nowrap" }}>
               <b style={{ color:C.goldLight, fontWeight:500 }}>{mwBalance}</b> MW
             </span>
+            <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
+              style={{ ...mono, fontSize:"11px", color:C.forest, background:C.goldLight,
+                border:`1px solid ${C.goldLight}`, borderRadius:"5px", padding:"6px 10px",
+                whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
+              Academy →
+            </a>
             {!email && screen === "lobby" && (
               <button onClick={() => { setGateReason("default"); setScreen("gate"); }} style={{
                 ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
@@ -1267,6 +1273,29 @@ export default function DailyChallenge() {
                 Signed in as {email}
               </div>
             )}
+
+            {/* Academy — go deeper than the daily challenge (FAR-166) */}
+            <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
+              style={{ display:"block", textDecoration:"none", background:C.white,
+                border:"1px solid rgba(140,166,138,.45)", borderLeft:`3px solid ${C.gold}`,
+                borderRadius:"10px", padding:"24px 26px", marginTop:"28px" }}>
+              <div style={{ ...mono, fontSize:"10.5px", letterSpacing:"0.16em", color:C.forest, opacity:.7 }}>
+                FARADAY ACADEMY
+              </div>
+              <div style={{ ...serif, fontWeight:700, fontSize:"22px", color:C.black,
+                marginTop:"8px", lineHeight:1.25 }}>
+                Go deeper than the daily challenge.
+              </div>
+              <p style={{ ...sans, fontSize:"14px", color:"rgba(20,18,16,0.68)",
+                marginTop:"8px", maxWidth:"54ch", lineHeight:1.6 }}>
+                Short, sharp courses on the forces behind every puzzle — power, cooling, capital,
+                grid policy, and sovereign compute.
+              </p>
+              <span style={{ ...mono, fontSize:"12px", color:C.forest, fontWeight:500,
+                display:"inline-block", marginTop:"12px" }}>
+                Browse the catalog →
+              </span>
+            </a>
 
             {/* Tip of the day — Faraday's Take treatment */}
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
