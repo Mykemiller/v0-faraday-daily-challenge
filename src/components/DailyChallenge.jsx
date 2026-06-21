@@ -3,6 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs, GAME_NEON } from "@/components/GameIcon";
+import {
+  EDGE_FUNCTIONS_BASE,
+  SESSION_STORAGE_KEY,
+  EMAIL_STORAGE_KEY,
+} from "@/lib/supabase";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -990,15 +995,26 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
   const copy = headlines[trigger] || headlines.default;
 
   async function submit() {
-    if (!email || !email.includes("@")) { setError("Enter a valid email address"); return; }
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !normalized.includes("@")) { setError("Enter a valid email address"); return; }
     setLoading(true);
     setError("");
-    // In production: POST to your magic link endpoint (challenge@faradayintelligence.com flow)
-    // For now: simulate the registration
-    await new Promise(r => setTimeout(r, 1200));
-    setSent(true);
-    setLoading(false);
-    if (onRegister) onRegister(email);
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await fetch(`${EDGE_FUNCTIONS_BASE}/register-with-magic-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalized, source: `dailychallenge-${trigger || "default"}`, timezone }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Registration failed — please try again");
+      setSent(true);
+      if (onRegister) onRegister(normalized);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong — please try again");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (sent) return (
@@ -1082,6 +1098,103 @@ function GameTile({ config, onPlay }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TEAM LEADERBOARD — teams_v1 standings, wired to per-player MW
+// ══════════════════════════════════════════════════════════════════════════════
+// Reads the seasonal team standings (public.team_leaderboard via the
+// get-team-leaderboard edge function). Each player's puzzle MW feeds their
+// team's total through a DB trigger, so these numbers are real results — no
+// mock data. Signed-in players can start or join a team to put MW on the board.
+function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate, onJoin, onLeave }) {
+  const [mode, setMode] = useState(null); // null | "create" | "join"
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const rows = Array.isArray(leaderboard) ? leaderboard : [];
+
+  const ghostBtn = { ...mono, fontSize:"11px", color:C.forest, background:"transparent",
+    border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 12px",
+    cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1, whiteSpace:"nowrap" };
+  const input = { ...mono, fontSize:"12px", color:C.black, background:C.cream,
+    border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 10px", flex:"1 1 160px", minWidth:"120px" };
+
+  return (
+    <section style={{ margin:"28px 0 0", background:C.white, border:`1px solid ${C.gray}`,
+      borderRadius:"12px", padding:"20px 22px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:"10px", flexWrap:"wrap" }}>
+        <span style={{ ...mono, fontSize:"11px", letterSpacing:"0.14em", color:C.deepAmber, textTransform:"uppercase" }}>
+          Team Leaderboard
+        </span>
+        <span style={{ ...mono, fontSize:"9px", color:"rgba(20,18,16,0.5)" }}>Ranked by MW earned this season</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)", marginTop:"14px" }}>
+          No teams yet — be the first to start one.
+        </div>
+      ) : (
+        <div style={{ marginTop:"14px", display:"flex", flexDirection:"column", gap:"4px" }}>
+          {rows.map(t => {
+            const mine = myTeam && t.team_id === myTeam.team_id;
+            return (
+              <div key={t.team_id} style={{ display:"flex", alignItems:"center", gap:"10px",
+                padding:"8px 10px", borderRadius:"6px",
+                background: mine ? "rgba(196,146,42,0.12)" : "transparent",
+                border:`1px solid ${mine ? "rgba(196,146,42,0.4)" : "transparent"}` }}>
+                <span style={{ ...mono, fontSize:"12px", color:C.deepAmber, width:"26px" }}>#{t.rank}</span>
+                <span style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.black, flex:1, minWidth:0,
+                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</span>
+                <span style={{ ...mono, fontSize:"10px", color:"rgba(20,18,16,0.55)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
+                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw} MW</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ marginTop:"16px", borderTop:`1px solid ${C.gray}`, paddingTop:"14px" }}>
+        {!signedIn ? (
+          <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)" }}>
+            Sign in to start or join a team and put your MW on the board.
+          </div>
+        ) : myTeam ? (
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
+            <span style={{ ...mono, fontSize:"11px", color:C.forest }}>
+              On <b>{myTeam.name}</b> · code <b>{myTeam.code}</b>
+              {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total} MW
+              {typeof myTeam.my_mw === "number" ? ` (you: ${myTeam.my_mw})` : ""}
+            </span>
+            <button onClick={onLeave} disabled={busy} style={ghostBtn}>Leave team</button>
+          </div>
+        ) : mode === null ? (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <button onClick={() => setMode("create")} disabled={busy} style={ghostBtn}>Start a team</button>
+            <button onClick={() => setMode("join")} disabled={busy} style={ghostBtn}>Join with code</button>
+          </div>
+        ) : mode === "create" ? (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Team name" style={input}
+              onKeyDown={e => e.key === "Enter" && name.trim() && onCreate(name.trim())} />
+            <button onClick={() => name.trim() && onCreate(name.trim())} disabled={busy || !name.trim()} style={ghostBtn}>
+              {busy ? "…" : "Create"}
+            </button>
+            <button onClick={() => { setMode(null); setName(""); }} disabled={busy} style={ghostBtn}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <input value={code} onChange={e => setCode(e.target.value)} placeholder="Team code" style={input}
+              onKeyDown={e => e.key === "Enter" && code.trim() && onJoin(code.trim())} />
+            <button onClick={() => code.trim() && onJoin(code.trim())} disabled={busy || !code.trim()} style={ghostBtn}>
+              {busy ? "…" : "Join"}
+            </button>
+            <button onClick={() => { setMode(null); setCode(""); }} disabled={busy} style={ghostBtn}>Cancel</button>
+          </div>
+        )}
+        {error && <div style={{ ...mono, fontSize:"10px", color:C.red, marginTop:"8px" }}>{error}</div>}
+      </div>
+    </section>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
 export default function DailyChallenge() {
@@ -1097,6 +1210,17 @@ export default function DailyChallenge() {
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
+  // Verified subscriber session (set by /auth after a magic link). When
+  // present, streak/MW/completions are hydrated from and persisted to
+  // Supabase — the masthead chips and stat line show real results.
+  const [sessionToken,     setSessionToken]     = useState(null);
+  const [todayCompletions, setTodayCompletions] = useState({});
+  // Team leaderboard (teams_v1) wired to per-player MW: public standings, plus
+  // the caller's team when signed in. Refreshed after each completion.
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [myTeam,      setMyTeam]      = useState(null);
+  const [teamBusy,    setTeamBusy]    = useState(false);
+  const [teamError,   setTeamError]   = useState("");
 
   // Live puzzles + tip from the Airtable Puzzle Bank (via /api/challenge/today).
   // Each falls back to built-in mock data if the fetch fails or a type is absent,
@@ -1116,6 +1240,80 @@ export default function DailyChallenge() {
       .catch(() => { /* keep mock fallback */ });
     return () => { cancelled = true; };
   }, []);
+
+  // Hydrate the subscriber's real state (play streak, MW balance, today's
+  // completions) from Supabase when a verified session exists in storage.
+  useEffect(() => {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    if (!token) return;
+
+    let cancelled = false;
+    fetch(`${EDGE_FUNCTIONS_BASE}/get-subscriber-state?token=${encodeURIComponent(token)}`)
+      .then(r => r.json().then(data => ({ ok: r.ok, status: r.status, data })))
+      .then(({ ok, status, data }) => {
+        if (cancelled) return;
+        if (!ok) {
+          // Expired/invalid session: clear it so the gate offers sign-in again.
+          if (status === 401) {
+            try {
+              localStorage.removeItem(SESSION_STORAGE_KEY);
+              localStorage.removeItem(EMAIL_STORAGE_KEY);
+            } catch { /* ignore */ }
+          }
+          return;
+        }
+        setSessionToken(token);
+        setEmail(data.email);
+        setStreak(data.playStreak || 0);
+        setMwBalance(data.mwBalance || 0);
+        setTodayCompletions(data.todayCompletions || {});
+        setGamesPlayed(Object.keys(data.todayCompletions || {}).length);
+      })
+      .catch(() => { /* offline — keep anonymous session counters */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Team standings — public board, plus the caller's team/rank when a session
+  // token is present. Non-critical: failures leave the panel empty silently.
+  const refreshLeaderboard = useCallback(() => {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    const qs = new URLSearchParams({ limit: "10" });
+    if (token) qs.set("token", token);
+    return fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?${qs.toString()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!data) return;
+        if (Array.isArray(data.leaderboard)) setLeaderboard(data.leaderboard);
+        setMyTeam(data.myTeam || null);
+      })
+      .catch(() => { /* leaderboard is non-critical */ });
+  }, []);
+
+  useEffect(() => { refreshLeaderboard(); }, [refreshLeaderboard]);
+
+  // Team membership actions (create/join/leave) — session-gated via team-action.
+  function teamAction(action, payload) {
+    let token = null;
+    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
+    if (!token) { setTeamError("Sign in first"); return; }
+    setTeamBusy(true);
+    setTeamError("");
+    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: token, action, ...payload }),
+    })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) { setTeamError(data?.error || "Team action failed"); return; }
+        setMyTeam(data.myTeam || null);
+        refreshLeaderboard();
+      })
+      .catch(() => setTeamError("Network error — try again"))
+      .finally(() => setTeamBusy(false));
+  }
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1146,11 +1344,47 @@ export default function DailyChallenge() {
     setScreen("game");
   }
 
+  // Deep-link: /daily-challenge?game=<type> opens that puzzle directly (from the
+  // homepage neon icons) instead of landing on the lobby. Runs once on mount.
+  useEffect(() => {
+    let g = null;
+    try { g = new URLSearchParams(window.location.search).get("game"); } catch { /* no search */ }
+    if (!g) return;
+    const match = GAME_CONFIGS.find(c => c.type.toLowerCase() === g.toLowerCase());
+    if (match) startGame(match.type);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function onGameComplete(score) {
+    const playedGame = activeGame;
+    const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
     setLastScore(score);
     setGamesPlayed(g => g+1);
-    setMwBalance(b => b + MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0));
+    setMwBalance(b => b + mwEarned);
     setStreak(s => s+1);
+    // Signed-in players: persist the completion; the server's streak/MW
+    // response then overwrites the optimistic local increments above.
+    if (sessionToken && playedGame) {
+      setTodayCompletions(prev => ({
+        ...prev,
+        [playedGame]: { score, completedAt: new Date().toISOString() },
+      }));
+      fetch(`${EDGE_FUNCTIONS_BASE}/complete-puzzle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken, puzzleType: playedGame, score, mwEarned }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.ok && typeof data.playStreak === "number") {
+            setStreak(data.playStreak);
+            setMwBalance(data.mwBalance);
+          }
+          // Completion fed the player's team MW (DB trigger) — refresh standings.
+          refreshLeaderboard();
+        })
+        .catch(() => { /* offline — keep optimistic counters */ });
+    }
     // Show social gate after first game if not registered
     if (!email && gamesPlayed === 0) {
       setGateReason("leaderboard");
@@ -1160,9 +1394,10 @@ export default function DailyChallenge() {
     }
   }
 
-  function onRegister(emailAddr) {
-    setEmail(emailAddr);
-    setTimeout(() => setScreen("lobby"), 2000);
+  function onRegister() {
+    // Registration only sends the magic link — the player isn't signed in
+    // until /auth verifies it and stores the session. Leave the
+    // "check your inbox" panel up; its Continue button dismisses the gate.
   }
 
   function onGateDismiss() {
@@ -1265,37 +1500,27 @@ export default function DailyChallenge() {
               ))}
             </div>
 
-            {/* Signed-in confirmation (only real session data is shown — no mock
-                engagement stats. The aggregate stats strip was removed: those
-                numbers were hardcoded mock values, not live Supabase data.) */}
+            {/* Subscriber stat line — real Supabase results only (no mock
+                engagement stats): play streak, MW balance, and today's
+                completion count come from get-subscriber-state / complete-puzzle. */}
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"11px", color:C.forest }}>
-                Signed in as {email}
+                Signed in as {email} · {streak}-day streak · {mwBalance} MW banked
+                · {Object.keys(todayCompletions).length}/7 puzzles today
               </div>
             )}
 
-            {/* Academy — go deeper than the daily challenge (FAR-166) */}
-            <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
-              style={{ display:"block", textDecoration:"none", background:C.white,
-                border:"1px solid rgba(140,166,138,.45)", borderLeft:`3px solid ${C.gold}`,
-                borderRadius:"10px", padding:"24px 26px", marginTop:"28px" }}>
-              <div style={{ ...mono, fontSize:"10.5px", letterSpacing:"0.16em", color:C.forest, opacity:.7 }}>
-                FARADAY ACADEMY
-              </div>
-              <div style={{ ...serif, fontWeight:700, fontSize:"22px", color:C.black,
-                marginTop:"8px", lineHeight:1.25 }}>
-                Go deeper than the daily challenge.
-              </div>
-              <p style={{ ...sans, fontSize:"14px", color:"rgba(20,18,16,0.68)",
-                marginTop:"8px", maxWidth:"54ch", lineHeight:1.6 }}>
-                Short, sharp courses on the forces behind every puzzle — power, cooling, capital,
-                grid policy, and sovereign compute.
-              </p>
-              <span style={{ ...mono, fontSize:"12px", color:C.forest, fontWeight:500,
-                display:"inline-block", marginTop:"12px" }}>
-                Browse the catalog →
-              </span>
-            </a>
+            {/* Team leaderboard — real per-player MW, wired via DB trigger */}
+            <TeamLeaderboard
+              leaderboard={leaderboard}
+              myTeam={myTeam}
+              signedIn={!!email}
+              busy={teamBusy}
+              error={teamError}
+              onCreate={(name) => teamAction("create", { name })}
+              onJoin={(code) => teamAction("join", { code })}
+              onLeave={() => teamAction("leave", {})}
+            />
 
             {/* Tip of the day — Faraday's Take treatment */}
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
