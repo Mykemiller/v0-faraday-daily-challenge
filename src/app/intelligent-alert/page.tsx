@@ -9,6 +9,10 @@ export default function Page() {
       tagline="The moves that matter, the moment they matter."
       status="In production"
     >
+      <p className="font-serif text-[16px] italic text-forest">
+        From the grid and the foundry to the capital stack, Faraday follows every Theater, Sector, and Thread of the
+        buildout — Signal by Signal.
+      </p>
       <p>
         Faraday Intelligent Alert is the curated editorial publication — Faraday decides what&apos;s in, and the same
         sharp read goes to every subscriber. Delivered to your inbox and readable on the web.

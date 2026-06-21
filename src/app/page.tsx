@@ -70,6 +70,10 @@ export default function Home() {
         <p className="mt-4 font-serif text-[clamp(16px,2.6vw,21px)] leading-snug text-forest">
           Beyond a tool. Beyond a firm. The colleague you’ve always needed.
         </p>
+        {/* Depth line — locked engine tagline (FAR-177): Theater → Sector → Thread → Signal */}
+        <p className="mt-4 font-serif text-[clamp(15px,2.4vw,19px)] italic leading-snug text-amber-dark/90">
+          The AI-infrastructure buildout, mapped Theater to Thread — tracked Signal by Signal.
+        </p>
         <p className="mt-5 max-w-2xl font-sans text-[16px] leading-relaxed text-near-black/70">
           Faraday reads the market every day and tells you what it means — specific, sourced, ahead.
           Pick a surface below. Three are free, every day; the rest are metered in tokens.

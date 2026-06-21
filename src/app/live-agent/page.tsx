@@ -9,6 +9,10 @@ export default function Page() {
       tagline="Ask Faraday anything — with citations."
       status="In build"
     >
+      <p className="font-serif text-[16px] italic text-forest">
+        From the grid and the foundry to the capital stack, Faraday follows every Theater, Sector, and Thread of the
+        buildout — Signal by Signal.
+      </p>
       <p>
         Live Agent is conversational intelligence on the AI data center economy. Ask a question and get a direct,
         sourced answer in Faraday&apos;s voice — grounded in the enriched knowledge base, routed through the
