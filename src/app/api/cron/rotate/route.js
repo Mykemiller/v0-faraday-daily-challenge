@@ -9,7 +9,8 @@
 // no-op via the midnight guard below. A manual run can bypass the guard with
 // ?force=1 (still requires the secret when CRON_SECRET is set).
 //
-// Requires FARADAY_AIRTABLE_API_KEY with write access to the Puzzle Bank.
+// Requires AIRTABLE_API_KEY (legacy FARADAY_AIRTABLE_API_KEY also honored) with
+// write access to the Puzzle Bank.
 
 import { rotateLiveSet } from "@/lib/airtable-puzzle-bank";
 
@@ -53,7 +54,17 @@ export async function GET(request) {
     console.log(`[AUTO-128] Rotated for ${today}:`, JSON.stringify(result));
     return Response.json({ ok: true, today, ...result });
   } catch (err) {
-    console.error("[AUTO-128] Rotation failed:", err);
-    return Response.json({ ok: false, today, error: String(err?.message || err) }, { status: 500 });
+    // Structured failure log: which step threw, the record ids it was acting
+    // on, and the full upstream error — so the next failure is diagnosable from
+    // the log alone rather than a truncated message.
+    const failure = {
+      today,
+      step: err?.step ?? "unknown",
+      recordIds: err?.recordIds ?? [],
+      error: err?.message ? String(err.message) : String(err),
+      cause: err?.cause?.message ? String(err.cause.message) : undefined,
+    };
+    console.error("[AUTO-128] Rotation failed:", JSON.stringify(failure));
+    return Response.json({ ok: false, ...failure }, { status: 500 });
   }
 }
