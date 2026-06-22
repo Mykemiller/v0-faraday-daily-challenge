@@ -129,6 +129,18 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Badges per player (FAR-70), including the caller. ----
+    const badgeIds = myId ? [...new Set([...ids, myId])] : ids;
+    const badgesById = new Map<string, string[]>();
+    if (badgeIds.length > 0) {
+      const { data: bg } = await sb.from("dc_badges").select("subscriber_id, badge_key").in("subscriber_id", badgeIds);
+      for (const b of bg ?? []) {
+        const arr = badgesById.get(b.subscriber_id as string) ?? [];
+        arr.push(b.badge_key as string);
+        badgesById.set(b.subscriber_id as string, arr);
+      }
+    }
+
     // ---- Movement vs. the most recent prior snapshot (§5.3). '—' when none. ----
     const movementById = new Map<string, number>();
     {
@@ -157,13 +169,14 @@ Deno.serve(async (req: Request) => {
       playStreak: r.play_streak ?? 0,
       fullSetStreak: r.full_set_streak ?? 0,
       movement: movementFor(r.subscriber_id, r.rank),
+      badges: badgesById.get(r.subscriber_id) ?? [],
       isYou: myId != null && r.subscriber_id === myId,
     }));
 
     // ---- "You" row — present even outside the top N (§3). ----
     let you: null | {
       rank: number | null; percentile: number | null; signals: number;
-      playStreak: number; fullSetStreak: number; movement: number | null; handle: string;
+      playStreak: number; fullSetStreak: number; movement: number | null; handle: string; badges: string[];
     } = null;
     if (myId) {
       let pr: { rank: number | null; signals: number; total_players: number } | null = null;
@@ -187,6 +200,7 @@ Deno.serve(async (req: Request) => {
           fullSetStreak: (meRow.full_set_streak as number) ?? 0,
           movement: movementFor(myId, rank),
           handle: (meRow.handle as string) || maskHandle(meRow.email as string),
+          badges: badgesById.get(myId) ?? [],
         };
         if (pr?.total_players) totalPlayers = pr.total_players;
       }

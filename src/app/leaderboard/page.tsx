@@ -21,6 +21,7 @@ interface Row {
   fullSetStreak: number;
   movement: MovementValue;
   isYou: boolean;
+  badges?: string[];
 }
 interface You {
   rank: number | null;
@@ -30,6 +31,28 @@ interface You {
   fullSetStreak: number;
   movement: MovementValue;
   handle: string;
+  badges?: string[];
+}
+
+// FAR-70 badge display. Max 2 shown inline in standings rows; all shown on the You card.
+const BADGE_META: Record<string, { icon: string; label: string }> = {
+  week_warrior: { icon: "⚡", label: "Week Warrior · 7-day streak" },
+  fortnight: { icon: "🏆", label: "Fortnight · 14-day streak" },
+  signal_constant: { icon: "🌐", label: "Signal Constant · 30-day streak" },
+  perfect_day: { icon: "🎯", label: "Perfect Day · full Core-4 set" },
+};
+function Badges({ keys, max }: { keys?: string[]; max?: number }) {
+  if (!keys || keys.length === 0) return null;
+  const shown = max ? keys.slice(0, max) : keys;
+  return (
+    <span className="ml-1.5 inline-flex shrink-0 gap-0.5">
+      {shown.map((k) => (
+        <span key={k} title={BADGE_META[k]?.label ?? k} aria-label={BADGE_META[k]?.label ?? k}>
+          {BADGE_META[k]?.icon ?? "🏅"}
+        </span>
+      ))}
+    </span>
+  );
 }
 interface GroupRef { code: string; name: string; groupType: "company" | "team" | "custom"; parentCode: string | null; memberCount: number }
 interface GroupBar extends GroupRef {
@@ -93,6 +116,7 @@ function StandingsRow({ row }: { row: Row }) {
       <span className="min-w-0 flex items-center">
         <span className="truncate text-sm text-near-black">{row.handle}</span>
         {row.isYou && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-dark">you</span>}
+        <Badges keys={row.badges} max={2} />
         <StreakPip days={row.playStreak} />
       </span>
       <span className="text-right text-sm font-semibold text-near-black" style={NUM}>{row.signals.toLocaleString()}</span>
@@ -281,6 +305,7 @@ export default function LeaderboardPage() {
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold text-forest">{you.handle}</span>
                     <Movement value={you.movement} />
+                    <Badges keys={you.badges} />
                   </div>
                   <div className="mt-0.5 text-xs text-near-black/60" style={NUM}>
                     {you.rank == null
