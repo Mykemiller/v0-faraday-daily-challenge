@@ -983,6 +983,7 @@ function GameFrequency({ puzzle, streak, onComplete }) {
 function SocialGate({ trigger, onRegister, onDismiss }) {
   const [email,   setEmail]   = useState("");
   const [handle,  setHandle]  = useState("");
+  const [newsletter, setNewsletter] = useState(false);
   const [sent,    setSent]    = useState(false);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
@@ -1012,8 +1013,9 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
       const res = await fetch(`${EDGE_FUNCTIONS_BASE}/register-with-magic-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // newsletter_opt_in:false keeps the gate's "No newsletter" promise (§6/§13.3).
-        body: JSON.stringify({ email: normalized, handle: normalizedHandle, newsletter_opt_in: false, source: `dailychallenge-${trigger || "default"}`, timezone }),
+        // Newsletter is strict opt-in: the gate keeps its "No newsletter" promise,
+        // and only an explicitly-ticked box subscribes (FAR-70 / Myke editorial call).
+        body: JSON.stringify({ email: normalized, handle: normalizedHandle, newsletter_opt_in: newsletter, source: `dailychallenge-${trigger || "default"}`, timezone }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Registration failed — please try again");
@@ -1067,6 +1069,13 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
           {loading ? "…" : "→"}
         </Btn>
       </div>
+      {/* Opt-in newsletter — unchecked by default; the "No newsletter" promise below
+          holds unless the player actively ticks this. */}
+      <label style={{ display:"flex", alignItems:"flex-start", gap:"8px", cursor:"pointer", fontSize:"10px", color:C.muted, ...mono }}>
+        <input type="checkbox" checked={newsletter} onChange={e=>setNewsletter(e.target.checked)}
+          style={{ marginTop:"1px", accentColor:C.goldLight }} />
+        <span>Email me the Faraday newsletter — weekly data-center intelligence. Optional.</span>
+      </label>
       {error && <div style={{ fontSize:"10px", color:C.red, ...mono }}>{error}</div>}
       <div style={{ display:"flex", gap:"10px", alignItems:"center" }}>
         <div style={{ flex:1, height:"1px", background:C.border }}/>

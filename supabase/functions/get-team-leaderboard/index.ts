@@ -123,6 +123,18 @@ Deno.serve(async (req: Request) => {
       for (const s of subs ?? []) handleById.set(s.id as string, (s.handle as string) || maskHandle(s.email as string));
     }
 
+    // Badges per member (FAR-70), including the caller.
+    const badgeIds = myId ? [...new Set([...ids, myId])] : ids;
+    const badgesById = new Map<string, string[]>();
+    if (badgeIds.length) {
+      const { data: bg } = await sb.from("dc_badges").select("subscriber_id, badge_key").in("subscriber_id", badgeIds);
+      for (const b of bg ?? []) {
+        const arr = badgesById.get(b.subscriber_id as string) ?? [];
+        arr.push(b.badge_key as string);
+        badgesById.set(b.subscriber_id as string, arr);
+      }
+    }
+
     // Parent company (for a team) + standings.
     let parentCode: string | null = null;
     let parentName: string | null = null;
@@ -160,6 +172,7 @@ Deno.serve(async (req: Request) => {
       playStreak: r.play_streak ?? 0,
       fullSetStreak: r.full_set_streak ?? 0,
       movement: null, // team-scope snapshots land in Phase 4
+      badges: badgesById.get(r.subscriber_id) ?? [],
       isYou: myId != null && r.subscriber_id === myId,
     }));
 
@@ -174,6 +187,7 @@ Deno.serve(async (req: Request) => {
         fullSetStreak: myRow.full_set_streak ?? 0,
         movement: null,
         handle: handleById.get(myRow.subscriber_id) ?? "you",
+        badges: badgesById.get(myRow.subscriber_id) ?? [],
       };
     }
 

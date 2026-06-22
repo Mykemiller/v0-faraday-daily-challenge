@@ -156,6 +156,15 @@ Deno.serve(async (req: Request) => {
 
     if (updErr) { console.error(updErr); return json({ error: "Update failed" }, 500); }
 
+    // Award milestone badges (FAR-70) — idempotent, recognition-only, never affects
+    // score/streaks. Streak badges from the new play streak; perfect_day on a full set.
+    const { error: badgeErr } = await sb.rpc("fn_assign_badges", {
+      p_subscriber: session.subscriber_id,
+      p_play_streak: newPlayStreak,
+      p_full_set: fullSetJustCompleted,
+    });
+    if (badgeErr) console.error("Badge assignment failed:", badgeErr);
+
     return json({
       ok: true,
       fullSetJustCompleted,
