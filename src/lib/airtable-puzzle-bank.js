@@ -21,8 +21,18 @@
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
-export const PUZZLE_BANK_BASE_ID = process.env.FARADAY_AIRTABLE_BASE_ID || "appxfti7VuoHYUeu6";
-export const PUZZLE_BANK_TABLE_ID = process.env.FARADAY_AIRTABLE_TABLE_ID || "tbliJaRmctbIWJC43";
+// Credential/base/table env names. The June-19 "engine-as-site" migration
+// (FAR-119) consolidated all Airtable access in this project under the
+// AIRTABLE_* names (see /api/lexicon). This helper predates that migration and
+// historically read FARADAY_AIRTABLE_*; we now accept the canonical AIRTABLE_*
+// names first and keep the FARADAY_* names as a legacy fallback so the rotator
+// works against whichever is provisioned. (AUTO-128 root cause: prod provisions
+// AIRTABLE_API_KEY but the helper only read FARADAY_AIRTABLE_API_KEY, so every
+// write — and read — threw "not set".)
+export const PUZZLE_BANK_BASE_ID =
+  process.env.AIRTABLE_BASE_ID || process.env.FARADAY_AIRTABLE_BASE_ID || "appxfti7VuoHYUeu6";
+export const PUZZLE_BANK_TABLE_ID =
+  process.env.AIRTABLE_TABLE_ID || process.env.FARADAY_AIRTABLE_TABLE_ID || "tbliJaRmctbIWJC43";
 
 // Field IDs (stable even if a curator renames the column). Used for selecting
 // and reading fields from the response.
@@ -56,10 +66,11 @@ export const PUZZLE_TYPES = [
 class AirtableConfigError extends Error {}
 
 function getApiKey() {
-  const key = process.env.FARADAY_AIRTABLE_API_KEY;
+  const key = process.env.AIRTABLE_API_KEY || process.env.FARADAY_AIRTABLE_API_KEY;
   if (!key) {
     throw new AirtableConfigError(
-      "FARADAY_AIRTABLE_API_KEY is not set — cannot reach the Puzzle Bank."
+      "Airtable API key is not set — set AIRTABLE_API_KEY (or legacy " +
+        "FARADAY_AIRTABLE_API_KEY) so the Puzzle Bank can be reached."
     );
   }
   return key;
@@ -158,29 +169,68 @@ export async function getTipOfTheDay() {
   return null;
 }
 
+// Error thrown by rotateLiveSet that carries the failing step and the record
+// ids it was acting on, so the cron route can log exactly what broke instead of
+// a truncated "Rotation failed: …".
+export class RotationError extends Error {
+  constructor(step, recordIds, cause) {
+    super(`Rotation step "${step}" failed: ${cause?.message || cause}`);
+    this.name = "RotationError";
+    this.step = step;
+    this.recordIds = recordIds;
+    this.cause = cause;
+  }
+}
+
 // Daily rotation (AUTO-128). For the given serve day (YYYY-MM-DD in
 // America/Chicago):
-//   1. Promote: Published = "Published" AND Go Live Date = today  → "Live"
-//   2. Retire:  Published = "Live"      AND Go Live Date ≠ today  → "Retired"
+//   1. Promote: Published = "Published" AND Go Live Date = today      → "Live"
+//   2. Retire:  Published = "Live"      AND Go Live Date < today      → "Retired"
+//
 // Promotion runs first so a failure partway never leaves the bank with no Live
 // rows — worst case is a brief overlap that the hourly cache smooths over.
+//
+// Idempotency: both filters are self-correcting. Re-running the same day finds
+// no "Published"-and-today rows to promote (they are already "Live") and no
+// "Live"-and-before-today rows to retire (the prior set is already "Retired"),
+// so a second run is a no-op — never a double-promote.
+//
+// Retire uses Go Live Date < today (strictly before), not ≠ today, so it can
+// only ever retire the PRIOR live set — never today's rows, and never a
+// future-dated row that was promoted early.
+//
 // Returns a summary the cron route reports for the health log.
 export async function rotateLiveSet(todayISO) {
   const dateIsToday = `IS_SAME({${FIELD_NAME.goLiveDate}}, "${todayISO}", "day")`;
+  // DATETIME_DIFF(goLiveDate, today, "days") < 0  ⇒ strictly before today,
+  // day-granular so a row's time-of-day can't flip the comparison.
+  const dateBeforeToday = `DATETIME_DIFF({${FIELD_NAME.goLiveDate}}, "${todayISO}", "days") < 0`;
 
+  // 1. Promote today's approved-and-published set to Live.
   const toPromote = await fetchRecords({
     filterByFormula: `AND({${FIELD_NAME.published}} = "Published", ${dateIsToday})`,
     fields: [FIELD.puzzleType],
     noStore: true,
   });
-  await setPublishedState(toPromote.map((r) => r.id), "Live");
+  const promoteIds = toPromote.map((r) => r.id);
+  try {
+    await setPublishedState(promoteIds, "Live");
+  } catch (cause) {
+    throw new RotationError("promote", promoteIds, cause);
+  }
 
+  // 2. Retire the prior live set (Live rows dated strictly before today).
   const toRetire = await fetchRecords({
-    filterByFormula: `AND({${FIELD_NAME.published}} = "Live", NOT(${dateIsToday}))`,
+    filterByFormula: `AND({${FIELD_NAME.published}} = "Live", ${dateBeforeToday})`,
     fields: [FIELD.puzzleType],
     noStore: true,
   });
-  await setPublishedState(toRetire.map((r) => r.id), "Retired");
+  const retireIds = toRetire.map((r) => r.id);
+  try {
+    await setPublishedState(retireIds, "Retired");
+  } catch (cause) {
+    throw new RotationError("retire", retireIds, cause);
+  }
 
   const liveTypes = toPromote
     .map((r) => r.fields?.[FIELD.puzzleType])
@@ -188,6 +238,8 @@ export async function rotateLiveSet(todayISO) {
   return {
     promoted: toPromote.length,
     retired: toRetire.length,
+    promotedIds: promoteIds,
+    retiredIds: retireIds,
     liveTypes,
     missingTypes: PUZZLE_TYPES.filter((t) => !liveTypes.includes(t)),
   };
