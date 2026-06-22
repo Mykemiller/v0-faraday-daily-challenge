@@ -192,6 +192,58 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ---- Band D context: Today patterns / Season hero + last champion. ----
+    let patterns: Record<string, unknown> | undefined;
+    if (period === "daily") {
+      const { data: rows } = await sb
+        .from("dc_completions").select("puzzle_type, score").eq("puzzle_date", today);
+      const cnt: Record<string, number> = {}, sum: Record<string, number> = {};
+      for (const r of rows ?? []) {
+        const t = r.puzzle_type as string;
+        cnt[t] = (cnt[t] ?? 0) + 1;
+        sum[t] = (sum[t] ?? 0) + (Number(r.score) || 0);
+      }
+      const types = Object.keys(cnt);
+      const mostPlayed = types.length ? types.reduce((a, b) => (cnt[b] > cnt[a] ? b : a)) : null;
+      const hardest = types.length ? types.reduce((a, b) => (sum[b] / cnt[b] < sum[a] / cnt[a] ? b : a)) : null;
+      const mover = leaderboard
+        .filter((r) => r.movement != null && (r.movement as number) > 0)
+        .sort((a, b) => (b.movement as number) - (a.movement as number))[0] ?? null;
+      patterns = {
+        mostPlayed: mostPlayed ? { type: mostPlayed, count: cnt[mostPlayed] } : null,
+        hardest: hardest ? { type: hardest, avgScore: Math.round(sum[hardest] / cnt[hardest]) } : null,
+        biggestMover: mover ? { handle: mover.handle, delta: mover.movement } : null,
+      };
+    }
+
+    let seasonInfo: Record<string, unknown> | undefined;
+    let lastChampion: Record<string, unknown> | undefined;
+    if (period === "season") {
+      if (season) {
+        const ms = (d: string) => Date.parse(d + "T00:00:00Z");
+        const day = Math.floor((ms(today) - ms(season.starts_on)) / 86400000) + 1;
+        const total = Math.floor((ms(season.ends_on) - ms(season.starts_on)) / 86400000) + 1;
+        const left = Math.max(0, Math.floor((ms(season.ends_on) - ms(today)) / 86400000));
+        seasonInfo = { name: season.name, dayOf: day, totalDays: total, daysLeft: left };
+      }
+      const { data: closed } = await sb
+        .from("seasons").select("id, name").eq("status", "closed")
+        .order("ends_on", { ascending: false }).limit(1).maybeSingle();
+      if (closed) {
+        const { data: champ } = await sb
+          .from("season_results").select("subscriber_id")
+          .eq("season_id", closed.id).eq("is_champion", true).maybeSingle();
+        if (champ) {
+          const { data: cs } = await sb
+            .from("dc_subscribers").select("handle, email").eq("id", champ.subscriber_id).maybeSingle();
+          lastChampion = {
+            handle: (cs?.handle as string) || maskHandle((cs?.email as string) || ""),
+            seasonName: closed.name,
+          };
+        }
+      }
+    }
+
     // The caller's groups, for the scope selector (My Team(s) / My Company).
     let myGroups: Array<Record<string, unknown>> = [];
     if (myEmail) {
@@ -212,6 +264,9 @@ Deno.serve(async (req: Request) => {
       totalPlayers,
       count: leaderboard.length,
       myGroups,
+      patterns,
+      season: seasonInfo,
+      lastChampion,
     });
   } catch (e) {
     console.error("Unhandled error:", e);
