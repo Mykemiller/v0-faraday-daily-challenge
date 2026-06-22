@@ -1095,14 +1095,17 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME TILES — Lobby
 // ══════════════════════════════════════════════════════════════════════════════
+// Locked tile order (front-loads quick-momentum games). The neutral `format` chip
+// names the mechanic, not a domain — the puzzle bank rotates varied content, so a
+// single hardcoded domain ("Power Architecture") on all seven read as a bug.
 const GAME_CONFIGS = [
-  { type:"Rackl",       desc:"Group the tiles — four connected sets",     time:"~3 min", domain:"Power Architecture" },
-  { type:"Signal Drop", desc:"Guess the industry term — Wordle style",     time:"~2 min", domain:"Power Architecture" },
-  { type:"The Stack",   desc:"Drag to rank in the correct order",          time:"~2 min", domain:"Power Architecture" },
-  { type:"Circuit",     desc:"True/False sprint — beat the clock",         time:"~2 min", domain:"Power Architecture" },
-  { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", domain:"Power Architecture" },
-  { type:"Dark Fiber",  desc:"Match terms to their definitions",           time:"~3 min", domain:"Power Architecture" },
-  { type:"Frequency",   desc:"Multiple choice knowledge quiz",             time:"~3 min", domain:"Power Architecture" },
+  { type:"Rackl",       desc:"Group the tiles — four connected sets",     time:"~3 min", format:"Connect" },
+  { type:"Circuit",     desc:"True/False sprint — beat the clock",         time:"~2 min", format:"Sprint" },
+  { type:"Dark Fiber",  desc:"Match terms to their definitions",           time:"~3 min", format:"Match" },
+  { type:"Frequency",   desc:"Multiple choice knowledge quiz",             time:"~3 min", format:"Quiz" },
+  { type:"The Stack",   desc:"Drag to rank in the correct order",          time:"~2 min", format:"Rank" },
+  { type:"Signal Drop", desc:"Guess the industry term — Wordle style",     time:"~2 min", format:"Guess" },
+  { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", format:"Read" },
 ];
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
@@ -1121,7 +1124,7 @@ function GameTile({ config, onPlay }) {
       <span style={{ minWidth:0, flex:1 }}>
         <span style={{ display:"block", fontSize:"18px", fontWeight:600, color:C.black, ...serif }}>{config.type}</span>
         <span style={{ display:"block", fontSize:"11.5px", color:"rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
-        <span style={{ display:"block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.08em", color:C.deepAmber, textTransform:"uppercase", ...mono }}>{config.domain}</span>
+        <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
       </span>
       <span style={{ fontSize:"11px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
     </button>
@@ -1632,16 +1635,43 @@ export default function DailyChallenge() {
               onLeave={() => teamAction("leave", {})}
             />
 
+            {/* From Faraday Intelligence — persistent, always-on cross-sell band.
+                Brand-voiced; routes to the commercial surfaces on the homepage.
+                NO token/price talk on the lobby (frame value, route commerce). */}
+            <div style={{ background:C.white, border:`1px solid ${C.gray}`, borderRadius:"10px",
+              padding:"22px 24px", margin:"28px 0 0" }}>
+              <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
+                textTransform:"uppercase", color:C.deepAmber }}>From Faraday Intelligence</div>
+              <p style={{ ...serif, fontSize:"17px", lineHeight:1.5, color:C.black, margin:"8px 0 0" }}>
+                These puzzles come from what Faraday reads every day. There’s a lot more where they came from.
+              </p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"10px 18px", marginTop:"14px",
+                ...mono, fontSize:"12px" }}>
+                {[
+                  { label:"Live Agent", href:"/live-agent" },
+                  { label:"Intelligent Alert", href:"/intelligent-alert" },
+                  { label:"Briefing Library", href:"/briefing-library" },
+                  { label:"Jurisdiction Watch", href:"/jurisdiction-watch" },
+                  { label:"Faraday Academy", href:"/academy" },
+                ].map(s => (
+                  <a key={s.href} href={s.href} style={{ color:C.forest, textDecoration:"none",
+                    borderBottom:`1px solid ${C.gray}`, paddingBottom:"1px" }}>{s.label} →</a>
+                ))}
+              </div>
+            </div>
+
             {/* Tip of the day — Faraday's Take treatment */}
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
               padding:"26px 28px", color:C.cream, margin:"28px 0 56px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", gap:"10px",
                 flexWrap:"wrap", ...mono, fontSize:"11px", letterSpacing:"0.16em" }}>
                 <span style={{ color:C.cream }}>FARADAY TIP OF THE DAY</span>
-                <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
-                  borderRadius:"4px", padding:"2px 9px" }}>
-                  {(tipOfTheDay?.domain || "POWER ARCHITECTURE").toUpperCase()}
-                </span>
+                {tipOfTheDay?.domain && (
+                  <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
+                    borderRadius:"4px", padding:"2px 9px" }}>
+                    {tipOfTheDay.domain.toUpperCase()}
+                  </span>
+                )}
               </div>
               <blockquote style={{ ...serif, fontStyle:"italic", fontSize:"17px", lineHeight:1.65,
                 marginTop:"14px", color:C.cream }}>
