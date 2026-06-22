@@ -982,6 +982,7 @@ function GameFrequency({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function SocialGate({ trigger, onRegister, onDismiss }) {
   const [email,   setEmail]   = useState("");
+  const [handle,  setHandle]  = useState("");
   const [sent,    setSent]    = useState(false);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
@@ -997,6 +998,13 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
   async function submit() {
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes("@")) { setError("Enter a valid email address"); return; }
+    // Leaderboard V2 §6: handle is the claimed leaderboard identity. Validate the
+    // format here; the server re-validates and binds it on verify (it's final).
+    const normalizedHandle = handle.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(normalizedHandle)) {
+      setError("Handle must be 3–20 characters: letters, numbers, or underscore");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -1004,7 +1012,8 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
       const res = await fetch(`${EDGE_FUNCTIONS_BASE}/register-with-magic-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalized, source: `dailychallenge-${trigger || "default"}`, timezone }),
+        // newsletter_opt_in:false keeps the gate's "No newsletter" promise (§6/§13.3).
+        body: JSON.stringify({ email: normalized, handle: normalizedHandle, newsletter_opt_in: false, source: `dailychallenge-${trigger || "default"}`, timezone }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Registration failed — please try again");
@@ -1037,13 +1046,24 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
         <div style={{ fontSize:"16px", fontWeight:700, color:C.text, marginBottom:"6px", ...sans }}>{copy.h}</div>
         <div style={{ fontSize:"11px", color:C.muted, lineHeight:1.5, ...mono }}>{copy.sub}</div>
       </div>
+      <div>
+        <input value={handle} onChange={e=>setHandle(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&submit()}
+          placeholder="circuit_breaker" aria-label="Choose your handle"
+          autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={20}
+          style={{ width:"100%", boxSizing:"border-box", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
+            borderRadius:"6px", padding:"10px 14px", color:C.text, fontSize:"12px", ...mono }} />
+        <div style={{ fontSize:"9px", color:C.dim, marginTop:"5px", ...mono }}>
+          3–20 chars · letters, numbers, underscore · your leaderboard name.
+        </div>
+      </div>
       <div style={{ display:"flex", gap:"8px" }}>
         <input value={email} onChange={e=>setEmail(e.target.value)}
           onKeyDown={e=>e.key==="Enter"&&submit()}
           placeholder="your@email.com"
           style={{ flex:1, background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
             borderRadius:"6px", padding:"10px 14px", color:C.text, fontSize:"12px", ...mono }} />
-        <Btn onClick={submit} disabled={loading || !email}>
+        <Btn onClick={submit} disabled={loading || !email || !handle}>
           {loading ? "…" : "→"}
         </Btn>
       </div>
