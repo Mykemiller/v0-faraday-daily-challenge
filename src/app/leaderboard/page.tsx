@@ -47,6 +47,13 @@ interface Board {
   count: number;
   myGroups?: GroupRef[];
   group?: GroupBar;
+  patterns?: {
+    mostPlayed: { type: string; count: number } | null;
+    hardest: { type: string; avgScore: number } | null;
+    biggestMover: { handle: string; delta: number } | null;
+  };
+  season?: { name: string; dayOf: number; totalDays: number; daysLeft: number };
+  lastChampion?: { handle: string; seasonName: string };
 }
 
 const GRID = "grid grid-cols-[2.75rem_1fr_5rem_3.25rem] items-center gap-2";
@@ -330,7 +337,43 @@ export default function LeaderboardPage() {
             </div>
           )}
         </section>
+
+        {/* Band D — Context (global scope only). Season → hero; Today → patterns. */}
+        {status === "ready" && scope === "global" && (
+          <section className="mt-8">
+            {period === "season" && data?.season && (
+              <div className="rounded-lg border border-forest/20 bg-forest/5 p-4">
+                <div className="font-serif text-lg font-bold text-forest">{data.season.name}</div>
+                <div className="mt-1 text-sm text-near-black/70">
+                  Day {data.season.dayOf} of {data.season.totalDays} · {data.season.daysLeft} day{data.season.daysLeft === 1 ? "" : "s"} left
+                </div>
+                {data.lastChampion && (
+                  <div className="mt-2 text-xs text-near-black/55">
+                    🏆 Last champion: <span className="font-semibold text-forest">{data.lastChampion.handle}</span> ({data.lastChampion.seasonName})
+                  </div>
+                )}
+              </div>
+            )}
+            {period === "daily" && data?.patterns && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <PatternCard label="Most played" value={data.patterns.mostPlayed?.type ?? "—"} sub={data.patterns.mostPlayed ? `${data.patterns.mostPlayed.count} plays` : ""} />
+                <PatternCard label="Hardest puzzle" value={data.patterns.hardest?.type ?? "—"} sub={data.patterns.hardest ? `avg ${data.patterns.hardest.avgScore}` : ""} />
+                <PatternCard label="Biggest mover" value={data.patterns.biggestMover?.handle ?? "—"} sub={data.patterns.biggestMover ? `▲${data.patterns.biggestMover.delta}` : "—"} />
+              </div>
+            )}
+          </section>
+        )}
       </main>
+    </div>
+  );
+}
+
+function PatternCard({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="rounded-lg border border-warm-gray bg-warm-cream/40 p-3">
+      <div className="text-[10px] uppercase tracking-wide text-near-black/40">{label}</div>
+      <div className="mt-1 truncate font-semibold text-forest">{value}</div>
+      <div className="text-xs text-near-black/50" style={NUM}>{sub}</div>
     </div>
   );
 }
