@@ -44,7 +44,7 @@ export default function Home() {
           <BrandMark size={22} framed />
           <div className="leading-tight">
             <b className="font-serif text-[16px] font-bold tracking-wide text-warm-white">Faraday</b>
-            <span className="block font-mono text-[9.5px] tracking-[0.18em] text-sage">INTELLIGENCE SERVICE · BETA</span>
+            <span className="block font-mono text-[11px] tracking-[0.18em] text-sage">INTELLIGENCE SERVICE · BETA</span>
           </div>
           <nav className="ml-auto flex items-center gap-4 font-mono text-[11px] text-warm-cream">
             <a href="#storefronts" className="hidden hover:text-gold-light sm:inline">Get Started</a>
@@ -86,7 +86,7 @@ export default function Home() {
         <div className="rounded-xl border border-gold/40 bg-forest p-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="font-serif text-[22px] font-bold text-warm-white">Daily Challenge</span>
-            <Link href="/daily-challenge" className="font-mono text-[10px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
+            <Link href="/daily-challenge" className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
               Free · all 7 games →
             </Link>
           </div>
@@ -102,7 +102,7 @@ export default function Home() {
                   className="flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
                 >
                   <GameIcon game={g} size={56} />
-                  <span className="font-mono text-[9px] leading-tight text-warm-cream/75">{g}</span>
+                  <span className="font-mono text-[11px] leading-tight text-warm-cream/85">{g}</span>
                 </Link>
               </li>
             ))}
@@ -120,11 +120,11 @@ export default function Home() {
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-serif text-[17px] font-semibold text-near-black">{s.name}</span>
                   {s.tag && (
-                    <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
+                    <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
                   )}
                 </div>
                 <p className="mt-2 font-sans text-[13px] leading-relaxed text-near-black/65">{s.blurb}</p>
-                <span className="mt-3 font-mono text-[10px] uppercase tracking-[0.1em] text-gold/90 group-hover:text-gold">Open →</span>
+                <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Open →</span>
               </Link>
             </li>
           ))}
@@ -138,7 +138,7 @@ export default function Home() {
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="font-serif text-[22px] font-bold text-warm-white">Faraday Academy</span>
-            <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.1em] text-gold-light">Separate pricing · Open →</span>
+            <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-gold-light">Separate pricing · Open →</span>
           </div>
           <p className="mt-3 max-w-4xl font-sans text-[14px] leading-relaxed text-warm-cream/85">
             Faraday Academy exists to turn curiosity into conviction. The Academy equips investors, operators, and
@@ -166,7 +166,7 @@ export default function Home() {
             </div>
           ))}
         </div>
-        <p className="mt-4 text-center font-mono text-[10px] leading-relaxed text-near-black/55">
+        <p className="mt-4 text-center font-mono text-[11px] leading-relaxed text-near-black/65">
           Three surfaces are free, every day; the rest are metered in tokens. Faraday Academy is priced separately.
         </p>
       </section>
@@ -178,7 +178,7 @@ export default function Home() {
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}
       <footer className="border-t border-warm-gray/60">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-5 py-6 font-mono text-[10px] text-near-black/50">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-5 py-6 font-mono text-[11px] text-near-black/65">
           <BrandMark size={16} />
           <span>Faraday Intelligence</span>
           <span className="ml-auto">Nine Core Domains · intelligence on the AI data center economy</span>
