@@ -7,6 +7,8 @@ import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
   EMAIL_STORAGE_KEY,
+  HANDLE_STORAGE_KEY,
+  OPTED_OUT_STORAGE_KEY,
 } from "@/lib/supabase";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
@@ -28,8 +30,8 @@ const C = {
   amber:   "#F59E0B",
   red:     "#F87171",
   text:    "#E8E4DE",
-  muted:   "#6B6560",
-  dim:     "#2A2520",
+  muted:   "#9A938C",  // readable warm gray — AA 6.3:1 on bg #0D110E (was #6B6560, 3.3:1, FAR cosmetic buff)
+  dim:     "#2A2520",  // DECORATIVE ONLY (1.25:1) — dividers, dots, drag handles, placeholder glyphs; never readable text
 };
 const mono  = { fontFamily:"'IBM Plex Mono',monospace" };
 const serif = { fontFamily:"'IBM Plex Serif',serif" };
@@ -193,7 +195,7 @@ function getPuzzleStatus(puzzleType) {
 
 // ── Shared components ─────────────────────────────────────────────────────────
 function SL({ children, color }) {
-  return <span style={{ fontSize:"10px", letterSpacing:"0.14em", color:color||C.muted, textTransform:"uppercase", ...mono }}>{children}</span>;
+  return <span style={{ fontSize:"11px", letterSpacing:"0.14em", color:color||C.muted, textTransform:"uppercase", ...mono }}>{children}</span>;
 }
 
 function Btn({ children, onClick, disabled, variant="primary", small }) {
@@ -207,7 +209,7 @@ function Btn({ children, onClick, disabled, variant="primary", small }) {
     <button onClick={onClick} disabled={disabled} style={{
       ...styles[variant], borderRadius:"6px",
       padding: small ? "6px 14px" : "10px 20px",
-      fontSize: small ? "10px" : "11px",
+      fontSize: small ? "11px" : "12px",
       cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.5 : 1,
       letterSpacing:"0.08em", transition:"all 0.15s", ...mono,
@@ -238,12 +240,12 @@ function ScoreCard({ score, puzzleType, domain, streak, mwEarned, onShare, onNex
         borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
-          <div style={{ fontSize:"9px", color:C.muted, ...mono }}>day streak</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day streak</div>
         </div>
         <div style={{ width:"1px", background:C.border }}/>
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"16px", fontWeight:700, color:C.green, ...sans }}>+{mwEarned}</div>
-          <div style={{ fontSize:"9px", color:C.muted, ...mono }}>MW earned</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>MW earned</div>
         </div>
       </div>
       {isNew7Day && (
@@ -256,7 +258,7 @@ function ScoreCard({ score, puzzleType, domain, streak, mwEarned, onShare, onNex
         <Btn onClick={onShare} variant="ghost" small>↑ Share Result</Btn>
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
-      <div style={{ fontSize:"9px", color:C.dim, ...mono }}>
+      <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
         Score includes {getStreakMultiplier(streak).mult}× streak multiplier
       </div>
     </div>
@@ -317,7 +319,7 @@ function GameRackl({ puzzle, streak, onComplete }) {
         <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
           display:"flex", alignItems:"center", gap:"12px" }}>
           <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
-          <span style={{ fontSize:"10px", color:g.textColor, opacity:0.7, ...mono }}>{g.items.join(" · ")}</span>
+          <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{g.items.join(" · ")}</span>
         </div>
       ))}
 
@@ -334,7 +336,7 @@ function GameRackl({ puzzle, streak, onComplete }) {
               transform: isSelected ? "translateY(-2px)" : "none",
               boxShadow: isSelected ? `0 4px 12px rgba(196,146,42,0.2)` : "none",
             }}>
-              <span style={{ fontSize:"11px", fontWeight:600, color: isSelected ? C.gold : C.black,
+              <span style={{ fontSize:"13px", fontWeight:600, color: isSelected ? C.gold : C.black,
                 lineHeight:1.3, textAlign:"center", display:"block", ...sans }}>{t.item}</span>
             </button>
           );
@@ -357,7 +359,7 @@ function GameRackl({ puzzle, streak, onComplete }) {
             <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
               background: i < mistakes ? C.red : C.dim }} />
           ))}
-          <span style={{ fontSize:"9px", color:C.muted, marginLeft:"6px", ...mono }}>{mistakes} mistakes</span>
+          <span style={{ fontSize:"11px", color:C.muted, marginLeft:"6px", ...mono }}>{mistakes} mistakes</span>
         </div>
         <Btn onClick={submit} disabled={selected.length !== 4}>
           Submit {selected.length}/4
@@ -423,7 +425,7 @@ function GameSignalDrop({ puzzle, streak, onComplete }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
-      <div style={{ fontSize:"10px", color:C.muted, textAlign:"center", lineHeight:1.6, ...mono, maxWidth:"360px" }}>
+      <div style={{ fontSize:"14px", color:C.text, textAlign:"center", lineHeight:1.6, ...mono, maxWidth:"380px" }}>
         {puzzle.clue}
         {hint > 0 && <div style={{ color:C.amber, marginTop:"4px" }}>Hint: {puzzle.hint1}</div>}
         {hint > 1 && <div style={{ color:C.amber }}>Hint 2: {puzzle.hint2}</div>}
@@ -473,7 +475,7 @@ function GameSignalDrop({ puzzle, streak, onComplete }) {
                   border:"none", borderRadius:"4px",
                   width: key.length > 1 ? "52px" : "32px", height:"40px",
                   color: isCorrect ? C.green : isPresent ? C.amber : C.text,
-                  fontSize:"11px", cursor:"pointer", fontWeight:600, ...mono,
+                  fontSize:"13px", cursor:"pointer", fontWeight:600, ...mono,
                 }}>{key}</button>
               );
             })}
@@ -532,17 +534,17 @@ function GameStack({ puzzle, streak, onComplete }) {
             borderRadius:"8px", padding:"12px 16px",
             display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ display:"flex", gap:"12px", alignItems:"center" }}>
-              <span style={{ fontSize:"10px", color:isCorrect?C.green:C.red, ...mono }}>#{rankIdx+1}</span>
-              <span style={{ fontSize:"12px", color:C.text }}>{puzzle.items[itemIdx]}</span>
+              <span style={{ fontSize:"11px", color:isCorrect?C.green:C.red, ...mono }}>#{rankIdx+1}</span>
+              <span style={{ fontSize:"13px", color:C.text }}>{puzzle.items[itemIdx]}</span>
             </div>
             <div style={{ textAlign:"right" }}>
-              <span style={{ fontSize:"10px", color:C.muted, ...mono }}>{puzzle.values?.[correctRank] || ""}</span>
-              {!isCorrect && <div style={{ fontSize:"9px", color:C.red, ...mono }}>Correct: #{correctRank+1}</div>}
+              <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.values?.[correctRank] || ""}</span>
+              {!isCorrect && <div style={{ fontSize:"11px", color:C.red, ...mono }}>Correct: #{correctRank+1}</div>}
             </div>
           </div>
         );
       })}
-      <div style={{ fontSize:"10px", color:C.muted, ...mono, textAlign:"center" }}>
+      <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
       <ScoreCard score={scoreVal} puzzleType="The Stack" domain={puzzle.domain}
@@ -553,7 +555,7 @@ function GameStack({ puzzle, streak, onComplete }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
-      <div style={{ fontSize:"10px", color:C.muted, textAlign:"center", ...mono }}>
+      <div style={{ fontSize:"11px", color:C.muted, textAlign:"center", ...mono }}>
         {puzzle.metric} — drag to reorder
       </div>
       {order.map((itemIdx, rankIdx) => (
@@ -571,7 +573,7 @@ function GameStack({ puzzle, streak, onComplete }) {
           }}>
           <span style={{ fontSize:"16px", color:C.dim, userSelect:"none" }}>⠿</span>
           <span style={{ fontSize:"14px", color:C.text, flex:1, ...sans }}>{puzzle.items[itemIdx]}</span>
-          <span style={{ fontSize:"10px", color:C.muted, ...mono }}>#{rankIdx+1}</span>
+          <span style={{ fontSize:"11px", color:C.muted, ...mono }}>#{rankIdx+1}</span>
         </div>
       ))}
       <div style={{ marginTop:"8px" }}>
@@ -632,11 +634,11 @@ function GameCircuit({ puzzle, streak, onComplete }) {
           background: a.ok ? "rgba(74,222,128,0.05)" : "rgba(248,113,113,0.05)",
           border:`1px solid ${a.ok ? "rgba(74,222,128,0.2)" : "rgba(248,113,113,0.2)"}`,
           borderRadius:"8px", padding:"12px 14px" }}>
-          <div style={{ fontSize:"11px", color:C.text, marginBottom:"4px" }}>{a.q}</div>
-          <div style={{ fontSize:"9px", color:a.ok?C.green:C.red, ...mono }}>
+          <div style={{ fontSize:"13px", color:C.text, marginBottom:"4px", ...sans }}>{a.q}</div>
+          <div style={{ fontSize:"12px", color:a.ok?C.green:C.red, ...mono }}>
             {a.ok ? "✓ Correct" : `✗ You said ${a.given?"TRUE":"FALSE"} · Answer: ${a.correct?"TRUE":"FALSE"}`}
           </div>
-          <div style={{ fontSize:"9px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
+          <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
       <ScoreCard score={scoreVal} puzzleType="Circuit" domain={puzzle.domain}
@@ -662,7 +664,7 @@ function GameCircuit({ puzzle, streak, onComplete }) {
         display:"flex", alignItems:"center", justifyContent:"center",
         transition:"background 0.2s",
         backgroundColor: lastFeedback === true ? "rgba(74,222,128,0.06)" : lastFeedback === false ? "rgba(248,113,113,0.06)" : undefined }}>
-        <p style={{ fontSize:"15px", color:C.text, textAlign:"center", margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
+        <p style={{ fontSize:"16px", color:C.text, textAlign:"center", margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
       </div>
 
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
@@ -729,11 +731,11 @@ function GameBrief({ puzzle, streak, onComplete }) {
           background: answers[i]?.ok ? "rgba(74,222,128,0.05)" : "rgba(248,113,113,0.05)",
           border:`1px solid ${answers[i]?.ok ? "rgba(74,222,128,0.2)" : "rgba(248,113,113,0.2)"}`,
           borderRadius:"8px", padding:"12px 14px" }}>
-          <div style={{ fontSize:"11px", color:C.text, marginBottom:"6px" }}>{q.q}</div>
-          <div style={{ fontSize:"10px", color:answers[i]?.ok?C.green:C.red, ...mono }}>
+          <div style={{ fontSize:"13px", color:C.text, marginBottom:"6px", ...sans }}>{q.q}</div>
+          <div style={{ fontSize:"12px", color:answers[i]?.ok?C.green:C.red, ...mono }}>
             {answers[i]?.ok ? "✓ Correct" : `✗ Correct: "${q.options[q.correct]}"`}
           </div>
-          <div style={{ fontSize:"9px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
+          <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
       <ScoreCard score={scoreVal} puzzleType="The Brief" domain={puzzle.domain}
@@ -746,12 +748,12 @@ function GameBrief({ puzzle, streak, onComplete }) {
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
       <div style={{ display:"flex", justifyContent:"space-between" }}>
         <SL>Read the brief</SL>
-        <span style={{ fontSize:"10px", color:C.muted, ...mono }}>{timeLeft}s suggested read time</span>
+        <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{timeLeft}s suggested read time</span>
       </div>
       <div style={{ background:"rgba(255,255,255,0.025)", border:`1px solid ${C.border}`,
         borderRadius:"8px", padding:"20px", maxHeight:"320px", overflowY:"auto" }}>
         {puzzle.brief.split("\n\n").map((p, i) => (
-          <p key={i} style={{ fontSize:"12px", color:C.text, lineHeight:1.7, marginBottom:"12px",
+          <p key={i} style={{ fontSize:"16px", color:C.text, lineHeight:1.7, marginBottom:"14px",
             marginTop:0, ...sans }}>{p}</p>
         ))}
       </div>
@@ -765,7 +767,7 @@ function GameBrief({ puzzle, streak, onComplete }) {
       <SL>Question {qIdx+1} of {puzzle.questions.length}</SL>
       <div style={{ background:C.surface, border:`1px solid ${C.border}`,
         borderRadius:"8px", padding:"16px" }}>
-        <p style={{ fontSize:"13px", color:C.text, margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
+        <p style={{ fontSize:"16px", color:C.text, margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
         {q.options.map((opt, i) => (
@@ -773,7 +775,7 @@ function GameBrief({ puzzle, streak, onComplete }) {
             background: selected === i ? "rgba(196,146,42,0.1)" : C.surface,
             border:`1px solid ${selected === i ? C.gold : C.border}`,
             borderRadius:"6px", padding:"12px 16px", textAlign:"left",
-            cursor:"pointer", fontSize:"12px", color: selected===i ? C.gold : C.text,
+            cursor:"pointer", fontSize:"13px", color: selected===i ? C.gold : C.text,
             transition:"all 0.12s", ...sans,
           }}>
             <span style={{ color:C.muted, marginRight:"10px", ...mono }}>{String.fromCharCode(65+i)}.</span>{opt}
@@ -841,7 +843,7 @@ function GameDarkFiber({ puzzle, streak, onComplete }) {
               borderRadius:"6px", padding:"10px 12px", textAlign:"left",
               cursor: isMatched ? "default" : "pointer",
               color: isMatched ? C.green : isSel ? C.gold : C.text,
-              fontSize:"11px", fontWeight:600, ...mono, transition:"all 0.12s",
+              fontSize:"13px", fontWeight:600, ...mono, transition:"all 0.12s",
             }}>{p.term}</button>
           );
         })}
@@ -859,14 +861,14 @@ function GameDarkFiber({ puzzle, streak, onComplete }) {
               border:`1px solid ${isMatched ? "rgba(74,222,128,0.3)" : isSel ? C.sage : (wrong&&isSel?"rgba(248,113,113,0.4)":C.border)}`,
               borderRadius:"6px", padding:"10px 12px", textAlign:"left",
               cursor: isMatched ? "default" : "pointer",
-              color: isMatched ? C.green : isSel ? C.sage : C.muted,
-              fontSize:"10px", lineHeight:1.5, ...mono, transition:"all 0.12s",
+              color: isMatched ? C.green : isSel ? C.sage : C.text,
+              fontSize:"13px", lineHeight:1.5, ...mono, transition:"all 0.12s",
             }}>{pair.def.length > 80 ? pair.def.slice(0,80)+"…" : pair.def}</button>
           );
         })}
       </div>
       {wrong && (
-        <div style={{ gridColumn:"1/-1", textAlign:"center", fontSize:"10px", color:C.red,
+        <div style={{ gridColumn:"1/-1", textAlign:"center", fontSize:"12px", color:C.red,
           background:"rgba(248,113,113,0.06)", border:"1px solid rgba(248,113,113,0.2)",
           borderRadius:"4px", padding:"6px", ...mono }}>
           ✗ Incorrect match — try again ({mistakes} mistakes)
@@ -919,11 +921,11 @@ function GameFrequency({ puzzle, streak, onComplete }) {
           background: answers[i]?.ok ? "rgba(74,222,128,0.05)" : "rgba(248,113,113,0.05)",
           border:`1px solid ${answers[i]?.ok ? "rgba(74,222,128,0.2)" : "rgba(248,113,113,0.2)"}`,
           borderRadius:"8px", padding:"12px" }}>
-          <div style={{ fontSize:"11px", color:C.text, marginBottom:"4px" }}>{q.q}</div>
-          <div style={{ fontSize:"10px", color:answers[i]?.ok?C.green:C.red, ...mono }}>
+          <div style={{ fontSize:"13px", color:C.text, marginBottom:"4px", ...sans }}>{q.q}</div>
+          <div style={{ fontSize:"12px", color:answers[i]?.ok?C.green:C.red, ...mono }}>
             {answers[i]?.ok ? "✓ Correct" : `✗ Answer: "${q.options[q.correct]}"`}
           </div>
-          <div style={{ fontSize:"9px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
+          <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
       <ScoreCard score={scoreVal} puzzleType="Frequency" domain={puzzle.domain}
@@ -940,7 +942,7 @@ function GameFrequency({ puzzle, streak, onComplete }) {
         <ProgressBar value={qIdx+1} max={puzzle.questions.length} color={C.violet||C.sage} />
       </div>
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:"10px", padding:"20px" }}>
-        <p style={{ fontSize:"14px", color:C.text, margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
+        <p style={{ fontSize:"16px", color:C.text, margin:0, lineHeight:1.6, ...sans }}>{q.q}</p>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
         {q.options.map((opt, i) => {
@@ -954,7 +956,7 @@ function GameFrequency({ puzzle, streak, onComplete }) {
                 (selected===i&&!revealed) ? C.gold : C.border}`,
               borderRadius:"6px", padding:"12px 16px", textAlign:"left",
               cursor: revealed ? "default" : "pointer",
-              fontSize:"12px", color: isCorrect ? C.green : isWrong ? C.red :
+              fontSize:"13px", color: isCorrect ? C.green : isWrong ? C.red :
                 (selected===i&&!revealed) ? C.gold : C.text,
               transition:"all 0.15s", ...sans,
             }}>
@@ -965,8 +967,8 @@ function GameFrequency({ puzzle, streak, onComplete }) {
       </div>
       {revealed && (
         <div>
-          <div style={{ fontSize:"10px", color:C.muted, lineHeight:1.6, ...mono,
-            background:"rgba(255,255,255,0.02)", borderRadius:"6px", padding:"10px",
+          <div style={{ fontSize:"12px", color:C.muted, lineHeight:1.6, ...mono,
+            background:"rgba(255,255,255,0.04)", borderRadius:"6px", padding:"10px",
             marginBottom:"10px" }}>{q.explanation}</div>
           <Btn onClick={next}>
             {qIdx + 1 < puzzle.questions.length ? "Next Question →" : "See Results →"}
@@ -1055,7 +1057,7 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
           autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={20}
           style={{ width:"100%", boxSizing:"border-box", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
             borderRadius:"6px", padding:"10px 14px", color:C.text, fontSize:"12px", ...mono }} />
-        <div style={{ fontSize:"9px", color:C.dim, marginTop:"5px", ...mono }}>
+        <div style={{ fontSize:"11px", color:C.muted, marginTop:"5px", ...mono }}>
           3–20 chars · letters, numbers, underscore · your leaderboard name.
         </div>
       </div>
@@ -1071,19 +1073,19 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
       </div>
       {/* Opt-in newsletter — unchecked by default; the "No newsletter" promise below
           holds unless the player actively ticks this. */}
-      <label style={{ display:"flex", alignItems:"flex-start", gap:"8px", cursor:"pointer", fontSize:"10px", color:C.muted, ...mono }}>
+      <label style={{ display:"flex", alignItems:"flex-start", gap:"8px", cursor:"pointer", fontSize:"11px", color:C.muted, ...mono }}>
         <input type="checkbox" checked={newsletter} onChange={e=>setNewsletter(e.target.checked)}
           style={{ marginTop:"1px", accentColor:C.goldLight }} />
         <span>Email me the Faraday newsletter — weekly data-center intelligence. Optional.</span>
       </label>
-      {error && <div style={{ fontSize:"10px", color:C.red, ...mono }}>{error}</div>}
+      {error && <div style={{ fontSize:"11px", color:C.red, ...mono }}>{error}</div>}
       <div style={{ display:"flex", gap:"10px", alignItems:"center" }}>
         <div style={{ flex:1, height:"1px", background:C.border }}/>
-        <span style={{ fontSize:"9px", color:C.dim, ...mono }}>OR</span>
+        <span style={{ fontSize:"11px", color:C.muted, ...mono }}>OR</span>
         <div style={{ flex:1, height:"1px", background:C.border }}/>
       </div>
       <Btn onClick={onDismiss} variant="ghost" small>Skip — play without tracking</Btn>
-      <div style={{ fontSize:"9px", color:C.dim, lineHeight:1.5, ...mono }}>
+      <div style={{ fontSize:"11px", color:C.muted, lineHeight:1.5, ...mono }}>
         No password. No newsletter. One magic link per session. Your email is only used for game notifications and streak persistence.
       </div>
     </div>
@@ -1119,10 +1121,36 @@ function GameTile({ config, onPlay }) {
       <span style={{ minWidth:0, flex:1 }}>
         <span style={{ display:"block", fontSize:"18px", fontWeight:600, color:C.black, ...serif }}>{config.type}</span>
         <span style={{ display:"block", fontSize:"11.5px", color:"rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
-        <span style={{ display:"block", marginTop:"9px", fontSize:"10px", letterSpacing:"0.08em", color:C.deepAmber, textTransform:"uppercase", ...mono }}>{config.domain}</span>
+        <span style={{ display:"block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.08em", color:C.deepAmber, textTransform:"uppercase", ...mono }}>{config.domain}</span>
       </span>
-      <span style={{ fontSize:"10px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
+      <span style={{ fontSize:"11px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
     </button>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GAME SWITCHER — jump to any other game from inside a puzzle
+// ══════════════════════════════════════════════════════════════════════════════
+// Renders the other six games as their locked homepage neon pictograms (GameIcon).
+// Tapping requests a switch; the parent confirms before discarding in-progress play.
+function GameSwitcher({ current, onSwitch }) {
+  const others = GAME_CONFIGS.filter(c => c.type !== current);
+  return (
+    <div role="group" aria-label="Switch to another game"
+      style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap",
+        marginTop:"14px", paddingTop:"14px", borderTop:`1px solid ${C.border}` }}>
+      <span style={{ fontSize:"11px", color:C.muted, letterSpacing:"0.08em", textTransform:"uppercase", ...mono }}>
+        Switch
+      </span>
+      {others.map(c => (
+        <button key={c.type} onClick={() => onSwitch(c.type)} title={c.type}
+          aria-label={`Switch to ${c.type}`}
+          style={{ background:"transparent", border:"none", padding:0, lineHeight:0,
+            cursor:"pointer", borderRadius:"10px" }}>
+          <GameIcon game={c.type} size={36} />
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1152,11 +1180,11 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
         <span style={{ ...mono, fontSize:"11px", letterSpacing:"0.14em", color:C.deepAmber, textTransform:"uppercase" }}>
           Team Leaderboard
         </span>
-        <span style={{ ...mono, fontSize:"9px", color:"rgba(20,18,16,0.5)" }}>Ranked by MW earned this season</span>
+        <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>Ranked by MW earned this season</span>
       </div>
 
       {rows.length === 0 ? (
-        <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)", marginTop:"14px" }}>
+        <div style={{ ...mono, fontSize:"12px", color:"rgba(20,18,16,0.62)", marginTop:"14px" }}>
           No teams yet — be the first to start one.
         </div>
       ) : (
@@ -1171,7 +1199,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
                 <span style={{ ...mono, fontSize:"12px", color:C.deepAmber, width:"26px" }}>#{t.rank}</span>
                 <span style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.black, flex:1, minWidth:0,
                   overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</span>
-                <span style={{ ...mono, fontSize:"10px", color:"rgba(20,18,16,0.55)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
+                <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
                 <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw} MW</span>
               </div>
             );
@@ -1181,7 +1209,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
 
       <div style={{ marginTop:"16px", borderTop:`1px solid ${C.gray}`, paddingTop:"14px" }}>
         {!signedIn ? (
-          <div style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.55)" }}>
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(20,18,16,0.62)" }}>
             Sign in to start or join a team and put your MW on the board.
           </div>
         ) : myTeam ? (
@@ -1217,7 +1245,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
             <button onClick={() => { setMode(null); setCode(""); }} disabled={busy} style={ghostBtn}>Cancel</button>
           </div>
         )}
-        {error && <div style={{ ...mono, fontSize:"10px", color:C.red, marginTop:"8px" }}>{error}</div>}
+        {error && <div style={{ ...mono, fontSize:"12px", color:C.red, marginTop:"8px" }}>{error}</div>}
       </div>
     </section>
   );
@@ -1230,6 +1258,9 @@ export default function DailyChallenge() {
   const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | result
   const [activeGame, setActiveGame] = useState(null);
   const [email,      setEmail]      = useState(null);     // registered email
+  const [handle,     setHandle]     = useState(null);     // canonical leaderboard handle (mirrored from /auth)
+  const [optedOut,   setOptedOut]   = useState(false);    // soft opt-out mirror ("leave the game")
+  const [pendingSwitch, setPendingSwitch] = useState(null); // game-switcher confirm (discard in-progress puzzle)
   // Session counters — honest defaults for an anonymous session (0). These
   // increment as the player completes games in-session. Cross-session streak/MW
   // persistence belongs to the subscriber session (Supabase) and is wired
@@ -1368,6 +1399,26 @@ export default function DailyChallenge() {
     document.head.appendChild(style);
   }, []);
 
+  // Hydrate the canonical handle + soft opt-out mirror from local storage. Both
+  // are client-side mirrors (no backend round-trip) — see lib/supabase.ts.
+  useEffect(() => {
+    try {
+      const h = localStorage.getItem(HANDLE_STORAGE_KEY);
+      if (h) setHandle(h);
+      setOptedOut(localStorage.getItem(OPTED_OUT_STORAGE_KEY) === "1");
+    } catch { /* storage disabled */ }
+  }, []);
+
+  // Game switcher: switching mid-puzzle discards in-progress state, so confirm
+  // first. Entering any game screen counts as in-progress.
+  function requestSwitch(type) { setPendingSwitch(type); }
+  function confirmSwitch() {
+    if (!pendingSwitch) return;
+    const t = pendingSwitch;
+    setPendingSwitch(null);
+    startGame(t);
+  }
+
   function startGame(gameType) {
     setActiveGame(gameType);
     setScreen("game");
@@ -1388,6 +1439,9 @@ export default function DailyChallenge() {
     const playedGame = activeGame;
     const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
     setLastScore(score);
+    // Soft opt-out ("left the game"): no streak/MW accrual, no server persistence.
+    // Full leaderboard exclusion is the deferred follow-on (needs ranking-RPC deploy).
+    if (optedOut) { setScreen("lobby"); return; }
     setGamesPlayed(g => g+1);
     setMwBalance(b => b + mwEarned);
     setStreak(s => s+1);
@@ -1443,6 +1497,10 @@ export default function DailyChallenge() {
     "Frequency":   GameFrequency,
   };
 
+  // Display handle: canonical handle if known, else the email local-part as a
+  // graceful fallback (no fabricated identity — Precision brand value).
+  const displayHandle = handle || (email ? email.split("@")[0] : null);
+
   return (
     <div style={{ minHeight:"100vh", background: screen === "lobby" ? C.cream : C.forest, color:C.black, ...sans }}>
       <GameIconDefs />
@@ -1455,17 +1513,24 @@ export default function DailyChallenge() {
           <BrandMark size={20} framed />
           <div style={{ lineHeight:1.25 }}>
             <b style={{ ...serif, fontWeight:700, fontSize:"16px", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
-            <span style={{ display:"block", ...mono, fontSize:"9.5px", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
+            <span style={{ display:"block", ...mono, fontSize:"11px", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
           {/* Live indicator — status, not a metric */}
           <div className="fdc-live" style={{ display:"flex", alignItems:"center", gap:"6px", ...mono,
-            fontSize:"10px", letterSpacing:"0.14em", color:C.goldLight }}>
+            fontSize:"11px", letterSpacing:"0.14em", color:C.goldLight }}>
             <span style={{ width:"6px", height:"6px", borderRadius:"50%",
               background:C.goldLight, animation:"pulse 2s ease infinite", display:"inline-block" }}/>
             LIVE
           </div>
           {/* Chips — mono treatment. Streak/MW are honest session counters. */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"8px", alignItems:"center" }}>
+            {displayHandle && (
+              <span className="fdc-mw" title="Your leaderboard handle" style={{ ...mono, fontSize:"11px", color:C.goldLight,
+                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
+                whiteSpace:"nowrap", maxWidth:"150px", overflow:"hidden", textOverflow:"ellipsis" }}>
+                @{displayHandle}
+              </span>
+            )}
             <span style={{ ...mono, fontSize:"11px", color:C.cream, border:"1px solid rgba(248,245,240,.22)",
               borderRadius:"5px", padding:"6px 10px", whiteSpace:"nowrap" }}>
               Streak <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
@@ -1486,6 +1551,14 @@ export default function DailyChallenge() {
                 whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
               Academy →
             </a>
+            {email && (
+              <a href="/account"
+                style={{ ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
+                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
+                  whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
+                Account
+              </a>
+            )}
             {!email && screen === "lobby" && (
               <button onClick={() => { setGateReason("default"); setScreen("gate"); }} style={{
                 ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
@@ -1539,9 +1612,11 @@ export default function DailyChallenge() {
                 engagement stats): play streak, MW balance, and today's
                 completion count come from get-subscriber-state / complete-puzzle. */}
             {email && (
-              <div style={{ marginTop:"18px", ...mono, fontSize:"11px", color:C.forest }}>
-                Signed in as {email} · {streak}-day streak · {mwBalance} MW banked
-                · {Object.keys(todayCompletions).length}/7 puzzles today
+              <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
+                {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
+                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · {mwBalance} MW banked
+                · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
+                <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
             )}
 
@@ -1549,7 +1624,7 @@ export default function DailyChallenge() {
             <TeamLeaderboard
               leaderboard={leaderboard}
               myTeam={myTeam}
-              signedIn={!!email}
+              signedIn={!!email && !optedOut}
               busy={teamBusy}
               error={teamError}
               onCreate={(name) => teamAction("create", { name })}
@@ -1561,7 +1636,7 @@ export default function DailyChallenge() {
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
               padding:"26px 28px", color:C.cream, margin:"28px 0 56px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", gap:"10px",
-                flexWrap:"wrap", ...mono, fontSize:"10.5px", letterSpacing:"0.16em" }}>
+                flexWrap:"wrap", ...mono, fontSize:"11px", letterSpacing:"0.16em" }}>
                 <span style={{ color:C.cream }}>FARADAY TIP OF THE DAY</span>
                 <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
                   borderRadius:"4px", padding:"2px 9px" }}>
@@ -1594,15 +1669,45 @@ export default function DailyChallenge() {
                     <span style={{ fontSize:"16px", fontWeight:700, color:C.white, ...serif }}>{activeGame}</span>
                   </div>
                   <div style={{ display:"flex", gap:"8px" }}>
-                    <span style={{ fontSize:"9px", color:C.muted, background:"rgba(255,255,255,0.04)",
+                    <span style={{ fontSize:"11px", color:C.muted, background:"rgba(255,255,255,0.04)",
                       border:`1px solid ${C.border}`, padding:"3px 8px", borderRadius:"3px", ...mono }}>
                       {puzzle.domain}
                     </span>
-                    <span style={{ fontSize:"9px", color:C.muted, ...mono }}>{config.time}</span>
+                    <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>
                 <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
+
+                {/* Identity — the handle shows on every puzzle (default location),
+                    with a graceful fallback, next to the account/settings link. */}
+                <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"10px", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:"11px", ...mono, color: displayHandle ? C.goldLight : C.muted }}>
+                    {displayHandle ? `@${displayHandle}` : "Playing as guest"}
+                  </span>
+                  {email && (
+                    <a href="/account" style={{ fontSize:"11px", ...mono, color:C.sage, textDecoration:"none",
+                      borderBottom:"1px solid rgba(140,166,138,0.4)" }}>Account &amp; settings ›</a>
+                  )}
+                </div>
+
+                {/* Game switcher — jump to any of the other six games */}
+                <GameSwitcher current={activeGame} onSwitch={requestSwitch} />
               </div>
+
+              {/* In-progress switch confirm — discards the current puzzle */}
+              {pendingSwitch && (
+                <div style={{ marginBottom:"16px", background:"rgba(245,158,11,0.08)",
+                  border:"1px solid rgba(245,158,11,0.35)", borderRadius:"8px", padding:"12px 14px",
+                  display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:"12px", color:C.amber, ...mono, flex:"1 1 200px" }}>
+                    Switch to {pendingSwitch}? Your progress on {activeGame} will be lost.
+                  </span>
+                  <div style={{ display:"flex", gap:"8px" }}>
+                    <Btn small variant="ghost" onClick={() => setPendingSwitch(null)}>Stay</Btn>
+                    <Btn small onClick={confirmSwitch}>Switch →</Btn>
+                  </div>
+                </div>
+              )}
               <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} />
             </div>
           );

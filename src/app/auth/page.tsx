@@ -7,6 +7,7 @@ import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
   EMAIL_STORAGE_KEY,
+  HANDLE_STORAGE_KEY,
 } from '@/lib/supabase';
 
 type Status = 'verifying' | 'success' | 'error';
@@ -44,6 +45,11 @@ function AuthHandler() {
         try {
           localStorage.setItem(SESSION_STORAGE_KEY, data.sessionToken);
           localStorage.setItem(EMAIL_STORAGE_KEY, data.subscriber.email);
+          // Persist the canonical handle so every puzzle can show it without a
+          // backend round-trip (get-subscriber-state doesn't carry it).
+          if (data.subscriber.handle) {
+            localStorage.setItem(HANDLE_STORAGE_KEY, data.subscriber.handle);
+          }
         } catch {
           // If storage is disabled (private mode), still count the verify as success;
           // the user will just need to request a new link on their next visit.

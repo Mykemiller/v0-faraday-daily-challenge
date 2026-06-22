@@ -67,3 +67,39 @@ the lexicon route; ensure its scope includes write, not just read).
   `Status` field `fld7qyUy5UP7EoUVu` (`Approved`=`sellYe934cbLkfCDw`).
 - 7 puzzle types: Rackl, Signal Drop, The Stack, Circuit, The Brief, Dark Fiber, Frequency.
 - June 14–19 sets were skipped during the outage and stay `Published` (never shown) — accepted; do not backfill.
+
+## Daily Challenge cosmetic buff (readability · handle · account · switcher)
+
+- **`muted` token** is **`#9A938C`** (was `#6B6560`, failed AA at 3.3:1 — now
+  6.3:1 on `bg #0D110E`). `dim #2A2520` is **decorative only** (dividers, dots,
+  drag handles, placeholders — never readable text). Type-scale floor across the
+  games + homepage: nothing readable below **11px**; primary prompts ≥16px;
+  options/tiles/terms ≥13px; explanations ≥12px. Two token systems: the in-game
+  JS object `C` in `src/components/DailyChallenge.jsx`, and the homepage Tailwind
+  `@theme` tokens in `src/app/globals.css`.
+- **Contrast gate:** `npm run test:contrast` (`scripts/contrast-check.mjs`)
+  asserts every readable pairing clears WCAG AA. Run after touching colors/sizes.
+- **Handle:** canonical `dc_subscribers.handle` (already existed) is mirrored
+  client-side at `/auth` (verify-magic-link returns it) under `HANDLE_STORAGE_KEY`
+  and rendered on every puzzle (in-game header) + lobby, with an email-local-part
+  fallback. `get-subscriber-state` does NOT carry it (kept no-deploy).
+- **Account / settings:** route `/account` (`src/app/account/page.tsx`). Team &
+  company are the Leaderboard V2 typed-group hierarchy (`teams.group_type` +
+  `parent_id`); editing reuses the existing `team-action` edge function (no new
+  function). "Leave the game" = **soft opt-out** (`dc_subscribers.active=false`,
+  no hard delete) via the Next route `src/app/api/account/route.ts`.
+- **`active` column:** `supabase/migrations/20260622160000_add_subscriber_active.sql`
+  (additive, reversible — apply at promotion). Opt-out is enforced **client-side**
+  this pass (stops streak accrual, hides from the in-app team board via
+  `OPTED_OUT_STORAGE_KEY`). Full exclusion from the locked Leaderboard V2 ranking
+  RPCs is a **deferred follow-on** (needs a ranking-RPC deploy — out of the
+  no-deploy boundary).
+- **Required env (set in Vercel before promotion):** `SUPABASE_SERVICE_ROLE_KEY`
+  (server-only) so `/api/account` can read/write `dc_subscribers.active`; without
+  it the route returns 500 "Account service not configured".
+- **Game switcher:** `GameSwitcher` in `DailyChallenge.jsx` reuses the locked neon
+  icons from `src/components/GameIcon.jsx` (ported from
+  `design-reference/faraday-daily-challenge-lobby.html`). Switching mid-puzzle
+  confirms before discarding. Do not recreate the icons.
+- **Untouched:** scoring (`calcScore`, streak/MW), puzzle content, locked brand
+  palette + type families. No Vercel/Supabase prod deploy in this change.
