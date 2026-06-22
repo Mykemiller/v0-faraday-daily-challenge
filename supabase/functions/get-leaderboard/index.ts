@@ -65,11 +65,16 @@ Deno.serve(async (req: Request) => {
 
     // Resolve the caller (optional — reads are not gated).
     let myId: string | null = null;
+    let myEmail: string | null = null;
     if (sessionToken) {
       const { data: session } = await sb
         .from("dc_sessions").select("subscriber_id, expires_at")
         .eq("token", sessionToken).maybeSingle();
-      if (session && new Date(session.expires_at) >= new Date()) myId = session.subscriber_id;
+      if (session && new Date(session.expires_at) >= new Date()) {
+        myId = session.subscriber_id;
+        const { data: sub } = await sb.from("dc_subscribers").select("email").eq("id", myId).maybeSingle();
+        myEmail = (sub?.email as string) ?? null;
+      }
     }
 
     const today = centralDate(new Date());
@@ -187,6 +192,16 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // The caller's groups, for the scope selector (My Team(s) / My Company).
+    let myGroups: Array<Record<string, unknown>> = [];
+    if (myEmail) {
+      const { data: groups } = await sb.rpc("team_get_my_teams", { p_email: myEmail });
+      myGroups = (groups ?? []).map((g: Record<string, unknown>) => ({
+        code: g.code, name: g.name, groupType: g.group_type,
+        parentCode: g.parent_code, memberCount: g.members,
+      }));
+    }
+
     return json({
       scope: "global",
       period,
@@ -196,6 +211,7 @@ Deno.serve(async (req: Request) => {
       leaderboard,
       totalPlayers,
       count: leaderboard.length,
+      myGroups,
     });
   } catch (e) {
     console.error("Unhandled error:", e);
