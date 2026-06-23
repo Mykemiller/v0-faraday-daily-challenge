@@ -1,7 +1,6 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs } from "@/components/GameIcon";
-import AskFaraday from "@/components/AskFaraday";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -18,9 +17,7 @@ const DC_GAMES = [
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
-// Live Agent is the primary path ("try one thing"); the rest are subordinated.
 const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean }[] = [
-  { name: "Live Agent", href: "/live-agent", blurb: "Ask Faraday anything about the AI data center economy — conversational intelligence, live.", tag: "Start here", primary: true },
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
@@ -72,25 +69,21 @@ export default function Home() {
         <p className="mt-4 font-serif text-[clamp(17px,2.6vw,22px)] italic leading-snug text-forest">
           The colleague you’ve always needed.
         </p>
-        {/* One primary action */}
-        <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
-          <a
-            href="#ask"
-            className="rounded-md bg-gold px-5 py-3 font-mono text-[13px] font-medium uppercase tracking-[0.1em] text-forest transition-colors hover:bg-gold-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-forest"
-          >
-            Ask Faraday a question →
-          </a>
-          <Link href="/daily-challenge" className="font-mono text-[12px] uppercase tracking-[0.1em] text-amber-dark hover:text-gold">
-            or sharpen up free, every day →
-          </Link>
-        </div>
-        {/* How Faraday works — one-line scaffold that lands the vocabulary */}
-        <p className="mt-8 max-w-2xl font-sans text-[15px] leading-relaxed text-near-black/70">
-          How it works: <strong className="font-medium text-near-black">free daily games</strong> ·{" "}
-          <strong className="font-medium text-near-black">token-metered intelligence surfaces</strong> ·{" "}
-          <strong className="font-medium text-near-black">the Academy</strong>. The Daily Challenge is free,
-          every day; every intelligence surface runs on tokens.
-        </p>
+        {/* How Faraday works — three pillars as scannable bullets */}
+        <ul className="mt-8 max-w-2xl space-y-2.5 font-sans text-[15px] leading-relaxed text-near-black/75">
+          <li className="flex gap-2.5">
+            <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+            <span><strong className="font-medium text-near-black">The Daily Challenge</strong> — compete with peers, free every day</span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+            <span><strong className="font-medium text-near-black">Token-metered, Curated Intelligence Services</strong> — fresh every day</span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+            <span>Turn curiosity into conviction at your own pace with <strong className="font-medium text-near-black">the Academy</strong></span>
+          </li>
+        </ul>
       </section>
 
       {/* ── Storefronts ──────────────────────────────────────────────────── */}
@@ -101,7 +94,7 @@ export default function Home() {
         <div className="double-rule" aria-hidden />
         <p className="mt-4 mb-6 max-w-2xl font-sans text-[15px] leading-relaxed text-near-black/70">
           Faraday reads the market every day and tells you what it means — specific, sourced, ahead.
-          Start with the Live Agent; open the rest when you need depth.
+          Open each when you need depth.
         </p>
 
         {/* Storefront tiles — Live Agent is the primary path, the rest subordinated */}
@@ -156,7 +149,7 @@ export default function Home() {
       <section className="mx-auto mt-8 max-w-5xl px-5">
         <div className="rounded-xl bg-forest px-6 py-10 text-center">
           <p className="mx-auto max-w-3xl font-display text-[clamp(19px,3vw,26px)] font-bold italic leading-snug text-warm-white">
-            The AI-infrastructure buildout, mapped Theater to Thread — tracked Signal by Signal.
+            The AI-Infrastructure buildout researched and mapped Theater to Thread.
           </p>
           <div className="mx-auto double-rule is-invert is-wide" aria-hidden />
           <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-gold-light">
@@ -220,11 +213,6 @@ export default function Home() {
             ))}
           </ul>
         </div>
-      </section>
-
-      {/* ── Ask Faraday — the primary "try one thing" ────────────────────── */}
-      <section id="ask" className="mx-auto max-w-5xl px-5 pb-16">
-        <AskFaraday />
       </section>
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}
