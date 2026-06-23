@@ -55,10 +55,29 @@ Both "front doors" live in **one repo** — the engine-as-site. The prompt assum
 
 **Before:** the home tile `href` and the `/jurisdiction-watch` route both pointed to **`https://jurisdiction-watch.com`** (a hard 301 off-domain) — a brand/session leak mid-funnel.
 
-**After (this pass):**
+**Decision (locked by Myke): subdomain.** JW runs under the brand at
+`jurisdiction-watch.faraday-intelligence.ai`, keeping its own stack/Supabase/Stripe/
+token-ledger/invariants intact (no risky in-engine port; JW is Next 14, the engine is newer).
+
+**Engine side (done this pass):**
 - Home tile → internal `/jurisdiction-watch`.
-- `/jurisdiction-watch/page.tsx` → in-brand `StubPage` (status "In build"), no silent off-domain redirect. The live standalone app is offered as a clearly-labelled **affiliated surface** CTA (new tab, `rel="noopener"`), so deep value isn't lost but the main session stays on `faraday-intelligence.ai`.
-- **Follow-on (not this pass):** full under-brand integration — mount the real JW app at `jurisdiction-watch.faraday-intelligence.ai` (subdomain) or in-app. The real app lives in `Faraday/jurisdiction-watch-repo` (its own repo, FAR-27, history through Phase 5).
+- `/jurisdiction-watch/page.tsx` → in-brand `StubPage` landing whose CTA opens
+  `https://jurisdiction-watch.faraday-intelligence.ai` ("Open the live map"). **No off-domain
+  `jurisdiction-watch.com` leak anywhere** (verified: 0 occurrences in the built output).
+
+**Infra side (needs Myke — Vercel/DNS, secrets already set on the JW project):** the JW Vercel
+project **already exists and has a READY production deployment** — `faraday-jurisdiction-watch`
+(`prj_x0p5eLBgAiAytctUQErzXc8Eqv3Q`, team `team_JS3rgFwySt8w8yds7fAh1KeM`). It currently serves
+`jurisdiction-watch.com`. Bringing it under the brand is a **domain attach + DNS only** — no redeploy:
+
+1. Vercel → project **faraday-jurisdiction-watch** → Settings → Domains → **Add**
+   `jurisdiction-watch.faraday-intelligence.ai`.
+2. DNS for the `faraday-intelligence.ai` zone:
+   - If the zone is on **Vercel DNS** → the record is created automatically on add.
+   - If external registrar → add **CNAME `jurisdiction-watch` → `cname.vercel-dns.com`**.
+3. (Optional) keep `jurisdiction-watch.com` attached as a secondary domain, or 301 it to the
+   subdomain so the brand becomes canonical.
+4. Verify `https://jurisdiction-watch.faraday-intelligence.ai` serves, then deploy this engine branch.
 
 Signal Room already renders an in-brand `StubPage` (no external link) — already "under the brand."
 
@@ -92,11 +111,30 @@ Signal Room already renders an in-brand `StubPage` (no external link) — alread
 
 ## 8. Conflicts where the live product / project invariants override the prompt
 
-1. **Token value-unit numbers are blocked.** The prompt wants "a typical briefing ≈ N tokens / $49 ≈ ~X questions." Project invariant **FAR-46**: per-product token meters are DRAFT — **do not publish meter values**. This pass adds a **qualitative** value frame ("spend a token only when you ask for depth; tokens never expire") and does **not** publish a numeric meter. Revisit when FAR-46 ships.
+1. **Token model (resolved by Myke).** Every product is token-metered, on **one balance**,
+   with three published bundles: **500/$49 · 1,000/$89 · 10,000/$799** (already on the page).
+   Per-product **meter values** (how many tokens a given briefing costs) remain **unpublished**
+   per FAR-46 — the copy frames a token as "a unit of depth" without naming per-surface costs.
 2. **Body/mono font families** stay IBM Plex / Bricolage (live truth), not Inter/JetBrains (prompt). Only the licensed **display** seam is added.
 3. **Prompt-specific soundbites** ("While others read the news…", "Everything about data centers. Nothing else.") are not in the live copy; this pass distributes the **existing** live soundbites rather than inserting new ones.
 4. **IDF vocabulary:** count-agnostic per FAR-46 / Brand Bible — no Theater/Sector/Thread/Domain counts published; no internal D-codes exposed; stays on "Faraday" (no "Mach Eigen"); lobby industry signal stays unsigned.
 
 ## 9. Acceptance-criteria status (end of this pass)
 
-See the closing session summary. Done: findings doc, token drift removal, font seam, JW under-brand, Signal Room confirmed in-brand, home IA streamline + footer, locked tile order, domain-chip fix, "From Faraday Intelligence" band, teaser seam (off). Deferred/flagged: full JW subdomain mount, numeric token value-unit (FAR-46), the deep five-band lobby geometry rebuild + share-image, Inter/JetBrains swap.
+**Done:** findings doc; token drift removal (dead `tailwind.config.ts`); `--font-display`
+Freight seam + `/public/fonts` drop-point; JW brought under the brand (no `.com` leak) +
+subdomain decision + deploy runbook (§5); Signal Room confirmed in-brand; home IA streamline
+(one-idea hero + one CTA, distributed soundbites, primary surface, coverage/IDF strip,
+unfair-advantage footer); token-metered copy + bundles; locked tile order (home + lobby);
+domain-chip bug fixed; "From Faraday Intelligence" cross-sell band; teaser seam (off behind flag);
+**full viral loop** — real share (generated OG score card → Web Share/clipboard/download across all
+7 games) + one-tap team invite. Domains verified live: `faraday-intelligence.ai` → home,
+`faradaydailychallenge.com` (+www) → 301 → `/daily-challenge` (lobby).
+
+**Pending Myke (infra, secrets/DNS):** attach `jurisdiction-watch.faraday-intelligence.ai` to the
+existing `faraday-jurisdiction-watch` Vercel project (domain + DNS only — runbook §5); then deploy
+this `feat/brand-unification` branch.
+
+**Deferred/flagged:** deep five-band lobby *geometry* rebuild (this pass did targeted lobby fixes,
+not a full re-band); Inter/JetBrains body/mono swap (live product is source of truth — only the
+licensed display seam added); per-product numeric token meters (FAR-46).
