@@ -68,6 +68,64 @@ the lexicon route; ensure its scope includes write, not just read).
 - 7 puzzle types: Rackl, Signal Drop, The Stack, Circuit, The Brief, Dark Fiber, Frequency.
 - June 14–19 sets were skipped during the outage and stay `Published` (never shown) — accepted; do not backfill.
 
+## Faraday crawl pipeline (ingest path invariants, set 2026-06-23)
+
+### Parser hardening — `faraday-crawl` edge function
+Root cause of 2026-06-23 crash: single Anthropic call for all automations hit
+`MAX_TOKENS=8000` and truncated JSON at position 26257, zeroing the whole run.
+
+**Pattern (apply to any LLM gather step):**
+1. **Batch-chunk the input** so no single call can truncate at `max_tokens`.
+   `BATCH_SIZE=3` automations per call; concurrent via `Promise.allSettled`.
+2. **Strip fences before parse** — `extractAndParse()` removes ` ```json ` fences
+   and trims whitespace before `JSON.parse`.
+3. **Salvage on parse failure** — scan truncated output for complete `{...}` objects
+   that contain `auto_id`, `source_url`, and `title`. Log raw excerpt to health log.
+4. **Per-automation try/catch isolation** — one failing batch logs `success=false`
+   for its automations only; the rest of the fleet still writes artifacts.
+
+`extractAndParse` is exported for unit tests. Tests: `faraday-crawl.test.ts`.
+
+### Email ingestion — `ingest-email` edge function
+Payload contract (POST body):
+```
+{ "secret": "<ingest_config.secret>",  // body field, not Authorization header
+  "from":   "<original sender email>",
+  "subject": "...", "text": "...", "html": "...",
+  "received_at": "<ISO-8601>",
+  "message_id": "<gmail msg id>",       // used as content_hash basis + source_url
+  "urls": ["https://..."] }
+```
+Auth: `secret` compared constant-time against `ingest_config` (id=1).
+Allowlist: `from` (after stripping display name, lowercasing) must equal
+`mykemiller@gmail.com`. Rejected senders → 403; bad secret → 401; no artifact written.
+
+Dedup: `content_hash = sha256(message_id)` if present, else `sha256(subject+"\n"+text)`.
+`source_url = "gmail:<message_id>"`. Idempotent — replaying the same message_id
+does not double-insert (`ON CONFLICT content_hash DO NOTHING`).
+
+Governance pending (DO NOT deploy until approved by Myke):
+- `source_type`: using `"web_news"` placeholder. Proposed migration:
+  `ALTER TYPE source_type_enum ADD VALUE 'email';` → then change constant to `"email"`.
+- `auto_id`: using `"AUTO-TBD"` placeholder. Proposed: **AUTO-049** (next free slot).
+  Must be registered in Airtable Automation Registry (appxfti7VuoHYUeu6).
+  `crawler_id` is stable now: `"ingest-email_v1.0"`.
+
+Tests: `ingest-email.test.ts` (unit tests for `safeEqual`, `normalizeEmail`, `sha256Hex`,
+allowlist logic).
+
+### Automation Registry (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`)
+As of 2026-06-23: 46 active automations. `faraday-crawl` edge function covers 27
+web-search-eligible automations (AUTO-001, 011–014, 016–017, 023–024, 027–034,
+036–038, 040–041, 043–047). MCP-dependent automations (LinkedIn AUTO-002/015,
+CB Insights AUTO-019, Morningstar AUTO-020, DC Hub AUTO-022, SEC EDGAR AUTO-042)
+still require the full desktop-agent run.
+Locked ranges: AUTO-027–032 (Intelligence Crawl), AUTO-121–127 (Daily Challenge),
+AUTO-128 (reserved: rotation/JPS). Do not reassign these IDs.
+AUTO-040 in the registry = "arXiv Pre-Publication Feed" (academic). The orchestrator
+wrapper that previously logged as AUTO-040 on failure has been removed; failures
+now log per-automation with their correct IDs.
+
 ## Daily Challenge cosmetic buff (readability · handle · account · switcher)
 
 - **`muted` token** is **`#9A938C`** (was `#6B6560`, failed AA at 3.3:1 — now
