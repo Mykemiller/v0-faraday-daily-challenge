@@ -129,10 +129,15 @@ export default function Home() {
           ))}
         </ul>
 
-        {/* Faraday Academy — full-width panel; separately priced */}
-        <Link
+        {/* Faraday Academy — full-width panel; separately priced. Links straight
+            to the live dynamic Academy catalog (same target as the Daily
+            Challenge lobby tile) rather than the /academy redirect hop, so the
+            panel can never surface a stale/cached stub. */}
+        <a
           id="academy"
-          href="/academy"
+          href="https://faraday-academy.vercel.app/academy"
+          target="_blank"
+          rel="noopener noreferrer"
           className="group mt-3 block rounded-xl border border-gold/40 bg-forest p-6 transition-colors hover:border-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -144,7 +149,7 @@ export default function Home() {
             ecosystem participants with the structured knowledge to understand, and act on, the forces reshaping the
             global AI data center economy.
           </p>
-        </Link>
+        </a>
       </section>
 
       {/* ── Coverage / IDF strip ─────────────────────────────────────────── */}
