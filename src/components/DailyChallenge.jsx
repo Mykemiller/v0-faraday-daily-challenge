@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs, GAME_NEON } from "@/components/GameIcon";
+import { gameIconSvgString } from "@/components/gameIconSvg";
 import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
@@ -233,36 +234,59 @@ const DC_URL = `${SITE_URL}/daily-challenge`;
 // Draw a branded score card to a PNG blob (OG 1200×630). Canvas falls back to
 // system fonts (the brand webfonts aren't guaranteed in a canvas context) but
 // the palette stays on-brand. Returns null if canvas/toBlob is unavailable.
-function buildScoreCardBlob({ score, puzzleType, streak, mwEarned, handle }) {
+// Load an SVG-string into an <Image> for canvas drawing. Resolves null on any
+// failure so a missing icon never blocks the card. Self-contained data URL ⇒
+// the canvas stays untainted and toBlob keeps working.
+function loadSvgImage(svg) {
   return new Promise((resolve) => {
-    try {
-      const W = 1200, H = 630;
-      const cv = document.createElement("canvas");
-      cv.width = W; cv.height = H;
-      const ctx = cv.getContext("2d");
-      if (!ctx) return resolve(null);
-      ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "#1C3424"; ctx.fillRect(0, 0, W, H);                 // forest field
-      ctx.fillStyle = "#C4922A"; ctx.fillRect(0, 0, W, 8); ctx.fillRect(0, H - 8, W, 8); // gold rules
-      ctx.fillStyle = "#DAB050"; ctx.font = "500 26px 'Courier New', monospace";
-      ctx.fillText("FARADAY · DAILY CHALLENGE", 80, 112);
-      ctx.fillStyle = "#F8F5F0"; ctx.font = "700 66px Georgia, 'Times New Roman', serif";
-      ctx.fillText(puzzleType, 80, 200);
-      ctx.fillStyle = "#C4922A"; ctx.font = "800 210px Georgia, serif";
-      ctx.fillText(String(score), 74, 440);
-      ctx.fillStyle = "#8CA68A"; ctx.font = "500 30px 'Courier New', monospace";
-      ctx.fillText("POINTS", 86, 486);
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#F8F5F0"; ctx.font = "700 54px Georgia, serif";
-      ctx.fillText(`${streak}-day streak`, W - 80, 360);
-      ctx.fillStyle = "#4ADE80"; ctx.font = "700 44px Georgia, serif";
-      ctx.fillText(`+${mwEarned} MW`, W - 80, 424);
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#EEE6DA"; ctx.font = "400 27px 'Courier New', monospace";
-      ctx.fillText(`${handle ? `@${handle} · ` : ""}play free · faraday-intelligence.ai/daily-challenge`, 80, 562);
-      cv.toBlob((b) => resolve(b), "image/png");
-    } catch { resolve(null); }
+    if (!svg || typeof Image === "undefined") return resolve(null);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   });
+}
+
+async function buildScoreCardBlob({ score, puzzleType, puzzleName, streak, mwEarned, handle }) {
+  try {
+    const W = 1200, H = 630;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return null;
+    const neon = GAME_NEON[puzzleType]?.neon || "#DAB050";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#1C3424"; ctx.fillRect(0, 0, W, H);                 // forest field
+    ctx.fillStyle = "#C4922A"; ctx.fillRect(0, 0, W, 8); ctx.fillRect(0, H - 8, W, 8); // gold rules
+    // The game's locked neon pictogram, top-right.
+    const ICON = 180;
+    const iconImg = await loadSvgImage(gameIconSvgString(puzzleType, ICON));
+    if (iconImg) ctx.drawImage(iconImg, W - 80 - ICON, 64, ICON, ICON);
+    ctx.fillStyle = "#DAB050"; ctx.font = "500 26px 'Courier New', monospace";
+    ctx.fillText("FARADAY · DAILY CHALLENGE", 80, 112);
+    // Puzzle name in the game's neon, auto-shrunk to clear the icon.
+    const name = puzzleName || puzzleType;
+    const maxNameW = W - 80 - ICON - 120;
+    let fs = 60;
+    ctx.font = `700 ${fs}px Georgia, serif`;
+    while (ctx.measureText(name).width > maxNameW && fs > 30) { fs -= 2; ctx.font = `700 ${fs}px Georgia, serif`; }
+    ctx.fillStyle = neon; ctx.fillText(name, 80, 196);
+    ctx.fillStyle = "#8CA68A"; ctx.font = "500 24px 'Courier New', monospace";
+    ctx.fillText(puzzleType.toUpperCase(), 80, 234);
+    ctx.fillStyle = "#C4922A"; ctx.font = "800 200px Georgia, serif";
+    ctx.fillText(String(score), 74, 462);
+    ctx.fillStyle = "#8CA68A"; ctx.font = "500 30px 'Courier New', monospace";
+    ctx.fillText("POINTS", 86, 506);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#F8F5F0"; ctx.font = "700 50px Georgia, serif";
+    ctx.fillText(`${streak}-day streak`, W - 80, 392);
+    ctx.fillStyle = "#4ADE80"; ctx.font = "700 42px Georgia, serif";
+    ctx.fillText(`+${mwEarned} MW`, W - 80, 448);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#EEE6DA"; ctx.font = "400 27px 'Courier New', monospace";
+    ctx.fillText(`${handle ? `@${handle} · ` : ""}play free · faraday-intelligence.ai/daily-challenge`, 80, 566);
+    return await new Promise((resolve) => cv.toBlob((b) => resolve(b), "image/png"));
+  } catch { return null; }
 }
 
 // Device share cascade: Web Share w/ image → Web Share text → clipboard → download.
@@ -294,16 +318,19 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
-function ScoreCard({ score, puzzleType, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
+function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   const [shareLabel, setShareLabel] = useState("↑ Share Result");
   async function handleShare() {
     setShareLabel("…");
     let handle = null;
     try { handle = localStorage.getItem(HANDLE_STORAGE_KEY); } catch { /* storage disabled */ }
-    const blob = await buildScoreCardBlob({ score, puzzleType, streak, mwEarned, handle });
-    const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}`;
-    const text = `I scored ${score} on ${puzzleType} — Faraday Daily Challenge${streak ? ` (${streak}-day streak)` : ""}.`;
+    const name = puzzleName || puzzleType;
+    const blob = await buildScoreCardBlob({ score, puzzleType, puzzleName: name, streak, mwEarned, handle });
+    // Deep-link back to the game so the receiver can play; carry the puzzle's
+    // unique Public ID (when set) so the share points at this exact puzzle.
+    const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
+    const text = `I scored ${score} on ${name} on the Faraday Daily Challenge!`;
     const status = await shareViaDevice({
       title: "Faraday Daily Challenge", text, url, blob,
       filename: `faraday-${puzzleType.toLowerCase().replace(/\s+/g, "-")}.png`,
@@ -394,7 +421,7 @@ function GameRackl({ puzzle, streak, onComplete }) {
     }
   }
 
-  if (done) return <ScoreCard score={scoreVal} puzzleType="Rackl" domain={puzzle.domain}
+  if (done) return <ScoreCard score={scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===7} />;
 
@@ -505,7 +532,7 @@ function GameSignalDrop({ puzzle, streak, onComplete }) {
   const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
-  if (won || lost) return <ScoreCard score={scoreVal} puzzleType="Signal Drop" domain={puzzle.domain}
+  if (won || lost) return <ScoreCard score={scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===7} />;
 
@@ -633,7 +660,7 @@ function GameStack({ puzzle, streak, onComplete }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} puzzleType="The Stack" domain={puzzle.domain}
+      <ScoreCard score={scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===7} />
     </div>
@@ -727,7 +754,7 @@ function GameCircuit({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="Circuit" domain={puzzle.domain}
+      <ScoreCard score={scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===7} />
     </div>
@@ -824,7 +851,7 @@ function GameBrief({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="The Brief" domain={puzzle.domain}
+      <ScoreCard score={scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===7} />
     </div>
@@ -910,7 +937,7 @@ function GameDarkFiber({ puzzle, streak, onComplete }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain}
+  if (done) return <ScoreCard score={scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===7} />;
 
@@ -1014,7 +1041,7 @@ function GameFrequency({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="Frequency" domain={puzzle.domain}
+      <ScoreCard score={scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===7} />
     </div>

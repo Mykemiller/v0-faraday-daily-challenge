@@ -39,6 +39,7 @@ export const PUZZLE_BANK_TABLE_ID =
 const FIELD = {
   puzzleType: "fldQ6d9fdAdE4bqkT",     // "Puzzle Type"  — e.g. "Rackl", "Signal Drop"
   puzzleName: "fld1Et18F9muU7nWl",     // "Puzzle Name"
+  publicId:   "fldZjZgdcZkmjJWYC",     // "Public ID"   — share-facing unique puzzle id
   goLiveDate: "fldemR86qFJXwJe6g",     // "Go Live Date"
   status:     "fld7qyUy5UP7EoUVu",     // "Status"
   published:  "fldLzhFxNWLnvJlvW",     // "Published"  — single-select flag
@@ -142,12 +143,15 @@ function parsePuzzleContent(record) {
 // Fetch the live puzzle set: the records with Published = "Live", one usable
 // puzzle per type. Returns an object keyed by puzzle type, e.g.
 //   { "Rackl": {...}, "Signal Drop": {...}, ... }
+// Each puzzle object also carries `__publicId` — the bank's "Public ID" (the
+// share-facing unique id; null when the curator hasn't set it yet) — so the
+// share card can deep-link the shared result to the exact puzzle.
 // Types whose row is missing or whose JSON won't parse are simply omitted, which
 // lets the component fall back to its built-in mock for that single game.
 export async function getLivePuzzles() {
   const records = await fetchRecords({
     filterByFormula: `{${FIELD_NAME.published}} = "Live"`,
-    fields: [FIELD.puzzleType, FIELD.content],
+    fields: [FIELD.puzzleType, FIELD.content, FIELD.publicId],
   });
 
   const puzzles = {};
@@ -157,7 +161,10 @@ export async function getLivePuzzles() {
     // First valid record per type wins; don't clobber with a later empty one.
     if (puzzles[type]) continue;
     const content = parsePuzzleContent(record);
-    if (content) puzzles[type] = content;
+    if (!content) continue;
+    const rawId = record.fields?.[FIELD.publicId];
+    const publicId = typeof rawId === "string" && rawId.trim() ? rawId.trim() : null;
+    puzzles[type] = { ...content, __publicId: publicId };
   }
   return puzzles;
 }
