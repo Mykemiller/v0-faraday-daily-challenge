@@ -302,3 +302,68 @@ handle edits); no player's total can leak into another's session.
 - One entry per game per calendar day. Never overwrite an existing entry.
 - Profile key: `faraday_profile` → `{ handle, name, email, favoriteTeams: string[] }`
 - todayScore is always derived: Object.values(dailyResults).reduce((s,r) => s + r.score, 0)
+
+## Live Agent — RAG-backed subscriber Q&A (CC-06 / FAR-29, set 2026-06-23)
+
+Retrieval-grounded Q&A over the live `artifacts` corpus (Supabase
+`ycadmmngkdhvpcsrcuaq`, 2,937+ artifacts and growing). **Built here, not in the
+retired `Faraday-intelligence` repo** (CC-06 named that repo, but it's
+dormant/no-domain per FAR-119; the Live Agent surface already lives here, so this
+is its home — confirmed with Myke). Supersedes the ungrounded `/api/ask` teaser
+for the `/live-agent` product (that homepage widget is unchanged).
+
+**Hard requirement — no confabulation.** Every answer is grounded in retrieved
+artifacts and cites them; the agent declines ("I don't have that in the corpus
+yet.") when retrieval lacks coverage (the ZutaCore principle — prefer "not in
+corpus" over a guess). Enforced twice: a retrieval gate (`decideGrounding`) before
+the model is ever called, and a strict system prompt that forbids outside
+knowledge and requires `[n]` citations.
+
+**Retrieval — two paths, one corpus, one shape** (`src/lib/live-agent.ts`):
+- **Semantic** — `artifacts.embedding` (pgvector `vector(1024)`, HNSW cosine) via
+  `match_artifacts()`. Query embeddings from **Voyage** `voyage-3.5` (1024-dim;
+  `VOYAGE_API_KEY`). Backfill: `supabase/functions/embed-artifacts` (idempotent,
+  resumable — only embeds rows where `embedding IS NULL`; run on a cron until
+  `done`).
+- **Lexical** — `search_artifacts_text()` (Postgres FTS: weighted `tsvector` over
+  title/summary/raw_content + `websearch_to_tsquery` + `ts_rank_cd`). The
+  always-on fallback — needs **no embedding provider**, so the surface works
+  before the corpus is embedded. The route prefers semantic and falls back to
+  lexical when there's no Voyage key, the embed call fails, or semantic returns
+  nothing. Validated live: in-corpus queries rank strongly (~0.06–0.12), off-topic
+  queries return zero rows → clean refusal.
+
+**Generation:** `claude-opus-4-8`, adaptive thinking, `max_tokens` 1024, no
+sampling params (removed on 4.8). Frozen system prompt (caches cleanly); corpus
+context is appended in the user turn only.
+
+**Entitlement + token meter** (migration `…180100_live_agent_entitlements.sql`):
+Live Agent costs **1 token per answered question**. The debit is the ONLY
+financial guard — **atomic, server-side** (`live_agent_debit()` RPC), idempotent
+by `request_id` (a transient 502 can be retried with the same id without
+double-charging). Tiers/grants live in the **`live_agent_plan` table** (provisional;
+`free`=not entitled, `member`=50, `pro`=200/month, no rollover) — NOT hardcoded in
+code. **Refused/un-answered questions are free** (gate runs before the debit).
+Per FAR-46 (DRAFT meters): the UI never publishes balances/prices — it shows only
+"Grounded · N sources" or "Not in corpus", and server-returned gate messages.
+
+**Surface:** `/api/live-agent` (Next route, mirrors `/api/account`'s service-role
+pattern) + `src/components/LiveAgent.tsx` (client widget, reads the `dc_session`
+token) + `/live-agent` page (upgraded from stub → live).
+
+**Migrations (ADDITIVE + reversible, apply at promotion):**
+`20260623180000_live_agent_rag.sql` (embedding column + HNSW + `fts` + RPCs),
+`20260623180100_live_agent_entitlements.sql` (plan/ledger/usage + `live_agent_debit`).
+*Not applied to prod in this PR* — the auto-mode guard blocked direct prod schema
+changes (correct, given the branch+PR boundary). Retrieval design validated live
+read-only against the corpus.
+
+**Required env (Vercel, before promotion):** `SUPABASE_SERVICE_ROLE_KEY`
+(corpus + RPCs), `ANTHROPIC_API_KEY` (generation; already provisioned),
+`VOYAGE_API_KEY` (optional — enables semantic; lexical works without it).
+
+**Eval + tests:** `eval/live-agent-eval.jsonl` (12 in-corpus → grounded+cited,
+6 out-of-corpus → refuse) scored by `scripts/live-agent-eval.mjs` (FULL mode hits
+the route; RETRIEVAL mode checks the gate via the FTS RPC — no token spend).
+Pure-logic unit tests: `src/lib/live-agent.test.ts`,
+`supabase/functions/embed-artifacts/embed-artifacts.test.ts` (`deno test`).

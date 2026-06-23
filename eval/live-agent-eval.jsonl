@@ -1,0 +1,18 @@
+{"id":"in-01","q":"How are hyperscalers powering data centers with natural gas?","expect":"grounded"}
+{"id":"in-02","q":"What's happening with behind-the-meter generation for data centers?","expect":"grounded"}
+{"id":"in-03","q":"Tell me about hydrogen fuel cells in data center power.","expect":"grounded"}
+{"id":"in-04","q":"What major data center construction projects broke ground in June 2026?","expect":"grounded"}
+{"id":"in-05","q":"How much equity funding went into AI infrastructure startups in 2025 and 2026?","expect":"grounded"}
+{"id":"in-06","q":"What is the outlook for natural gas powering the data center boom?","expect":"grounded"}
+{"id":"in-07","q":"What are the latest US export controls on advanced AI chips?","expect":"grounded"}
+{"id":"in-08","q":"What is driving demand for agentic AI infrastructure?","expect":"grounded"}
+{"id":"in-09","q":"What is the state of grid interconnection and power for new data centers?","expect":"grounded"}
+{"id":"in-10","q":"Tell me about high-voltage 800VDC power architecture for data centers.","expect":"grounded"}
+{"id":"in-11","q":"What cooling and water technologies are emerging for AI data centers?","expect":"grounded"}
+{"id":"in-12","q":"What M&A and capital markets activity is happening across AI infrastructure?","expect":"grounded"}
+{"id":"out-01","q":"What's a good recipe for sourdough pizza with long fermentation?","expect":"refuse"}
+{"id":"out-02","q":"Who won the most recent FIFA World Cup final?","expect":"refuse"}
+{"id":"out-03","q":"What's the best home treatment for a migraine headache?","expect":"refuse"}
+{"id":"out-04","q":"Write me a short poem about my cat sleeping in the sun.","expect":"refuse"}
+{"id":"out-05","q":"How do I bake soft chocolate chip cookies from scratch?","expect":"refuse"}
+{"id":"out-06","q":"What is the plot of the latest Marvel superhero movie?","expect":"refuse"}
