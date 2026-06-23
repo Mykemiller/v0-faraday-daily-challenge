@@ -330,7 +330,7 @@ function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mw
     // Deep-link back to the game so the receiver can play; carry the puzzle's
     // unique Public ID (when set) so the share points at this exact puzzle.
     const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
-    const text = `I scored ${score} on ${name} on the Faraday Daily Challenge!`;
+    const text = `I scored ${score} on ${name} on the Faraday Daily Challenge${publicId ? ` - ${publicId}` : ""}`;
     const status = await shareViaDevice({
       title: "Faraday Daily Challenge", text, url, blob,
       filename: `faraday-${puzzleType.toLowerCase().replace(/\s+/g, "-")}.png`,
