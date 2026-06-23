@@ -104,12 +104,11 @@ Dedup: `content_hash = sha256(message_id)` if present, else `sha256(subject+"\n"
 `source_url = "gmail:<message_id>"`. Idempotent — replaying the same message_id
 does not double-insert (`ON CONFLICT content_hash DO NOTHING`).
 
-Governance pending (DO NOT deploy until approved by Myke):
-- `source_type`: using `"web_news"` placeholder. Proposed migration:
-  `ALTER TYPE source_type_enum ADD VALUE 'email';` → then change constant to `"email"`.
-- `auto_id`: using `"AUTO-TBD"` placeholder. Proposed: **AUTO-049** (next free slot).
-  Must be registered in Airtable Automation Registry (appxfti7VuoHYUeu6).
-  `crawler_id` is stable now: `"ingest-email_v1.0"`.
+Governance (approved by Myke 2026-06-23):
+- `source_type = "email"` — migration `20260623000001_add_source_type_email.sql`
+  (`ALTER TYPE source_type_enum ADD VALUE IF NOT EXISTS 'email'`).
+- `auto_id = "AUTO-049"` — registered in Airtable Automation Registry.
+  `crawler_id = "ingest-email_v1.0"` (stable).
 
 Tests: `ingest-email.test.ts` (unit tests for `safeEqual`, `normalizeEmail`, `sha256Hex`,
 allowlist logic).

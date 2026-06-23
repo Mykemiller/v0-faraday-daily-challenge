@@ -30,12 +30,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// TODO(governance): replace with approved AUTO-ID (proposed: AUTO-049)
-const PENDING_AUTO_ID = "AUTO-TBD";
+const PENDING_AUTO_ID = "AUTO-049";
 const CRAWLER_ID = "ingest-email_v1.0";
 const ALLOWED_FROM = "mykemiller@gmail.com";
-// TODO(governance): replace with "email" once ALTER TYPE source_type_enum ADD VALUE 'email' migration is applied
-const SOURCE_TYPE = "web_news";
+const SOURCE_TYPE = "email";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
