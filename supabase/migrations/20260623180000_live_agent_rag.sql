@@ -60,6 +60,7 @@ RETURNS TABLE (
   similarity   float
 )
 LANGUAGE sql STABLE
+SET search_path = public, pg_catalog
 AS $$
   SELECT
     a.artifact_id,
@@ -79,11 +80,17 @@ AS $$
 $$;
 
 -- ── search_artifacts_text: lexical retrieval (no embeddings required) ────────
--- websearch_to_tsquery parses natural queries ("power AND grid", quoted phrases).
--- ts_rank_cd weights by the A/B/C field weighting above. Same shape as
--- match_artifacts so the caller treats the two paths interchangeably; `rank` is
--- a ts_rank score (not a 0..1 similarity) — the caller normalizes for display.
-CREATE OR REPLACE FUNCTION public.search_artifacts_text(
+-- Recall: an OR-of-lexemes tsquery (each query lexeme quoted, joined by `|`).
+--   NOT websearch_to_tsquery/plainto_tsquery — those AND every term, so a
+--   conversational question needs ALL its words in one artifact and recall
+--   collapses to ~0. OR-recall matches any doc sharing a lexeme; ranking sorts.
+-- Gate signal: `coverage` = (# distinct query lexemes present in the doc) /
+--   (# query lexemes). This — not `rank` magnitude — is the robust corpus-gap
+--   signal: it's query-length invariant, where ts_rank_cd grows with term count
+--   (a 1-word in-corpus query and a 5-word off-topic query can tie on rank but
+--   never on coverage). The caller (decideGrounding) refuses below COVERAGE_FLOOR.
+-- `rank` (ts_rank_cd, cover density) still orders the returned set for the model.
+CREATE FUNCTION public.search_artifacts_text(
   query_text     text,
   match_count    int         DEFAULT 8,
   published_since timestamptz DEFAULT NULL
@@ -96,11 +103,23 @@ RETURNS TABLE (
   source_url   text,
   published_at timestamptz,
   ifs_domains  text[],
-  rank         float
+  rank         float,
+  coverage     float
 )
 LANGUAGE sql STABLE
+SET search_path = public, pg_catalog
 AS $$
-  WITH q AS (SELECT websearch_to_tsquery('english', coalesce(query_text, '')) AS tsq)
+  WITH terms AS (
+    SELECT tsvector_to_array(to_tsvector('english', coalesce(query_text, ''))) AS qterms
+  ),
+  q AS (
+    SELECT qterms,
+      CASE WHEN array_length(qterms, 1) IS NULL THEN NULL
+        ELSE to_tsquery('english',
+          array_to_string(ARRAY(SELECT '''' || replace(t, '''', '''''') || '''' FROM unnest(qterms) t), ' | '))
+      END AS tsq
+    FROM terms
+  )
   SELECT
     a.artifact_id,
     a.signal_envelope->>'title'   AS title,
@@ -109,15 +128,21 @@ AS $$
     a.source_url,
     a.published_at,
     a.ifs_domains,
-    ts_rank_cd(a.fts, q.tsq) AS rank
+    ts_rank_cd(a.fts, q.tsq) AS rank,
+    cardinality(ARRAY(SELECT unnest(q.qterms) INTERSECT SELECT unnest(tsvector_to_array(a.fts))))::float
+      / NULLIF(cardinality(q.qterms), 0) AS coverage
   FROM public.artifacts a, q
-  WHERE q.tsq @@ a.fts
+  WHERE q.tsq IS NOT NULL AND a.fts @@ q.tsq
     AND (published_since IS NULL OR a.published_at >= published_since)
-  ORDER BY rank DESC
+  ORDER BY ts_rank_cd(a.fts, q.tsq) DESC
   LIMIT LEAST(GREATEST(match_count, 1), 50);
 $$;
 
--- Service-role only (called from the server via the service key). Lock down the
--- anon/authenticated roles so the corpus is never queried directly from a client.
-REVOKE ALL ON FUNCTION public.match_artifacts(vector, int, float, timestamptz) FROM anon, authenticated;
-REVOKE ALL ON FUNCTION public.search_artifacts_text(text, int, timestamptz)     FROM anon, authenticated;
+-- Service-role only (called from the server via the service key). Revoke the
+-- implicit PUBLIC execute grant so the corpus is never queried directly from a
+-- client (REVOKE FROM anon/authenticated alone leaves the PUBLIC grant intact),
+-- then grant service_role explicitly.
+REVOKE ALL ON FUNCTION public.match_artifacts(vector, int, float, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.search_artifacts_text(text, int, timestamptz)     FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.match_artifacts(vector, int, float, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.search_artifacts_text(text, int, timestamptz)     TO service_role;

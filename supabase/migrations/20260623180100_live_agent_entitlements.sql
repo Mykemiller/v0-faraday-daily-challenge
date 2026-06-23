@@ -159,4 +159,14 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.live_agent_debit(uuid, int, text, text) FROM anon, authenticated;
+-- Revoke the implicit PUBLIC execute grant (REVOKE FROM anon/authenticated alone
+-- leaves PUBLIC intact on a SECURITY DEFINER function), then grant service_role.
+REVOKE ALL ON FUNCTION public.live_agent_debit(uuid, int, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.live_agent_debit(uuid, int, text, text) TO service_role;
+
+-- ── Lock the tables to the service role ─────────────────────────────────────
+-- Enable RLS with NO policies: anon/authenticated get nothing; the service role
+-- bypasses RLS (it's the only caller — via /api/live-agent and live_agent_debit).
+ALTER TABLE public.live_agent_plan         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_agent_token_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_agent_usage        ENABLE ROW LEVEL SECURITY;

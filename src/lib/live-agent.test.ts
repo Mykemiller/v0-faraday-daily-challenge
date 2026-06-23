@@ -12,7 +12,7 @@ import {
   extractCitedIndices,
   assembleCitations,
   isModelRefusal,
-  LEXICAL_RANK_FLOOR,
+  COVERAGE_FLOOR,
   MAX_CONTEXT_DOCS,
   type RetrievedDoc,
 } from "./live-agent.ts";
@@ -27,15 +27,18 @@ function doc(over: Partial<RetrievedDoc> = {}): RetrievedDoc {
     published_at: "2026-05-01T00:00:00+00:00",
     ifs_domains: ["D2", "D3"],
     score: 0.12,
+    coverage: 0.8,
     ...over,
   };
 }
 
-Deno.test("normalizeRows — semantic uses similarity, lexical uses rank", () => {
+Deno.test("normalizeRows — semantic uses similarity, lexical uses rank + coverage", () => {
   const sem = normalizeRows([{ artifact_id: "x", similarity: 0.42 }], "semantic");
   assertEquals(sem[0].score, 0.42);
-  const lex = normalizeRows([{ artifact_id: "x", rank: 0.07 }], "lexical");
-  assertEquals(lex[0].score, 0.07);
+  assertEquals(sem[0].coverage, 0); // coverage is lexical-only
+  const lex = normalizeRows([{ artifact_id: "x", rank: 7.6, coverage: 0.83 }], "lexical");
+  assertEquals(lex[0].score, 7.6);
+  assertEquals(lex[0].coverage, 0.83);
 });
 
 Deno.test("normalizeRows — missing fields default safely", () => {
@@ -52,21 +55,31 @@ Deno.test("decideGrounding — empty results refuse", () => {
   assertEquals(g.reason, "no_results");
 });
 
-Deno.test("decideGrounding — lexical below floor refuses", () => {
-  const g = decideGrounding([doc({ score: LEXICAL_RANK_FLOOR / 2 })], "lexical");
+Deno.test("decideGrounding — lexical below coverage floor refuses", () => {
+  // Off-topic query snags one incidental lexeme → low coverage → refuse.
+  const g = decideGrounding(
+    [doc({ coverage: 0.2 }), doc({ coverage: 0.17 })],
+    "lexical",
+  );
   assertEquals(g.grounded, false);
-  assertEquals(g.reason, "below_floor");
+  assertEquals(g.reason, "below_coverage");
 });
 
-Deno.test("decideGrounding — lexical above floor grounds", () => {
-  const g = decideGrounding([doc({ score: 0.1 })], "lexical");
+Deno.test("decideGrounding — lexical grounds on the MAX-coverage doc", () => {
+  // Gate uses the best doc, not the first: a high-coverage doc anywhere in the
+  // returned set grounds the answer.
+  const g = decideGrounding(
+    [doc({ coverage: 0.25 }), doc({ coverage: 0.6 })],
+    "lexical",
+  );
   assertEquals(g.grounded, true);
+  assert(COVERAGE_FLOOR <= 0.6);
 });
 
 Deno.test("decideGrounding — any semantic hit grounds (RPC pre-filters)", () => {
   // Semantic results are pre-filtered by the RPC's similarity_threshold, so even
-  // a modest score is trustworthy.
-  const g = decideGrounding([doc({ score: 0.36 })], "semantic");
+  // a modest score is trustworthy. Coverage is ignored for semantic.
+  const g = decideGrounding([doc({ score: 0.36, coverage: 0 })], "semantic");
   assertEquals(g.grounded, true);
 });
 

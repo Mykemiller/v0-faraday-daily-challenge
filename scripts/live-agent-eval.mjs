@@ -15,7 +15,7 @@
 //   RETRIEVAL (gate only) — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY:
 //     SUPABASE_SERVICE_ROLE_KEY=… node scripts/live-agent-eval.mjs
 //   Calls the search_artifacts_text RPC and applies the same grounding gate
-//   (LEXICAL_RANK_FLOOR) the route uses — no generation, no token spend. Requires
+//   (COVERAGE_FLOOR) the route uses — no generation, no token spend. Requires
 //   the live_agent_rag migration applied to the target project.
 //
 // Exit code is non-zero if the pass rate is below PASS_THRESHOLD.
@@ -26,7 +26,7 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVAL_PATH = join(HERE, "..", "eval", "live-agent-eval.jsonl");
-const LEXICAL_RANK_FLOOR = 0.02; // keep in sync with src/lib/live-agent.ts
+const COVERAGE_FLOOR = 0.34; // keep in sync with src/lib/live-agent.ts
 const PASS_THRESHOLD = 0.9;
 
 function loadCases() {
@@ -64,8 +64,8 @@ async function runRetrieval(c, base, key) {
   });
   if (!res.ok) throw new Error(`RPC ${res.status}: ${await res.text()}`);
   const rows = await res.json();
-  const top = rows[0]?.rank ?? 0;
-  const grounded = rows.length > 0 && top >= LEXICAL_RANK_FLOOR;
+  const maxCoverage = rows.reduce((m, r) => Math.max(m, r.coverage ?? 0), 0);
+  const grounded = rows.length > 0 && maxCoverage >= COVERAGE_FLOOR;
   return { grounded, citations: grounded ? Math.min(rows.length, 6) : 0 };
 }
 

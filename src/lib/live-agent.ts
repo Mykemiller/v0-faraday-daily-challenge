@@ -21,10 +21,16 @@ export const ANSWER_MODEL = "claude-opus-4-8";
 
 // Grounding floors. The semantic RPC already filters at its own similarity
 // threshold, so any returned semantic doc is trustworthy → require only a hit.
-// The lexical RPC returns by rank with no floor, so we gate on the top rank.
-// (Validated against the live corpus: a strong on-topic ts_rank_cd hit scores
-// ~0.06–0.12; off-topic queries return zero rows.)
-export const LEXICAL_RANK_FLOOR = 0.02;
+//
+// The lexical RPC uses OR-of-lexemes recall (so conversational questions match)
+// and returns a per-row `coverage` = fraction of the query's content lexemes the
+// doc actually contains. Coverage — not rank magnitude — is the robust
+// no-confabulation signal: it's query-length invariant where ts_rank_cd is not.
+// Calibrated against the live 2,937-artifact corpus (18-case eval): in-corpus
+// queries (incl. 1-word) cover ≥0.60; off-topic queries cover ≤0.33 (they snag
+// at most one incidental lexeme, e.g. "chocolate chip cookies" → "chip"). 0.34
+// sits in the gap with margin on both sides.
+export const COVERAGE_FLOOR = 0.34;
 export const MAX_CONTEXT_DOCS = 6;
 
 export type RetrievalMode = "semantic" | "lexical";
@@ -38,6 +44,7 @@ export interface RetrievedDoc {
   published_at: string | null;
   ifs_domains: string[];
   score: number; // cosine similarity (semantic) or ts_rank_cd (lexical)
+  coverage: number; // lexical only: fraction of query lexemes the doc contains (0 for semantic)
 }
 
 export interface Citation {
@@ -79,6 +86,7 @@ export function normalizeRows(
     published_at: r.published_at ? String(r.published_at) : null,
     ifs_domains: Array.isArray(r.ifs_domains) ? (r.ifs_domains as string[]) : [],
     score: Number(mode === "semantic" ? r.similarity : r.rank) || 0,
+    coverage: mode === "lexical" ? Number(r.coverage) || 0 : 0,
   }));
 }
 
@@ -90,8 +98,13 @@ export function decideGrounding(
   mode: RetrievalMode,
 ): { grounded: boolean; reason: string } {
   if (!docs.length) return { grounded: false, reason: "no_results" };
-  if (mode === "lexical" && docs[0].score < LEXICAL_RANK_FLOOR) {
-    return { grounded: false, reason: "below_floor" };
+  if (mode === "lexical") {
+    // OR-recall returns many weakly-related docs; ground only if the best doc
+    // genuinely covers the query's terms (the corpus-gap guard).
+    const maxCoverage = Math.max(...docs.map((d) => d.coverage));
+    if (maxCoverage < COVERAGE_FLOOR) {
+      return { grounded: false, reason: "below_coverage" };
+    }
   }
   return { grounded: true, reason: "ok" };
 }

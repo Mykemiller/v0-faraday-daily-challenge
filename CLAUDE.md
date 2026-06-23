@@ -325,13 +325,24 @@ knowledge and requires `[n]` citations.
   `VOYAGE_API_KEY`). Backfill: `supabase/functions/embed-artifacts` (idempotent,
   resumable — only embeds rows where `embedding IS NULL`; run on a cron until
   `done`).
-- **Lexical** — `search_artifacts_text()` (Postgres FTS: weighted `tsvector` over
-  title/summary/raw_content + `websearch_to_tsquery` + `ts_rank_cd`). The
-  always-on fallback — needs **no embedding provider**, so the surface works
-  before the corpus is embedded. The route prefers semantic and falls back to
-  lexical when there's no Voyage key, the embed call fails, or semantic returns
-  nothing. Validated live: in-corpus queries rank strongly (~0.06–0.12), off-topic
-  queries return zero rows → clean refusal.
+- **Lexical** — `search_artifacts_text()` (weighted `tsvector` over
+  title/summary/raw_content). The always-on fallback — needs **no embedding
+  provider**, so the surface works before the corpus is embedded. The route
+  prefers semantic and falls back to lexical when there's no Voyage key, the embed
+  call fails, or semantic returns nothing.
+  - **Recall:** an **OR-of-lexemes** tsquery (each query lexeme quoted, joined by
+    `|`), NOT `websearch_to_tsquery`/`plainto_tsquery` — those AND every term, so a
+    conversational question needs all its words in one artifact and recall
+    collapses to ~0 (this was a real bug the eval caught).
+  - **No-confab gate = `coverage`, not rank.** Each row returns
+    `coverage` = (# distinct query lexemes the doc contains) / (# query lexemes).
+    Coverage is **query-length invariant** where `ts_rank_cd` is not — a 1-word
+    in-corpus query and a 5-word off-topic query can tie on rank but never on
+    coverage. `decideGrounding` refuses below **`COVERAGE_FLOOR = 0.34`**.
+    Calibrated on the live corpus: in-corpus (incl. 1-word) cover ≥0.60; off-topic
+    cover ≤0.33 (they snag ≤1 incidental lexeme, e.g. "chocolate chip cookies" →
+    "chip"). **Retrieval-mode eval: 18/18 = 100%** (12 in-corpus grounded, 6
+    out-of-corpus refused).
 
 **Generation:** `claude-opus-4-8`, adaptive thinking, `max_tokens` 1024, no
 sampling params (removed on 4.8). Frozen system prompt (caches cleanly); corpus
@@ -351,12 +362,16 @@ Per FAR-46 (DRAFT meters): the UI never publishes balances/prices — it shows o
 pattern) + `src/components/LiveAgent.tsx` (client widget, reads the `dc_session`
 token) + `/live-agent` page (upgraded from stub → live).
 
-**Migrations (ADDITIVE + reversible, apply at promotion):**
-`20260623180000_live_agent_rag.sql` (embedding column + HNSW + `fts` + RPCs),
-`20260623180100_live_agent_entitlements.sql` (plan/ledger/usage + `live_agent_debit`).
-*Not applied to prod in this PR* — the auto-mode guard blocked direct prod schema
-changes (correct, given the branch+PR boundary). Retrieval design validated live
-read-only against the corpus.
+**Migrations (ADDITIVE + reversible):**
+`20260623180000_live_agent_rag.sql` (embedding column + HNSW + `fts` + retrieval
+RPCs, `SET search_path`, service-role-only grants),
+`20260623180100_live_agent_entitlements.sql` (plan/ledger/usage + `live_agent_debit`,
+RLS-on/deny-all). **Applied to `ycadmmngkdhvpcsrcuaq` (Myke-approved)** and
+validated live: retrieval eval 18/18; `live_agent_debit` exercised end-to-end
+(charge → idempotent duplicate → second charge → free-tier `not_entitled`), test
+rows cleaned up. Security advisor: no new WARN/ERROR (the 3 `rls_enabled_no_policy`
+INFOs on the `live_agent_*` tables are the intended deny-all posture — service role
+bypasses RLS). **No prod app/edge-function deploy** in this PR.
 
 **Required env (Vercel, before promotion):** `SUPABASE_SERVICE_ROLE_KEY`
 (corpus + RPCs), `ANTHROPIC_API_KEY` (generation; already provisioned),
