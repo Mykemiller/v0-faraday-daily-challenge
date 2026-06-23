@@ -35,11 +35,17 @@
   --color-neon-darkfiber: #bf5fff;
   --color-neon-frequency: #ff6b00;
 
-  /* Type — IBM Plex Serif (display), Bricolage Grotesque (body/UI),
+  /* Type — Bricolage Grotesque (body/UI), IBM Plex Serif (editorial),
      IBM Plex Mono (labels/data/citations). */
   --font-sans: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
   --font-serif: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Display / hero — licensed Freight (Klim/Garage), supplied by Myke and wired
+     via next/font/local. Falls back gracefully to the editorial serif until the
+     licensed files land in /public/fonts. See public/fonts/README.md.
+     TODO: drop licensed Freight/Tiempos files, then point this at --font-display. */
+  --font-display: 'Freight Display Pro', 'Tiempos Headline', var(--font-serif);
 }
 
 html {

@@ -226,9 +226,95 @@ function ProgressBar({ value, max, color }) {
   );
 }
 
+// ── Viral share — generated score card + device share/copy/download ───────────
+const SITE_URL = "https://faraday-intelligence.ai";
+const DC_URL = `${SITE_URL}/daily-challenge`;
+
+// Draw a branded score card to a PNG blob (OG 1200×630). Canvas falls back to
+// system fonts (the brand webfonts aren't guaranteed in a canvas context) but
+// the palette stays on-brand. Returns null if canvas/toBlob is unavailable.
+function buildScoreCardBlob({ score, puzzleType, streak, mwEarned, handle }) {
+  return new Promise((resolve) => {
+    try {
+      const W = 1200, H = 630;
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return resolve(null);
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#1C3424"; ctx.fillRect(0, 0, W, H);                 // forest field
+      ctx.fillStyle = "#C4922A"; ctx.fillRect(0, 0, W, 8); ctx.fillRect(0, H - 8, W, 8); // gold rules
+      ctx.fillStyle = "#DAB050"; ctx.font = "500 26px 'Courier New', monospace";
+      ctx.fillText("FARADAY · DAILY CHALLENGE", 80, 112);
+      ctx.fillStyle = "#F8F5F0"; ctx.font = "700 66px Georgia, 'Times New Roman', serif";
+      ctx.fillText(puzzleType, 80, 200);
+      ctx.fillStyle = "#C4922A"; ctx.font = "800 210px Georgia, serif";
+      ctx.fillText(String(score), 74, 440);
+      ctx.fillStyle = "#8CA68A"; ctx.font = "500 30px 'Courier New', monospace";
+      ctx.fillText("POINTS", 86, 486);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#F8F5F0"; ctx.font = "700 54px Georgia, serif";
+      ctx.fillText(`${streak}-day streak`, W - 80, 360);
+      ctx.fillStyle = "#4ADE80"; ctx.font = "700 44px Georgia, serif";
+      ctx.fillText(`+${mwEarned} MW`, W - 80, 424);
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#EEE6DA"; ctx.font = "400 27px 'Courier New', monospace";
+      ctx.fillText(`${handle ? `@${handle} · ` : ""}play free · faraday-intelligence.ai/daily-challenge`, 80, 562);
+      cv.toBlob((b) => resolve(b), "image/png");
+    } catch { resolve(null); }
+  });
+}
+
+// Device share cascade: Web Share w/ image → Web Share text → clipboard → download.
+// Returns a short status word ("Shared" | "Copied" | "Saved" | "idle") for UI feedback.
+async function shareViaDevice({ title, text, url, blob, filename }) {
+  const full = url ? `${text} ${url}` : text;
+  try {
+    if (blob && typeof File !== "undefined" && navigator.canShare) {
+      const file = new File([blob], filename || "faraday.png", { type: "image/png" });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title, text: full });
+        return "Shared";
+      }
+    }
+    if (navigator.share) { await navigator.share({ title, text, url }); return "Shared"; }
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(full); return "Copied"; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return "idle"; // user cancelled the sheet
+  }
+  try {
+    if (blob) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename || "faraday.png";
+      a.click(); URL.revokeObjectURL(a.href);
+      return "Saved";
+    }
+  } catch { /* noop */ }
+  return "idle";
+}
+
 // ── Score display ─────────────────────────────────────────────────────────────
 function ScoreCard({ score, puzzleType, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
+  const [shareLabel, setShareLabel] = useState("↑ Share Result");
+  async function handleShare() {
+    setShareLabel("…");
+    let handle = null;
+    try { handle = localStorage.getItem(HANDLE_STORAGE_KEY); } catch { /* storage disabled */ }
+    const blob = await buildScoreCardBlob({ score, puzzleType, streak, mwEarned, handle });
+    const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}`;
+    const text = `I scored ${score} on ${puzzleType} — Faraday Daily Challenge${streak ? ` (${streak}-day streak)` : ""}.`;
+    const status = await shareViaDevice({
+      title: "Faraday Daily Challenge", text, url, blob,
+      filename: `faraday-${puzzleType.toLowerCase().replace(/\s+/g, "-")}.png`,
+    });
+    onShare?.();
+    setShareLabel(
+      status === "Shared" ? "Shared ✓" : status === "Copied" ? "Link copied ✓" :
+      status === "Saved" ? "Card saved ✓" : "↑ Share Result"
+    );
+    if (status !== "idle") setTimeout(() => setShareLabel("↑ Share Result"), 2500);
+  }
   return (
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
@@ -255,7 +341,7 @@ function ScoreCard({ score, puzzleType, domain, streak, mwEarned, onShare, onNex
         </div>
       )}
       <div style={{ display:"flex", gap:"10px" }}>
-        <Btn onClick={onShare} variant="ghost" small>↑ Share Result</Btn>
+        <Btn onClick={handleShare} variant="ghost" small>{shareLabel}</Btn>
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
@@ -1095,14 +1181,17 @@ function SocialGate({ trigger, onRegister, onDismiss }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME TILES — Lobby
 // ══════════════════════════════════════════════════════════════════════════════
+// Locked tile order (front-loads quick-momentum games). The neutral `format` chip
+// names the mechanic, not a domain — the puzzle bank rotates varied content, so a
+// single hardcoded domain ("Power Architecture") on all seven read as a bug.
 const GAME_CONFIGS = [
-  { type:"Rackl",       desc:"Group the tiles — four connected sets",     time:"~3 min", domain:"Power Architecture" },
-  { type:"Signal Drop", desc:"Guess the industry term — Wordle style",     time:"~2 min", domain:"Power Architecture" },
-  { type:"The Stack",   desc:"Drag to rank in the correct order",          time:"~2 min", domain:"Power Architecture" },
-  { type:"Circuit",     desc:"True/False sprint — beat the clock",         time:"~2 min", domain:"Power Architecture" },
-  { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", domain:"Power Architecture" },
-  { type:"Dark Fiber",  desc:"Match terms to their definitions",           time:"~3 min", domain:"Power Architecture" },
-  { type:"Frequency",   desc:"Multiple choice knowledge quiz",             time:"~3 min", domain:"Power Architecture" },
+  { type:"Rackl",       desc:"Group the tiles — four connected sets",     time:"~3 min", format:"Connect" },
+  { type:"Circuit",     desc:"True/False sprint — beat the clock",         time:"~2 min", format:"Sprint" },
+  { type:"Dark Fiber",  desc:"Match terms to their definitions",           time:"~3 min", format:"Match" },
+  { type:"Frequency",   desc:"Multiple choice knowledge quiz",             time:"~3 min", format:"Quiz" },
+  { type:"The Stack",   desc:"Drag to rank in the correct order",          time:"~2 min", format:"Rank" },
+  { type:"Signal Drop", desc:"Guess the industry term — Wordle style",     time:"~2 min", format:"Guess" },
+  { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", format:"Read" },
 ];
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
@@ -1121,7 +1210,7 @@ function GameTile({ config, onPlay }) {
       <span style={{ minWidth:0, flex:1 }}>
         <span style={{ display:"block", fontSize:"18px", fontWeight:600, color:C.black, ...serif }}>{config.type}</span>
         <span style={{ display:"block", fontSize:"11.5px", color:"rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
-        <span style={{ display:"block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.08em", color:C.deepAmber, textTransform:"uppercase", ...mono }}>{config.domain}</span>
+        <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
       </span>
       <span style={{ fontSize:"11px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
     </button>
@@ -1165,7 +1254,17 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
   const [mode, setMode] = useState(null); // null | "create" | "join"
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [inviteLabel, setInviteLabel] = useState("Invite teammates");
   const rows = Array.isArray(leaderboard) ? leaderboard : [];
+
+  async function handleInvite() {
+    if (!myTeam) return;
+    setInviteLabel("…");
+    const text = `Join my team "${myTeam.name}" on the Faraday Daily Challenge — team code ${myTeam.code}.`;
+    const status = await shareViaDevice({ title: "Join my Faraday team", text, url: DC_URL });
+    setInviteLabel(status === "Shared" ? "Shared ✓" : status === "Copied" ? "Invite copied ✓" : "Invite teammates");
+    if (status !== "idle") setTimeout(() => setInviteLabel("Invite teammates"), 2500);
+  }
 
   const ghostBtn = { ...mono, fontSize:"11px", color:C.forest, background:"transparent",
     border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 12px",
@@ -1219,6 +1318,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
               {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total} MW
               {typeof myTeam.my_mw === "number" ? ` (you: ${myTeam.my_mw})` : ""}
             </span>
+            <button onClick={handleInvite} disabled={busy} style={ghostBtn}>{inviteLabel}</button>
             <button onClick={onLeave} disabled={busy} style={ghostBtn}>Leave team</button>
           </div>
         ) : mode === null ? (
@@ -1632,16 +1732,43 @@ export default function DailyChallenge() {
               onLeave={() => teamAction("leave", {})}
             />
 
+            {/* From Faraday Intelligence — persistent, always-on cross-sell band.
+                Brand-voiced; routes to the commercial surfaces on the homepage.
+                NO token/price talk on the lobby (frame value, route commerce). */}
+            <div style={{ background:C.white, border:`1px solid ${C.gray}`, borderRadius:"10px",
+              padding:"22px 24px", margin:"28px 0 0" }}>
+              <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
+                textTransform:"uppercase", color:C.deepAmber }}>From Faraday Intelligence</div>
+              <p style={{ ...serif, fontSize:"17px", lineHeight:1.5, color:C.black, margin:"8px 0 0" }}>
+                These puzzles come from what Faraday reads every day. There’s a lot more where they came from.
+              </p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"10px 18px", marginTop:"14px",
+                ...mono, fontSize:"12px" }}>
+                {[
+                  { label:"Live Agent", href:"/live-agent" },
+                  { label:"Intelligent Alert", href:"/intelligent-alert" },
+                  { label:"Briefing Library", href:"/briefing-library" },
+                  { label:"Jurisdiction Watch", href:"/jurisdiction-watch" },
+                  { label:"Faraday Academy", href:"/academy" },
+                ].map(s => (
+                  <a key={s.href} href={s.href} style={{ color:C.forest, textDecoration:"none",
+                    borderBottom:`1px solid ${C.gray}`, paddingBottom:"1px" }}>{s.label} →</a>
+                ))}
+              </div>
+            </div>
+
             {/* Tip of the day — Faraday's Take treatment */}
             <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
               padding:"26px 28px", color:C.cream, margin:"28px 0 56px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", gap:"10px",
                 flexWrap:"wrap", ...mono, fontSize:"11px", letterSpacing:"0.16em" }}>
                 <span style={{ color:C.cream }}>FARADAY TIP OF THE DAY</span>
-                <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
-                  borderRadius:"4px", padding:"2px 9px" }}>
-                  {(tipOfTheDay?.domain || "POWER ARCHITECTURE").toUpperCase()}
-                </span>
+                {tipOfTheDay?.domain && (
+                  <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
+                    borderRadius:"4px", padding:"2px 9px" }}>
+                    {tipOfTheDay.domain.toUpperCase()}
+                  </span>
+                )}
               </div>
               <blockquote style={{ ...serif, fontStyle:"italic", fontSize:"17px", lineHeight:1.65,
                 marginTop:"14px", color:C.cream }}>
