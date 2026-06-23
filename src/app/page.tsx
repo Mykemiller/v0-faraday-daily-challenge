@@ -87,9 +87,9 @@ export default function Home() {
         {/* How Faraday works — one-line scaffold that lands the vocabulary */}
         <p className="mt-8 max-w-2xl font-sans text-[15px] leading-relaxed text-near-black/70">
           How it works: <strong className="font-medium text-near-black">free daily games</strong> ·{" "}
-          <strong className="font-medium text-near-black">metered intelligence surfaces</strong> ·{" "}
-          <strong className="font-medium text-near-black">the Academy</strong>. Three surfaces are free every day;
-          the rest are metered in tokens.
+          <strong className="font-medium text-near-black">token-metered intelligence surfaces</strong> ·{" "}
+          <strong className="font-medium text-near-black">the Academy</strong>. The Daily Challenge is free,
+          every day; every intelligence surface runs on tokens.
         </p>
       </section>
 
@@ -166,8 +166,8 @@ export default function Home() {
           Tokens never expire — spend them only when you ask for depth.
         </p>
         <p className="mx-auto mt-3 max-w-xl text-center font-sans text-[14px] leading-relaxed text-near-black/70">
-          A token is a unit of depth: spend one when you want Faraday to go further — a sourced answer or a full
-          briefing. You only pay when you ask.
+          Every Faraday surface runs on tokens — one balance across all of them. A token is a unit of depth:
+          spend one when you want Faraday to go further. You only pay when you ask.
         </p>
         <div className="mx-auto mt-6 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
           {TOKEN_PACKS.map((p) => (
@@ -183,7 +183,7 @@ export default function Home() {
           ))}
         </div>
         <p className="mt-4 text-center font-mono text-[11px] leading-relaxed text-near-black/65">
-          Three surfaces are free, every day; the rest are metered in tokens. Faraday Academy is priced separately.
+          Every intelligence surface is metered in tokens. The Daily Challenge is free, every day; Faraday Academy is priced separately.
         </p>
       </section>
 
