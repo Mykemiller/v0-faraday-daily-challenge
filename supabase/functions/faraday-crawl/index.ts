@@ -21,6 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { TIER1_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -42,7 +43,7 @@ interface AutoDef {
   queries: string[];
 }
 
-const AUTOMATIONS: AutoDef[] = [
+const BASE_AUTOMATIONS: AutoDef[] = [
   // --- Original 8 backbone ---
   { auto_id: "AUTO-001", source_type: "web_news", ifs_domains: ["D1","D3","D5","D6","D7","D9"],
     queries: ["AI infrastructure data center news today","GPU compute chip announcement AI","hyperscaler cloud AI investment capex"] },
@@ -64,15 +65,18 @@ const AUTOMATIONS: AutoDef[] = [
     queries: ["AI infrastructure startup product launch announcement 2026","data center startup venture funding Series A B 2026","emerging AI compute company news product"] },
   { auto_id: "AUTO-027", source_type: "web_news", ifs_domains: ["D1","D2","D3","D4","D5","D6","D7","D8","D9","D10"],
     queries: ["new entrant data center company announcement funding 2026","emerging player hyperscaler alternative AI compute","startup scale AI data center infrastructure launch"] },
-  { auto_id: "AUTO-028", source_type: "web_news", ifs_domains: ["D10","D6","D4"],
+  // 4.0 tag fix (FAR-204, approved 2026-06-24): primary domain renumbered from the
+  // stale 3.x value. Networking 3.x-D10 → 4.0-D12; this is the operational source
+  // of artifacts.ifs_domains (the Airtable IFS Domains aiText is derived/cosmetic).
+  { auto_id: "AUTO-028", source_type: "web_news", ifs_domains: ["D12","D6","D4"],
     queries: ["AI data center networking InfiniBand 800G","optical interconnect AI training cluster"] },
-  { auto_id: "AUTO-029", source_type: "regulatory", ifs_domains: ["D11","D3"],
+  { auto_id: "AUTO-029", source_type: "regulatory", ifs_domains: ["D13","D3"],
     queries: ["community opposition data center development NIMBYism 2026","data center community benefits agreement public meeting","neighborhood data center rezoning opposition support"] },
-  { auto_id: "AUTO-030", source_type: "permit_utility", ifs_domains: ["D12","D4","D5"],
+  { auto_id: "AUTO-030", source_type: "permit_utility", ifs_domains: ["D14","D4","D5"],
     queries: ["data center land acquisition real estate deal 2026","data center site selection campus campus announcement","industrial land data center development permit construction"] },
-  { auto_id: "AUTO-031", source_type: "web_news", ifs_domains: ["D13","D7","D3"],
+  { auto_id: "AUTO-031", source_type: "web_news", ifs_domains: ["D11","D7","D3"],
     queries: ["data center PPA renewable energy sustainability","AI data center carbon water usage ESG"] },
-  { auto_id: "AUTO-032", source_type: "web_news", ifs_domains: ["D14","D5","D6"],
+  { auto_id: "AUTO-032", source_type: "web_news", ifs_domains: ["D17","D5","D6"],
     queries: ["data center technician workforce shortage hiring 2026","AI infrastructure skilled labor salary jobs","data center workforce training program announcement"] },
   { auto_id: "AUTO-033", source_type: "regulatory", ifs_domains: ["D15","D6","D4","D1"],
     queries: ["sovereign AI national data center strategy 2026","geopolitics semiconductor AI chip US China competition","national security AI infrastructure government investment"] },
@@ -99,6 +103,11 @@ const AUTOMATIONS: AutoDef[] = [
   { auto_id: "AUTO-047", source_type: "regulatory", ifs_domains: ["D15","D1","D3"],
     queries: ["BIS export control AI chip GPU 2026","US export restriction semiconductor advanced AI rule","export control announcement data center AI hardware"] },
 ];
+
+// IDF 4.0 Tier-1 activation (FAR-200, approved 2026-06-24): merge the 10 dormant
+// dedicated sub-domain crawlers AUTO-060–069 into the live fleet. mergeApproved
+// throws on any duplicate auto_id, so a re-merge can never silently shadow a row.
+const AUTOMATIONS: AutoDef[] = mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CrawledArtifact {

@@ -201,42 +201,45 @@ Coverage of the IDF 4.0 canon (23 Domains / **116 Sub-Domains**, Notion
 (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`). A `Designed` or `Broad-only`
 crawler is **not** coverage.
 
-**Verified coverage today (four-value verdict):** 1 Dedicated-Active · 63
-Dedicated-Designed (dormant) · 21 Broad-only · 31 Whitespace. The entire
-AUTO-060→119 dedicated sub-domain set is `Designed`/dormant — **none is Active**.
+**Coverage state (post FAR-200 activation, 2026-06-24):** 11 Dedicated-Active ·
+53 Dedicated-Designed (dormant) · 21 Broad-only · 31 Whitespace. The 10 Tier-1
+dedicated crawlers **AUTO-060–069 are now Active** (D1.4/.5/.7/.8, D2.5/.6/.7/.8/.10,
+D10.4); the rest of AUTO-070→119 stays Designed.
 
 - **Coverage Matrix** (single source of truth): `scripts/idf4-coverage-matrix.mjs`
   → `docs/idf4-coverage/coverage-matrix.{md,csv}` (116 rows; asserts per-Domain
   counts match canon). Mirrored to Notion `38889a0c-1680-81d5-83e8-d02f1cc3b12a`.
-- **Scaffold (inert):** `supabase/functions/faraday-crawl/coverage-bridge.ts` —
-  `TIER1_ACTIVATION` (the 10 dormant dedicated crawlers AUTO-060–069, query sets
-  authored) + `WHITESPACE_SCAFFOLDS` (39 new routines, **placeholder** ids
-  `AUTO-NEW-01..39`) + `SOURCE_FIT_REPOINTS` + `mergeApproved()`. **Nothing is
-  imported by `index.ts`** — deploying this branch changes zero runtime behaviour.
-  Tests: `coverage-bridge.test.ts` (shape, id uniqueness, staggered cadences,
-  `mergeApproved` idempotency guard).
+- **Tier-1 activation:** `faraday-crawl` edge fn **v3** (`verify_jwt:false`) merges
+  `TIER1_ACTIVATION` (AUTO-060–069, in `coverage-bridge.ts`) into `AUTOMATIONS` via
+  `mergeApproved`. Two health-log dry runs, 0 failures, 80 artifacts all unique
+  `content_hash` (idempotent). **`verify_jwt` was true — the daily cron sends the
+  CRON_TOKEN (not a JWT), so the gateway was 401-ing it; v3 sets `verify_jwt:false`
+  (custom CRON_TOKEN/service-key auth in the body) which fixes the cron too.**
+- **Scaffold (inert):** `coverage-bridge.ts` `WHITESPACE_SCAFFOLDS` — 39 routines
+  on real ids **AUTO-137→175** (placeholders retired), `Designed` in the Registry,
+  not yet built. Tests: `coverage-bridge.test.ts`.
 - **Plan / findings:** `docs/idf4-coverage/deployment-and-source-fit.md`,
   `docs/idf4-coverage/data-integrity-findings.md`.
 
-**AUTO-ID range — CORRECTION (do not repeat the stale value):** the next free ID is
-**`AUTO-137`**, NOT AUTO-134. `AUTO-134/135/136` are already **Active** (engine
-functions: `engine-idf-entities` / `engine-prognostications` / `engine-two-analyst`).
-The 39 scaffolds **request** the contiguous block **`AUTO-137 → AUTO-175`** —
-**not self-assigned**; left placeholder pending Myke.
+**AUTO-ID range:** next free ID is **`AUTO-177`** (NOT AUTO-134 — 134/135/136 are
+Active engine fns). Block **`AUTO-137 → AUTO-175`** granted (2026-06-24) and
+registered Designed; **`AUTO-176`** = the reassigned *Community Opposition &
+Moratorium Tracker* (moved off the AUTO-049 collision).
 
-**Open data-integrity flags (proposals — Active rows not overwritten):**
-- **AUTO-049 double-assigned** — Active *Email Ingestion* (correct, governance-approved)
-  vs Designed *Community Opposition & Moratorium Tracker* (reassign the Designed one).
-- **AUTO-028/029** semantic collision vs the **Industry Conferences** table
-  (`tblb1S5IKFBPEmUJL`) "AUTO-028/029 primary target" annotations → repoint to the
-  new D8.2 conference routine.
-- **Stale 3.x tags** on Active crawlers: AUTO-028→D12, AUTO-029→D13, AUTO-030→D14,
-  AUTO-031→D11, AUTO-032→D17 (`IFS Domains` is a generated `aiText` field — fix the
-  generation source, not just the cell).
-- **IDF registry staleness (flag only — separate gate):** Airtable Sub-Domain
-  Registry (`tbla7rtRY9AaeoWhu`) = 59 "Coming Soon" rows w/o stable D#.# Number IDs
-  (manual-UI-value caveat); Supabase `faraday_domains`=16, `faraday_subdomains`=4
-  (need 23/116). Do **not** backfill here.
+**Data-integrity resolutions (2026-06-24, all applied):**
+- **AUTO-049 collision** — Designed *Community Opposition & Moratorium Tracker*
+  reassigned to **AUTO-176**; AUTO-049 stays Email Ingestion (Active).
+- **AUTO-028/029 vs Industry Conferences** — the 6 "primary target" annotations in
+  `tblb1S5IKFBPEmUJL` repointed to the new D8.2 routine **AUTO-168**.
+- **Stale 3.x tags** fixed in the operational source (`index.ts` AUTOMATIONS):
+  AUTO-028→D12, 029→D13, 030→D14, 031→D11, 032→D17. (The Airtable `IFS Domains`
+  cell is generated `aiText`/cosmetic — not the routing source; left to regenerate.)
+- **IDF registry staleness (still flagged — separate gate, FAR-205):** Airtable
+  Sub-Domain Registry (`tbla7rtRY9AaeoWhu`) = 59 "Coming Soon" rows w/o stable D#.#
+  IDs; Supabase `faraday_domains`=16, `faraday_subdomains`=4 (need 23/116). Not
+  backfilled.
 
-**Governance:** branch + PR only; no Active flip; no AUTO-ID self-assign; no
-`source_type` enum add; no Active-crawler re-route — all human-gated (Myke).
+**Governance:** all of the above was **explicitly approved by Myke (2026-06-24)** —
+ID block, AUTO-049 reassignment, stale-tag fix, conference repoint, and full Tier-1
+activation (deploy + dry-run + flip). No `source_type` enum was added; the 39
+whitespace routines remain Designed pending per-routine build.
