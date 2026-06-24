@@ -3,8 +3,8 @@
 //
 // Single source of truth for this artifact. Encodes every one of the 116 IDF 4.0
 // Sub-Domains (Notion 37189a0c-1680-8199-bca1-cf304a45bbde) against the live
-// Automation Registry (Airtable appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg, snapshot
-// 2026-06-23). Emits coverage-matrix.csv + coverage-matrix.md.
+// Automation Registry (Airtable appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg). Updated
+// 2026-06-24 after the FAR-200 Tier-1 activation. Emits coverage-matrix.csv + .md.
 //
 // Verdict vocabulary (four-value, per §2 DONE):
 //   Dedicated-Active   — a dedicated D#.# crawler exists AND is Active in the Registry
@@ -12,9 +12,10 @@
 //   Broad-only         — no dedicated crawler; an Active domain-level broad crawler hits the parent Domain
 //   Whitespace         — no dedicated crawler; broad crawlers do not meaningfully reach this thread
 //
-// NOTE: As of the snapshot, NO dedicated sub-domain crawler is Active — the entire
-// AUTO-060→119 dedicated set is Designed/dormant. So "Dedicated-Active" has zero
-// rows today; it exists in the vocabulary as the post-activation target state.
+// STATE 2026-06-24: the 10 Tier-1 dedicated crawlers AUTO-060–069 are now Active
+// (deployed faraday-crawl v3 + 2 health-log dry runs, 0 failures) — verdict
+// Dedicated-Active. With D8.1/AUTO-046 that is 11 Active. The rest of the
+// AUTO-070→119 dedicated set remains Designed/dormant.
 //
 // A `Designed` or `Broad-only` crawler is NOT coverage (§5 No fabricated coverage).
 
@@ -64,26 +65,26 @@ const ROWS = [
   D("D1.1","GPU Architecture & Roadmap",null,null,"Broad-only","New crawler (NVIDIA roadmap) — Tier 1"),
   D("D1.2","Rack & Power Density Progression",null,null,"Broad-only","New crawler (OCP ORW / kW-per-rack) — Tier 1"),
   D("D1.3","Competing Silicon & Merchant Accelerators",null,null,"Broad-only","New crawler (AMD/Intel/merchant) — Tier 1"),
-  D("D1.4","Memory (HBM & Next-Gen)","AUTO-060","Designed","Dedicated-Designed","Activate (Tier 1)"),
-  D("D1.5","Inference-Class Silicon & Economics","AUTO-061","Designed","Dedicated-Designed","Activate (Tier 1)"),
+  D("D1.4","Memory (HBM & Next-Gen)","AUTO-060","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
+  D("D1.5","Inference-Class Silicon & Economics","AUTO-061","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
   D("D1.6","Chip Allocation & Supply Politics",null,null,"Broad-only","New crawler (allocation/secondary mkt) — Tier 1"),
-  D("D1.7","Hyperscaler-Class Silicon & Custom Accelerators","AUTO-062","Designed","Dedicated-Designed","Activate (Tier 1)"),
-  D("D1.8","Advanced Packaging & Substrate Capacity","AUTO-063","Designed","Dedicated-Designed","Activate (Tier 1) + re-point: USPTO + foundry capacity"),
+  D("D1.7","Hyperscaler-Class Silicon & Custom Accelerators","AUTO-062","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
+  D("D1.8","Advanced Packaging & Substrate Capacity","AUTO-063","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
   // D2 — Power Architecture (10)
   D("D2.1","800V DC Power Distribution",null,null,"Broad-only","New crawler — Tier 1"),
   D("D2.2","BTM Strategy & Cross-Cutting Economics",null,null,"Broad-only","New crawler — Tier 1"),
   D("D2.3","UPS, Storage & Power Conditioning",null,null,"Broad-only","New crawler — Tier 1"),
   D("D2.4","DC Power Delivery at the Rack",null,null,"Broad-only","New crawler — Tier 1"),
-  D("D2.5","Nuclear & SMR Offtake","AUTO-064","Designed","Dedicated-Designed","Activate (Tier 1) + re-point: NRC ADAMS primary source"),
-  D("D2.6","Behind-the-Fence Gas & Fuel Cells","AUTO-065","Designed","Dedicated-Designed","Activate (Tier 1)"),
-  D("D2.7","Renewables, Storage & PPAs for DC Power","AUTO-066","Designed","Dedicated-Designed","Activate (Tier 1)"),
-  D("D2.8","Grid-Interactive Load & Demand Response","AUTO-067","Designed","Dedicated-Designed","Activate (Tier 1)"),
+  D("D2.5","Nuclear & SMR Offtake","AUTO-064","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
+  D("D2.6","Behind-the-Fence Gas & Fuel Cells","AUTO-065","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
+  D("D2.7","Renewables, Storage & PPAs for DC Power","AUTO-066","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
+  D("D2.8","Grid-Interactive Load & Demand Response","AUTO-067","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
   D("D2.9","Microgrid Integration & Islanding",null,null,"Broad-only","New crawler — Tier 1"),
-  D("D2.10","Solid-State Transformers & Advanced Power Conversion","AUTO-068","Designed","Dedicated-Designed","Activate (Tier 1)"),
+  D("D2.10","Solid-State Transformers & Advanced Power Conversion","AUTO-068","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
   // D3 — Grid & Regulatory (5)
   D("D3.1","Interconnection Queue & Grid Access",null,null,"Broad-only","Strong broad (AUTO-003/016); monitor"),
   D("D3.2","State Moratorium & Legislative Landscape",null,null,"Broad-only","Strong broad (AUTO-013); monitor"),
-  D("D3.3","Utility Rate Cases & PUC Proceedings",null,null,"Broad-only","Broad (AUTO-049/050 designed); activate w/ D18"),
+  D("D3.3","Utility Rate Cases & PUC Proceedings",null,null,"Broad-only","Broad; AUTO-050 (PUC Rate Case) designed — activate w/ D18"),
   D("D3.4","Transmission Buildout & FERC Policy",null,null,"Whitespace","Primary-source connector: FERC eLibrary / Order 1920"),
   D("D3.5","Large-Load Tariff Design & Co-Location Rules",null,null,"Whitespace","Primary-source connector: FERC/PJM dockets"),
   // D4 — M&A & Capital Markets (6)
@@ -122,7 +123,7 @@ const ROWS = [
   D("D10.1","Long-Lead Equipment & Supply Chain",null,null,"Whitespace","New crawler — Tier 1"),
   D("D10.2","GC/EPC Capacity & Stick-Built Execution",null,null,"Whitespace","New crawler — Tier 1"),
   D("D10.3","Modular & Prefabricated Delivery",null,null,"Whitespace","New crawler — Tier 1"),
-  D("D10.4","Project Delivery & Schedule Intelligence","AUTO-069","Designed","Dedicated-Designed","Activate (Tier 1)"),
+  D("D10.4","Project Delivery & Schedule Intelligence","AUTO-069","Active","Dedicated-Active","Activated (FAR-200, 2026-06-24)"),
   D("D10.5","Construction Cost Curves & Inflation",null,null,"Whitespace","New crawler — Tier 1"),
   // D11 — Sustainability (6)
   D("D11.1","Clean Energy Procurement (PPA/REC/CFE)",null,null,"Whitespace","New crawler"),
@@ -172,7 +173,7 @@ const ROWS = [
   D("D17.2","Operations & Technical Workforce","AUTO-118","Designed","Dedicated-Designed","Activate (Tier 2) — registry tag 'D17' → set D17.2"),
   D("D17.3","Immigration, Policy & Regional Labor Competition",null,null,"Whitespace","New crawler"),
   // D18 — Community Opposition & Regulatory Risk (3)
-  D("D18.1","Project Opposition Register","AUTO-049","Designed","Dedicated-Designed","Activate (Tier 2) — ⚠ AUTO-049 ID collision (see findings)"),
+  D("D18.1","Project Opposition Register","AUTO-176","Designed","Dedicated-Designed","Activate (Tier 2) — reassigned off AUTO-049 collision (now AUTO-176)"),
   D("D18.2","Regulatory & Permitting Denial Tracking","AUTO-051","Designed","Dedicated-Designed","Activate (Tier 2)"),
   D("D18.3","Reputational & Political Risk Register","AUTO-052","Designed","Dedicated-Designed","Claude Routine (reputational/political risk)"),
   // D19 — Tax, Incentives & Fiscal Policy (5)
@@ -230,7 +231,7 @@ for (const r of ROWS) {
 const md = [];
 md.push("# IDF 4.0 — Data-Source Coverage Matrix");
 md.push("");
-md.push("_Generated by `scripts/idf4-coverage-matrix.mjs`. Registry snapshot 2026-06-23 (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`). Canon: Notion `37189a0c-1680-8199-bca1-cf304a45bbde`._");
+md.push("_Generated by `scripts/idf4-coverage-matrix.mjs`. Registry as of 2026-06-24, post FAR-200 Tier-1 activation (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`). Canon: Notion `37189a0c-1680-8199-bca1-cf304a45bbde`._");
 md.push("");
 md.push("**116 Sub-Domains · 23 Domains.** A `Designed` or `Broad-only` crawler is **not** coverage. `AUTO-027` (All Domains) is omitted from every broad list — it touches everything.");
 md.push("");

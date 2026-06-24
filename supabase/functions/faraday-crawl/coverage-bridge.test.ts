@@ -21,10 +21,10 @@ Deno.test("TIER1_ACTIVATION — covers the 10 dormant dedicated crawlers AUTO-06
   assertEquals(ids, expected);
 });
 
-Deno.test("WHITESPACE_SCAFFOLDS — all carry PLACEHOLDER ids (no real AUTO-### self-assigned)", () => {
+Deno.test("WHITESPACE_SCAFFOLDS — carry the granted block AUTO-137..175 (no placeholders left)", () => {
   for (const s of WHITESPACE_SCAFFOLDS) {
-    assert(s.placeholder === true, `${s.auto_id} must be placeholder`);
-    assert(s.auto_id.startsWith("AUTO-NEW-"), `${s.auto_id} must be a placeholder id`);
+    assert(s.placeholder === false, `${s.auto_id} should no longer be a placeholder`);
+    assert(/^AUTO-1(3[7-9]|[4-6]\d|7[0-5])$/.test(s.auto_id), `${s.auto_id} not in granted block AUTO-137..175`);
     assert(SUBDOMAIN_RE.test(s.subdomain), `bad subdomain ${s.subdomain}`);
     assertEquals(s.ifs_domains[0], s.subdomain, `${s.auto_id} ifs_domains must equal its subdomain`);
     assert(s.cadence.length > 0 && s.postgres_insert.length > 0, `${s.auto_id} missing cadence/insert contract`);
@@ -32,9 +32,12 @@ Deno.test("WHITESPACE_SCAFFOLDS — all carry PLACEHOLDER ids (no real AUTO-### 
   }
 });
 
-Deno.test("WHITESPACE_SCAFFOLDS — placeholder ids are unique", () => {
-  const ids = WHITESPACE_SCAFFOLDS.map((s) => s.auto_id);
-  assertEquals(new Set(ids).size, ids.length, "duplicate placeholder id");
+Deno.test("WHITESPACE_SCAFFOLDS — ids are unique and exactly AUTO-137..175", () => {
+  const ids = WHITESPACE_SCAFFOLDS.map((s) => s.auto_id).sort();
+  assertEquals(new Set(ids).size, ids.length, "duplicate id");
+  assertEquals(ids.length, 39, "expected 39 scaffolds");
+  const expected = Array.from({ length: 39 }, (_, i) => `AUTO-${137 + i}`).sort();
+  assertEquals(ids, expected, "ids must be the contiguous block AUTO-137..175");
 });
 
 Deno.test("WHITESPACE_SCAFFOLDS — each scaffolded sub-domain is unique (no two routines own the same thread)", () => {

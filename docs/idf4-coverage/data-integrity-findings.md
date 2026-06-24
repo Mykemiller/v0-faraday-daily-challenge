@@ -1,5 +1,12 @@
 # IDF 4.0 Coverage Bridge — Data-Integrity Findings & Escalations
 
+> **RESOLVED 2026-06-24 (Myke approved).** Finding 0 → block `AUTO-137–175` granted +
+> registered Designed; next free is `AUTO-177`. Finding 1 → AUTO-049 Designed row
+> reassigned to **AUTO-176**. Finding 2 → 6 Industry-Conferences annotations repointed
+> to **AUTO-168** (D8.2). Finding 3 → stale tags fixed in the operational source
+> (`index.ts` AUTOMATIONS) for AUTO-028/029/030/031/032. Finding 4 (registry sync) →
+> still open as **FAR-205** (separate gate). Tier-1 AUTO-060–069 deployed + Active.
+
 _FAR IDF-4. Verified against live infrastructure 2026-06-23: Automation Registry
 (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`, 129 rows), Industry Conferences
 (`tblb1S5IKFBPEmUJL`), IDF Sub-Domain Registry (`tbla7rtRY9AaeoWhu`), Supabase
