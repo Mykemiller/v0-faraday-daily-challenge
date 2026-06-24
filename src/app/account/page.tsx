@@ -39,6 +39,12 @@ interface Account {
   handle: string | null;
   active: boolean;
 }
+interface SubState {
+  playStreak: number;
+  mwBalance: number;
+  tier: string;
+  joined_at: string | null;
+}
 interface Group {
   team_id?: string;
   name?: string;
@@ -56,6 +62,7 @@ export default function AccountPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [subState, setSubState] = useState<SubState | null>(null);
 
   // Handle editing state
   const [editingHandle, setEditingHandle] = useState(false);
@@ -99,6 +106,15 @@ export default function AccountPage() {
       .catch(() => setErr("Network error loading your account."));
   }, []);
 
+  const loadSubState = useCallback((t: string) => {
+    fetch(`/api/subscriber-state?token=${encodeURIComponent(t)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setSubState({ playStreak: d.playStreak ?? 0, mwBalance: d.mwBalance ?? 0, tier: d.tier ?? "free", joined_at: d.joined_at ?? null });
+      })
+      .catch(() => {});
+  }, []);
+
   const loadGroups = useCallback((t: string) => {
     // Current membership comes back as `myTeam` from the team leaderboard.
     fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?token=${encodeURIComponent(t)}&limit=1`)
@@ -115,7 +131,8 @@ export default function AccountPage() {
     if (!token) return;
     loadAccount(token);
     loadGroups(token);
-  }, [token, loadAccount, loadGroups]);
+    loadSubState(token);
+  }, [token, loadAccount, loadGroups, loadSubState]);
 
   function teamAction(action: "create" | "join" | "leave", payload: Record<string, unknown>) {
     if (!token) return;
@@ -147,8 +164,8 @@ export default function AccountPage() {
   function updateHandle() {
     if (!token) return;
     const clean = newHandle.trim().toLowerCase();
-    if (!/^[a-z0-9]{3,20}$/.test(clean)) {
-      setErr("Handle must be 3–20 characters, letters and numbers only.");
+    if (!/^[a-z0-9_]{3,24}$/.test(clean)) {
+      setErr("Handle must be 3–24 characters, letters, numbers, and _ only.");
       return;
     }
     setBusy(true);
@@ -359,9 +376,9 @@ export default function AccountPage() {
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <input
                       value={newHandle}
-                      onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
-                      placeholder="new-handle"
-                      maxLength={20}
+                      onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                      placeholder="new_handle"
+                      maxLength={24}
                       style={input}
                       onKeyDown={(e) => e.key === "Enter" && !busy && updateHandle()}
                     />
@@ -373,13 +390,40 @@ export default function AccountPage() {
                     </button>
                   </div>
                   <div style={{ ...mono, fontSize: "11px", color: C.muted }}>
-                    3–20 characters, letters and numbers only.
+                    3–24 characters, letters, numbers, and _ only.
                   </div>
                 </>
               )}
             </div>
           )}
         </section>
+
+        {/* Stats (FAR-212) */}
+        {subState && (
+          <section style={card}>
+            <div style={label}>Your stats</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px 16px", marginTop: "14px" }}>
+              <div>
+                <div style={{ ...mono, fontSize: "11px", color: C.deepAmber, letterSpacing: "0.1em", textTransform: "uppercase" }}>Streak</div>
+                <div style={{ fontSize: "20px", fontWeight: 700, color: C.forest, ...sans, marginTop: "4px" }}>{subState.playStreak} days</div>
+              </div>
+              <div>
+                <div style={{ ...mono, fontSize: "11px", color: C.deepAmber, letterSpacing: "0.1em", textTransform: "uppercase" }}>MW Balance</div>
+                <div style={{ fontSize: "20px", fontWeight: 700, color: C.forest, ...sans, marginTop: "4px" }}>{subState.mwBalance} MW</div>
+              </div>
+              <div>
+                <div style={{ ...mono, fontSize: "11px", color: C.deepAmber, letterSpacing: "0.1em", textTransform: "uppercase" }}>Tier</div>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: C.forest, ...sans, marginTop: "4px", textTransform: "capitalize" }}>{subState.tier}</div>
+              </div>
+              <div>
+                <div style={{ ...mono, fontSize: "11px", color: C.deepAmber, letterSpacing: "0.1em", textTransform: "uppercase" }}>Member since</div>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: C.forest, ...sans, marginTop: "4px" }}>
+                  {subState.joined_at ? new Date(subState.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—"}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Team & company */}
         <section style={card}>

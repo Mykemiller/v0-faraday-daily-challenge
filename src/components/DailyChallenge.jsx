@@ -1848,19 +1848,18 @@ export default function DailyChallenge() {
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
                     <GameIcon game={activeGame} size={32} />
-                    <span style={{ fontSize:"16px", fontWeight:700, color:C.white, ...serif }}>{activeGame}</span>
+                    <div>
+                      <span style={{ fontSize:"16px", fontWeight:700, color:C.white, ...serif }}>{activeGame}</span>
+                      {puzzle.__publicId && (
+                        <span style={{ fontSize:"11px", color:C.muted, marginLeft:"8px", letterSpacing:"0.04em", ...mono }}>· {puzzle.__publicId}</span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
                     <span style={{ fontSize:"11px", color:C.muted, background:"rgba(255,255,255,0.04)",
                       border:`1px solid ${C.border}`, padding:"3px 8px", borderRadius:"3px", ...mono }}>
                       {puzzle.domain}
                     </span>
-                    {puzzle.__publicId && (
-                      <span style={{ fontSize:"10px", color:C.muted, letterSpacing:"0.06em", ...mono }}
-                        title="Puzzle ID">
-                        {puzzle.__publicId}
-                      </span>
-                    )}
                     <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>
