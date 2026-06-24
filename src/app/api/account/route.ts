@@ -94,11 +94,11 @@ export async function POST(request: Request) {
   // ── Handle update ──────────────────────────────────────────────────────────
   if (action === "update-handle") {
     const raw = typeof body.newHandle === "string" ? body.newHandle.trim().toLowerCase() : "";
-    // Validate: 3-20 chars, alphanumeric only (no _ or . — grandfathered legacy
-    // handles may still have _ in the DB but new submissions must be clean).
-    if (!/^[a-z0-9]{3,20}$/.test(raw)) {
+    // Validate: 3-24 chars, lowercase letters, numbers, and underscores.
+    // Uppercase letters are already normalised to lowercase above.
+    if (!/^[a-z0-9_]{3,24}$/.test(raw)) {
       return Response.json(
-        { error: "Handle must be 3–20 characters, letters and numbers only." },
+        { error: "Handle must be 3–24 characters, letters, numbers, and _ only." },
         { status: 422 }
       );
     }

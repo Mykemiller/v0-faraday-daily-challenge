@@ -1,7 +1,8 @@
 // Subscriber state hydration endpoint — replaces the missing get-subscriber-state
 // edge function. Called on mount to hydrate streak/MW/today's completions.
 //   GET /api/subscriber-state?token=<session>
-// Returns: { email, playStreak, fullSetStreak, mwBalance, todayCompletions }
+// Returns: { email, handle, playStreak, fullSetStreak, mwBalance, active,
+//            tier, joined_at, todayCompletions }
 // Server-only. Requires env: SUPABASE_SERVICE_ROLE_KEY.
 
 const SUPABASE_URL =
@@ -58,9 +59,9 @@ export async function GET(request: Request) {
 
   const subscriberId: string = sess.subscriber_id;
 
-  // Subscriber row — streak, MW, email, active.
+  // Subscriber row — streak, MW, email, active, joined_at.
   const subR = await fetch(
-    `${s.base}/dc_subscribers?id=eq.${subscriberId}&select=email,handle,play_streak,full_set_streak,mw_balance,active`,
+    `${s.base}/dc_subscribers?id=eq.${subscriberId}&select=email,handle,play_streak,full_set_streak,mw_balance,active,created_at`,
     { headers: s.headers, cache: "no-store" }
   );
   if (!subR.ok)
@@ -70,18 +71,35 @@ export async function GET(request: Request) {
   if (!sub)
     return Response.json({ error: "Subscriber not found" }, { status: 404 });
 
-  // Today's completions from dc_completions.
+  // Tier — look up in the subscribers table by email; fall back to "free"
+  // because dc_subscribers does not carry a tier column (FAR-212).
+  let tier = "free";
+  if (sub.email) {
+    const tierR = await fetch(
+      `${s.base}/subscribers?email=eq.${encodeURIComponent(sub.email)}&select=tier`,
+      { headers: s.headers, cache: "no-store" }
+    );
+    if (tierR.ok) {
+      const tierRows = await tierR.json().catch(() => null);
+      const tierRow = Array.isArray(tierRows) ? tierRows[0] : null;
+      if (tierRow?.tier) tier = tierRow.tier;
+    }
+  }
+
+  // Today's completions from dc_daily_attempts — the authoritative attempt-lock
+  // table (FAR-209). Switching from dc_completions so GameTile dimming reflects
+  // the same gate that /api/score enforces server-side.
   const today = centralDate(new Date());
-  const compR = await fetch(
-    `${s.base}/dc_completions?subscriber_id=eq.${subscriberId}&puzzle_date=eq.${today}&select=puzzle_type,score,created_at`,
+  const attR = await fetch(
+    `${s.base}/dc_daily_attempts?subscriber_id=eq.${subscriberId}&play_date=eq.${today}&select=game_type,score,created_at`,
     { headers: s.headers, cache: "no-store" }
   );
-  const compRows = compR.ok ? await compR.json().catch(() => []) : [];
+  const attRows = attR.ok ? await attR.json().catch(() => []) : [];
 
   const todayCompletions: Record<string, { score: number; completedAt: string }> = {};
-  if (Array.isArray(compRows)) {
-    for (const row of compRows) {
-      todayCompletions[row.puzzle_type] = {
+  if (Array.isArray(attRows)) {
+    for (const row of attRows) {
+      todayCompletions[row.game_type] = {
         score: row.score ?? 0,
         completedAt: row.created_at ?? today,
       };
@@ -95,6 +113,8 @@ export async function GET(request: Request) {
     fullSetStreak: sub.full_set_streak ?? 0,
     mwBalance: sub.mw_balance ?? 0,
     active: sub.active !== false,
+    tier,
+    joined_at: sub.created_at ?? null,
     todayCompletions,
   });
 }
