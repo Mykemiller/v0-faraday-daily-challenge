@@ -231,9 +231,6 @@ function ProgressBar({ value, max, color }) {
 const SITE_URL = "https://faraday-intelligence.ai";
 const DC_URL = `${SITE_URL}/daily-challenge`;
 
-// Draw a branded score card to a PNG blob (OG 1200×630). Canvas falls back to
-// system fonts (the brand webfonts aren't guaranteed in a canvas context) but
-// the palette stays on-brand. Returns null if canvas/toBlob is unavailable.
 // Load an SVG-string into an <Image> for canvas drawing. Resolves null on any
 // failure so a missing icon never blocks the card. Self-contained data URL ⇒
 // the canvas stays untainted and toBlob keeps working.
@@ -247,44 +244,21 @@ function loadSvgImage(svg) {
   });
 }
 
-async function buildScoreCardBlob({ score, puzzleType, puzzleName, streak, mwEarned, handle }) {
+// Rasterise the game's locked neon pictogram tile to a square PNG blob — this is
+// the share image (NYT-Connections style: the score + Public ID ride in the share
+// text, not baked into the image). Mirrors the on-screen GameIcon via
+// gameIconSvgString, so the shared tile is the exact neon icon the player saw.
+// The tile's rounded corners stay transparent, so it sits cleanly in any bubble.
+// Returns null if canvas/toBlob is unavailable.
+async function buildShareIconBlob(puzzleType, size = 640) {
   try {
-    const W = 1200, H = 630;
+    const img = await loadSvgImage(gameIconSvgString(puzzleType, size));
+    if (!img) return null;
     const cv = document.createElement("canvas");
-    cv.width = W; cv.height = H;
+    cv.width = size; cv.height = size;
     const ctx = cv.getContext("2d");
     if (!ctx) return null;
-    const neon = GAME_NEON[puzzleType]?.neon || "#DAB050";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#1C3424"; ctx.fillRect(0, 0, W, H);                 // forest field
-    ctx.fillStyle = "#C4922A"; ctx.fillRect(0, 0, W, 8); ctx.fillRect(0, H - 8, W, 8); // gold rules
-    // The game's locked neon pictogram, top-right.
-    const ICON = 180;
-    const iconImg = await loadSvgImage(gameIconSvgString(puzzleType, ICON));
-    if (iconImg) ctx.drawImage(iconImg, W - 80 - ICON, 64, ICON, ICON);
-    ctx.fillStyle = "#DAB050"; ctx.font = "500 26px 'Courier New', monospace";
-    ctx.fillText("FARADAY · DAILY CHALLENGE", 80, 112);
-    // Puzzle name in the game's neon, auto-shrunk to clear the icon.
-    const name = puzzleName || puzzleType;
-    const maxNameW = W - 80 - ICON - 120;
-    let fs = 60;
-    ctx.font = `700 ${fs}px Georgia, serif`;
-    while (ctx.measureText(name).width > maxNameW && fs > 30) { fs -= 2; ctx.font = `700 ${fs}px Georgia, serif`; }
-    ctx.fillStyle = neon; ctx.fillText(name, 80, 196);
-    ctx.fillStyle = "#8CA68A"; ctx.font = "500 24px 'Courier New', monospace";
-    ctx.fillText(puzzleType.toUpperCase(), 80, 234);
-    ctx.fillStyle = "#C4922A"; ctx.font = "800 200px Georgia, serif";
-    ctx.fillText(String(score), 74, 462);
-    ctx.fillStyle = "#8CA68A"; ctx.font = "500 30px 'Courier New', monospace";
-    ctx.fillText("POINTS", 86, 506);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#F8F5F0"; ctx.font = "700 50px Georgia, serif";
-    ctx.fillText(`${streak}-day streak`, W - 80, 392);
-    ctx.fillStyle = "#4ADE80"; ctx.font = "700 42px Georgia, serif";
-    ctx.fillText(`+${mwEarned} MW`, W - 80, 448);
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#EEE6DA"; ctx.font = "400 27px 'Courier New', monospace";
-    ctx.fillText(`${handle ? `@${handle} · ` : ""}play free · faraday-intelligence.ai/daily-challenge`, 80, 566);
+    ctx.drawImage(img, 0, 0, size, size);
     return await new Promise((resolve) => cv.toBlob((b) => resolve(b), "image/png"));
   } catch { return null; }
 }
@@ -323,14 +297,13 @@ function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mw
   const [shareLabel, setShareLabel] = useState("↑ Share Result");
   async function handleShare() {
     setShareLabel("…");
-    let handle = null;
-    try { handle = localStorage.getItem(HANDLE_STORAGE_KEY); } catch { /* storage disabled */ }
-    const name = puzzleName || puzzleType;
-    const blob = await buildScoreCardBlob({ score, puzzleType, puzzleName: name, streak, mwEarned, handle });
+    const blob = await buildShareIconBlob(puzzleType);
     // Deep-link back to the game so the receiver can play; carry the puzzle's
     // unique Public ID (when set) so the share points at this exact puzzle.
     const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
-    const text = `I scored ${score} on ${name} on the Faraday Daily Challenge${publicId ? ` - ${publicId}` : ""}`;
+    // Simple NYT-Connections-style headline: game + score, Public ID on its own
+    // line. The neon-icon image carries the brand; no stats baked into the copy.
+    const text = `Faraday Daily Challenge - ${puzzleType} Score - ${score}${publicId ? `\n${publicId}` : ""}`;
     const status = await shareViaDevice({
       title: "Faraday Daily Challenge", text, url, blob,
       filename: `faraday-${puzzleType.toLowerCase().replace(/\s+/g, "-")}.png`,
@@ -338,7 +311,7 @@ function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mw
     onShare?.();
     setShareLabel(
       status === "Shared" ? "Shared ✓" : status === "Copied" ? "Link copied ✓" :
-      status === "Saved" ? "Card saved ✓" : "↑ Share Result"
+      status === "Saved" ? "Saved ✓" : "↑ Share Result"
     );
     if (status !== "idle") setTimeout(() => setShareLabel("↑ Share Result"), 2500);
   }

@@ -1,6 +1,6 @@
 // Standalone SVG-string builder for the locked Ch.09b game pictograms, used to
 // rasterise a game's neon icon onto the share-card <canvas> (see
-// buildScoreCardBlob in DailyChallenge.jsx). The on-screen lobby/header icons
+// buildShareIconBlob in DailyChallenge.jsx). The on-screen lobby/header icons
 // come from GameIcon.jsx (JSX); this mirrors the SAME path data as a serialised
 // string so it can be loaded via an <img src="data:image/svg+xml,…">. Keep the
 // two in sync if the locked pictograms ever change.
