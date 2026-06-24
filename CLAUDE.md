@@ -28,6 +28,39 @@ Invariants:
   domain). Do not build new surfaces there. This supersedes the earlier
   basePath+proxy arrangement (FAR-63) and reverses Decision Log D2.
 
+## Daily Todo Digest — faraday-todo-daily (AUTO-050, CC-13, added 2026-06-24)
+
+Edge function `supabase/functions/faraday-todo-daily/index.ts` fires daily at **05:00 CT**
+(DST-safe: pg_cron fires at both 10:00 UTC and 11:00 UTC; function guards on
+`America/Chicago` hour 5). Sends "Myke's Faraday Todo List" to mykemiller@gmail.com.
+
+**Data pulled (read-only):**
+- **Jira:** open FAR issues + 24h transitions (REST v3, cloud `2cdbb127-783f-4329-bec5-26223393fcfe`)
+- **GitHub:** commits + open/merged PRs in last 24h across 6 repos (`GITHUB_READ_PAT`)
+- **Engine health:** artifact count + stale-automation check from `automation_health_log`
+
+**Snapshot + diff:** writes to `register_daily_snapshot` (unique on `snapshot_date` CT date).
+Diffs status changes vs yesterday's `jira_open` snapshot column. `email_sent=true` gates
+idempotency — the second cron fire at 11:00 UTC is a no-op if the first succeeded.
+
+**Email transport:** Resend (`RESEND_API_KEY`), from `challenge@faraday-intelligence.ai`.
+Failure sends a short "digest failed" notice and writes a health-log row — never fails silent.
+
+**Secrets required (set in Supabase before go-live):**
+- `JIRA_API_TOKEN` — Atlassian API token for mykemiller@gmail.com
+- `JIRA_USER_EMAIL` — defaults to `mykemiller@gmail.com` if not set
+- `GITHUB_READ_PAT` — GitHub PAT with read access to all 6 repos
+- `RESEND_API_KEY` — already provisioned
+
+**pg_cron jobs:** `faraday-todo-daily-1000utc` (`0 10 * * *`) + `faraday-todo-daily-1100utc`
+(`0 11 * * *`) — both active in `cron.job`. Migration:
+`supabase/migrations/20260624000001_register_daily_snapshot.sql`.
+
+**Airtable:** AUTO-050 registered in Automation Registry (`appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg`,
+record `recvgnvCL3etK0Vs4`). **Pending Myke approval before production deployment.**
+
+**Tests:** `supabase/functions/faraday-todo-daily/faraday-todo-daily.test.ts`
+
 ## Daily Challenge rotation cron (AUTO-128, fixed 2026-06-22)
 
 The Daily Challenge serves the Airtable **Puzzle Bank** (`src/lib/airtable-puzzle-bank.js`):
