@@ -279,4 +279,4 @@ handle edits); no player's total can leak into another's session.
 - Added Signal Room and Thought Forge to Coming Soon product list
 - Removed: LIVE pulse indicator, Faraday Tip of the Day block, Academy nav button, @handle label (standalone chip replaced by clickable handle chip linking to Account)
 - Account link placed in header top-left (⚙ Account), visible on lobby + all game screens
-- Branch: feature/go-live-ui-polish | PR: [PR URL]
+- Branch: feature/go-live-ui-polish | PR: https://github.com/Mykemiller/v0-faraday-daily-challenge/pull/38
