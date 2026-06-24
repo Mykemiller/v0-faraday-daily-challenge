@@ -30,6 +30,7 @@ const MAX_TOKENS_PER_BATCH = 8000;   // safe per 3-automation batch
 const MAX_SEARCHES_PER_BATCH = 10;   // web_search budget per API call
 const PER_AUTO_CAP = 4;              // max artifacts per automation
 const BATCH_SIZE = 3;                // automations per Anthropic call
+const ARTIFACT_CHUNK_SIZE = 10;     // artifacts per upsert chunk (FAR-188; matches Airtable 10-record limit)
 const CRON_TOKEN = "fcron_9mK3pX7qR2vN8wYz4tB6sL1dH5jG0aE";
 
 // ─── Automation Registry (web-search-eligible, active in Airtable) ─────────────
@@ -122,11 +123,23 @@ interface CrawledArtifact {
   keyword_matches: string[];
 }
 
+// FAR-188: a single record that fails to normalize is isolated, not fatal.
+// There is no `status` column on automation_health_log (verified against
+// information_schema 2026-06-24), so a parse failure is recorded as a
+// success=false health row whose notes are prefixed `parse_error:` and whose
+// `errors` jsonb carries the reason + raw excerpt. auto_id is always the FK.
+interface ParseError {
+  auto_id: string;
+  reason: string;
+  excerpt: string;
+}
+
 interface BatchResult {
   artifacts: CrawledArtifact[];
   rawNote: string;
   salvaged: boolean;
   rawExcerpt?: string;
+  parseErrors: ParseError[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -237,33 +250,64 @@ Rules: auto_id and ifs_domains MUST come from the automation definition. source_
 
   const { artifacts: rawArtifacts, note, salvaged, rawExcerpt } = extractAndParse(text);
 
+  const { artifacts, parseErrors } = normalizeRecords(rawArtifacts, batch);
+  return { artifacts, rawNote: note, salvaged, rawExcerpt, parseErrors };
+}
+
+// normalizeRecords: turn raw model records into validated CrawledArtifacts.
+// FAR-188 — per-record isolation: each record is normalized inside its own
+// try/catch, so a single malformed/hostile record is skipped and recorded as a
+// parse_error rather than aborting the batch. A 50-record batch with one bad
+// row still yields 49 good artifacts. Exported pure helper for unit testing.
+export function normalizeRecords(
+  rawArtifacts: unknown[],
+  batch: AutoDef[],
+): { artifacts: CrawledArtifact[]; parseErrors: ParseError[] } {
   const valid: Record<string, AutoDef> = {};
   for (const a of batch) valid[a.auto_id] = a;
 
   const seen = new Set<string>();
   const perAuto: Record<string, number> = {};
   const artifacts: CrawledArtifact[] = [];
-  for (const r of rawArtifacts as Record<string, unknown>[]) {
-    const def = valid[String(r.auto_id ?? "")];
-    if (!def || !r.source_url || !r.title) continue;
-    const url = String(r.source_url).trim();
-    if (seen.has(url)) continue;
-    if ((perAuto[def.auto_id] ?? 0) >= PER_AUTO_CAP) continue;
-    seen.add(url);
-    perAuto[def.auto_id] = (perAuto[def.auto_id] ?? 0) + 1;
-    artifacts.push({
-      auto_id: def.auto_id,
-      source_type: def.source_type,
-      source_url: url,
-      title: String(r.title).slice(0, 500),
-      source: String(r.source ?? "").slice(0, 200),
-      summary: String(r.summary ?? "").slice(0, 1000),
-      published_at: typeof r.published_at === "string" ? r.published_at : null,
-      ifs_domains: def.ifs_domains,
-      keyword_matches: Array.isArray(r.keyword_matches) ? r.keyword_matches.slice(0, 10).map(String) : [],
-    });
+  const parseErrors: ParseError[] = [];
+  const fallbackAuto = batch[0]?.auto_id ?? "AUTO-040";
+
+  for (const raw of rawArtifacts) {
+    let r: Record<string, unknown> = {};
+    try {
+      r = (raw ?? {}) as Record<string, unknown>;
+      const def = valid[String(r.auto_id ?? "")];
+      // Missing/unknown auto_id or absent required fields → not a parse error,
+      // just a non-conforming record we drop silently (the model padded the list).
+      if (!def || !r.source_url || !r.title) continue;
+      const url = String(r.source_url).trim();
+      if (seen.has(url)) continue;
+      if ((perAuto[def.auto_id] ?? 0) >= PER_AUTO_CAP) continue;
+      seen.add(url);
+      perAuto[def.auto_id] = (perAuto[def.auto_id] ?? 0) + 1;
+      artifacts.push({
+        auto_id: def.auto_id,
+        source_type: def.source_type,
+        source_url: url,
+        title: String(r.title).slice(0, 500),
+        source: String(r.source ?? "").slice(0, 200),
+        summary: String(r.summary ?? "").slice(0, 1000),
+        published_at: typeof r.published_at === "string" ? r.published_at : null,
+        ifs_domains: def.ifs_domains,
+        keyword_matches: Array.isArray(r.keyword_matches) ? r.keyword_matches.slice(0, 10).map(String) : [],
+      });
+    } catch (e) {
+      // A record that throws mid-normalization (e.g. a hostile/oversized value)
+      // is salvaged-around: log it as a parse_error and keep going.
+      const claimedAuto = String(r?.auto_id ?? fallbackAuto);
+      parseErrors.push({
+        auto_id: valid[claimedAuto] ? claimedAuto : fallbackAuto,
+        reason: e instanceof Error ? e.message : String(e),
+        excerpt: (() => { try { return JSON.stringify(raw ?? null).slice(0, 300); } catch { return "[unserializable record]"; } })(),
+      });
+    }
   }
-  return { artifacts, rawNote: note, salvaged, rawExcerpt };
+  return { artifacts, parseErrors };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -299,12 +343,14 @@ serve(async (req: Request) => {
   const allArtifacts: CrawledArtifact[] = [];
   const failedAutoIds = new Set<string>();
   const batchErrors: Record<string, string> = {};
+  const parseErrors: ParseError[] = [];   // FAR-188: per-record parse failures
 
   for (let bi = 0; bi < batchResults.length; bi++) {
     const result = batchResults[bi];
     const batch = batches[bi];
     if (result.status === "fulfilled") {
       allArtifacts.push(...result.value.artifacts);
+      parseErrors.push(...result.value.parseErrors);
       if (result.value.salvaged) {
         for (const a of batch) {
           batchErrors[a.auto_id] = `salvaged; truncated payload: ${result.value.rawExcerpt?.slice(0, 200) ?? ""}`;
@@ -340,16 +386,31 @@ serve(async (req: Request) => {
     };
   }));
 
+  // FAR-188: insert in chunks of ARTIFACT_CHUNK_SIZE so one failing chunk
+  // (e.g. a single row that trips a constraint) is isolated and logged — the
+  // remaining chunks still land. Each chunk is independently try/caught.
   let inserted: Array<{ auto_id: string }> = [];
-  if (rows.length > 0) {
-    const { data, error } = await supabase
-      .from("artifacts")
-      .upsert(rows, { onConflict: "content_hash", ignoreDuplicates: true })
-      .select("auto_id");
-    if (error) {
-      console.error("artifact upsert error:", error.message);
-    } else {
-      inserted = data ?? [];
+  for (let ci = 0; ci < rows.length; ci += ARTIFACT_CHUNK_SIZE) {
+    const chunk = rows.slice(ci, ci + ARTIFACT_CHUNK_SIZE);
+    try {
+      const { data, error } = await supabase
+        .from("artifacts")
+        .upsert(chunk, { onConflict: "content_hash", ignoreDuplicates: true })
+        .select("auto_id");
+      if (error) {
+        console.error(`artifact upsert error (chunk ${ci / ARTIFACT_CHUNK_SIZE}):`, error.message);
+        for (const c of chunk) {
+          parseErrors.push({ auto_id: c.auto_id, reason: `upsert_failed: ${error.message}`, excerpt: c.source_url });
+        }
+      } else if (data) {
+        inserted.push(...data);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`artifact upsert threw (chunk ${ci / ARTIFACT_CHUNK_SIZE}):`, msg);
+      for (const c of chunk) {
+        parseErrors.push({ auto_id: c.auto_id, reason: `upsert_threw: ${msg}`, excerpt: c.source_url });
+      }
     }
   }
 
@@ -380,7 +441,24 @@ serve(async (req: Request) => {
     };
   });
 
-  await supabase.from("automation_health_log").insert(healthRows);
+  // FAR-188: one health row per parse_error, keyed to its auto_id FK. No
+  // `status` column exists on automation_health_log, so the parse_error class
+  // is encoded as success=false + a `parse_error:` notes prefix + errors jsonb.
+  const completedAt = new Date().toISOString();
+  const parseErrorRows = parseErrors.map(pe => ({
+    auto_id: pe.auto_id,
+    crawler_id: `${pe.auto_id}_v1.0`,
+    run_started_at: runStarted,
+    run_completed_at: completedAt,
+    artifacts_found: 0,
+    artifacts_new: 0,
+    artifacts_duped: 0,
+    success: false,
+    errors: [{ kind: "parse_error", reason: pe.reason, excerpt: pe.excerpt }],
+    notes: `parse_error: ${pe.reason.slice(0, 200)}`,
+  }));
+
+  await supabase.from("automation_health_log").insert([...healthRows, ...parseErrorRows]);
 
   const totalFound = allArtifacts.length;
   const totalNew = inserted.length;
@@ -391,6 +469,7 @@ serve(async (req: Request) => {
     artifacts_found: totalFound,
     artifacts_new: totalNew,
     artifacts_duped: totalFound - totalNew,
+    parse_errors: parseErrors.length,
     batches: batches.length,
   }), { headers: { "Content-Type": "application/json" } });
 });
