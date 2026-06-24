@@ -1071,6 +1071,193 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// COMING SOON MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+const COMING_SOON_PRODUCTS = [
+  { name:"Live Agent",         desc:"Your always-on AI analyst — ask anything about the data center economy in real time." },
+  { name:"Intelligent Alert",  desc:"Signal-to-noise filtered alerts on the deals, regulations, and moves that matter to you." },
+  { name:"Briefing Library",   desc:"A curated archive of deep-dive intelligence briefs across all 23 IDF domains." },
+  { name:"Jurisdiction Watch", desc:"Real-time regulatory posture tracking across every data center jurisdiction in the US." },
+  { name:"Faraday Academy",    desc:"Structured learning paths for professionals building fluency in the AI infrastructure economy." },
+  { name:"Signal Room",        desc:"A collaborative workspace for teams to annotate, debate, and act on Faraday intelligence." },
+  { name:"Thought Forge",      desc:"An AI-assisted environment for developing original theses about where the buildout is heading." },
+];
+
+function ComingSoonModal({ onClose }) {
+  return (
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, zIndex:200,
+      background:"rgba(13,17,14,0.85)", backdropFilter:"blur(8px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:"20px",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:"#141210", border:`1px solid ${C.border}`,
+        borderRadius:"14px", padding:"32px", maxWidth:"520px", width:"100%",
+        position:"relative", animation:"fadeUp 0.2s ease forwards",
+      }}>
+        <button onClick={onClose} style={{
+          position:"absolute", top:"16px", right:"16px",
+          background:"transparent", border:"none", color:C.muted,
+          fontSize:"18px", cursor:"pointer", lineHeight:1, padding:"4px 8px",
+        }}>✕</button>
+        <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
+          textTransform:"uppercase", color:C.muted, marginBottom:"20px" }}>
+          Coming Soon
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+          {COMING_SOON_PRODUCTS.map(p => (
+            <div key={p.name} style={{ display:"flex", flexDirection:"column", gap:"3px" }}>
+              <span style={{ ...mono, fontSize:"13px", fontWeight:500, color:C.gold }}>{p.name}</span>
+              <span style={{ ...mono, fontSize:"12px", color:C.muted, lineHeight:1.5 }}>{p.desc}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop:"24px", borderTop:`1px solid ${C.border}`, paddingTop:"16px" }}>
+          <Btn onClick={onClose} variant="ghost" small>← Back to the challenge</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACCOUNT PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+const MOCK_GAME_HISTORY = [
+  { type:"Rackl",       score:112, date:"2026-06-23" },
+  { type:"Circuit",     score:98,  date:"2026-06-23" },
+  { type:"Dark Fiber",  score:125, date:"2026-06-22" },
+  { type:"Frequency",   score:87,  date:"2026-06-22" },
+  { type:"The Stack",   score:115, date:"2026-06-21" },
+];
+
+function AccountPage({ email, handle, streak, mwBalance, onBack, onShowComingSoon, onSignOut }) {
+  const [editHandle, setEditHandle] = useState(handle || "");
+  const [handleError, setHandleError] = useState("");
+  const [handleSaved, setHandleSaved] = useState(false);
+
+  function validateHandle(v) {
+    if (!/^[a-z0-9_]{3,20}$/i.test(v)) return "3–20 characters: letters, numbers, underscore only";
+    return "";
+  }
+
+  function saveHandle() {
+    const err = validateHandle(editHandle);
+    if (err) { setHandleError(err); return; }
+    setHandleError("");
+    setHandleSaved(true);
+    setTimeout(() => setHandleSaved(false), 2000);
+  }
+
+  const card = { background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`,
+    borderRadius:"10px", padding:"20px 22px", marginBottom:"14px" };
+
+  return (
+    <div className="ca" style={{ maxWidth:"560px", margin:"0 auto", paddingTop:"32px", paddingBottom:"56px" }}>
+      <button onClick={onBack} style={{ ...mono, fontSize:"11px", color:C.muted,
+        background:"transparent", border:"none", cursor:"pointer", padding:0,
+        marginBottom:"24px", display:"flex", alignItems:"center", gap:"6px" }}>
+        ← Back
+      </button>
+      <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
+        textTransform:"uppercase", color:C.muted, marginBottom:"6px" }}>
+        Account &amp; Settings
+      </div>
+      <div style={{ ...sans, fontSize:"24px", fontWeight:600, color:C.text, marginBottom:"28px" }}>
+        {handle ? `@${handle}` : (email ? email.split("@")[0] : "Your Account")}
+      </div>
+
+      {/* Handle */}
+      <div style={card}>
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:"12px" }}>Handle</div>
+        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
+          <input
+            value={editHandle}
+            onChange={e => { setEditHandle(e.target.value.toLowerCase()); setHandleError(""); }}
+            placeholder="your_handle"
+            maxLength={20}
+            autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            style={{ flex:"1 1 160px", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
+              borderRadius:"6px", padding:"8px 12px", color:C.text, fontSize:"12px", ...mono }}
+          />
+          <Btn onClick={saveHandle} small>
+            {handleSaved ? "Saved ✓" : "Save"}
+          </Btn>
+        </div>
+        {handleError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"6px" }}>{handleError}</div>}
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, marginTop:"6px" }}>
+          3–20 chars · letters, numbers, underscore · your leaderboard identity
+        </div>
+      </div>
+
+      {/* Streak summary */}
+      <div style={card}>
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:"12px" }}>Streak</div>
+        <div style={{ display:"flex", alignItems:"center", gap:"14px" }}>
+          <span style={{ ...sans, fontSize:"28px", fontWeight:700, color:C.gold }}>{streak}</span>
+          <span style={{ ...mono, fontSize:"11px", color:C.muted }}>day streak</span>
+        </div>
+        <div style={{ display:"flex", gap:"5px", marginTop:"12px" }}>
+          {[...Array(7)].map((_, i) => (
+            <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
+              background: i < Math.min(streak, 7) ? C.gold : C.dim }} />
+          ))}
+        </div>
+      </div>
+
+      {/* MW Balance */}
+      <div style={card}>
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:"12px" }}>MW Balance</div>
+        <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
+          <span style={{ ...sans, fontSize:"28px", fontWeight:700, color:C.green }}>{mwBalance}</span>
+          <span style={{ ...mono, fontSize:"11px", color:C.muted }}>MW banked</span>
+        </div>
+      </div>
+
+      {/* Subscription tier */}
+      <div style={card}>
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:"12px" }}>Subscription</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:"12px", flexWrap:"wrap" }}>
+          <span style={{ ...sans, fontSize:"15px", fontWeight:600, color:C.text }}>Signal</span>
+          <button onClick={onShowComingSoon} style={{ ...mono, fontSize:"11px", color:C.gold,
+            background:"rgba(196,146,42,0.08)", border:"1px solid rgba(196,146,42,0.3)",
+            borderRadius:"6px", padding:"6px 14px", cursor:"pointer" }}>
+            Upgrade →
+          </button>
+        </div>
+      </div>
+
+      {/* Game history */}
+      <div style={card}>
+        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:"12px" }}>Recent Games</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+          {MOCK_GAME_HISTORY.map((g, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"8px 0", borderBottom: i < MOCK_GAME_HISTORY.length-1 ? `1px solid ${C.border}` : "none" }}>
+              <span style={{ ...mono, fontSize:"12px", color:C.text }}>{g.type}</span>
+              <div style={{ display:"flex", gap:"16px", alignItems:"center" }}>
+                <span style={{ ...mono, fontSize:"11px", color:C.muted }}>{g.date}</span>
+                <span style={{ ...mono, fontSize:"12px", fontWeight:500, color:C.gold }}>{g.score} pts</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sign out */}
+      <div style={{ marginTop:"8px" }}>
+        <Btn onClick={onSignOut} variant="ghost">Sign out</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SOCIAL GATE — Email capture
 // ══════════════════════════════════════════════════════════════════════════════
 function SocialGate({ trigger, onRegister, onDismiss }) {
@@ -1370,11 +1557,13 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
 export default function DailyChallenge() {
-  const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | result
+  const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | account
   const [activeGame, setActiveGame] = useState(null);
   const [email,      setEmail]      = useState(null);     // registered email
   const [handle,     setHandle]     = useState(null);     // canonical leaderboard handle (mirrored from /auth)
   const [optedOut,   setOptedOut]   = useState(false);    // soft opt-out mirror ("leave the game")
+  const [showComingSoon, setShowComingSoon] = useState(false);
+  const [prevScreen, setPrevScreen] = useState("lobby");
   const [pendingSwitch, setPendingSwitch] = useState(null); // game-switcher confirm (discard in-progress puzzle)
   // Session counters — honest defaults for an anonymous session (0). These
   // increment as the player completes games in-session. Cross-session streak/MW
@@ -1551,6 +1740,27 @@ export default function DailyChallenge() {
     setScreen("game");
   }
 
+  function openAccount() {
+    setPrevScreen(screen);
+    setScreen("account");
+  }
+
+  function handleSignOut() {
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem(EMAIL_STORAGE_KEY);
+      localStorage.removeItem(HANDLE_STORAGE_KEY);
+      localStorage.removeItem(OPTED_OUT_STORAGE_KEY);
+    } catch { /* ignore */ }
+    setEmail(null);
+    setHandle(null);
+    setSessionToken(null);
+    setStreak(0);
+    setMwBalance(0);
+    setOptedOut(false);
+    setScreen("lobby");
+  }
+
   // Deep-link: /daily-challenge?game=<type> opens that puzzle directly (from the
   // homepage neon icons) instead of landing on the lobby. Runs once on mount.
   useEffect(() => {
@@ -1650,7 +1860,7 @@ export default function DailyChallenge() {
   const displayHandle = handle || (email ? email.split("@")[0] : null);
 
   return (
-    <div style={{ minHeight:"100vh", background: screen === "lobby" ? C.cream : C.forest, color:C.black, ...sans }}>
+    <div style={{ minHeight:"100vh", background: screen === "lobby" ? C.cream : C.bg, color:C.black, ...sans }}>
       <GameIconDefs />
 
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
@@ -1662,25 +1872,18 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Live indicator — status, not a metric */}
-          <div className="fdc-live" style={{ display:"flex", alignItems:"center", gap:"6px", ...mono,
-            fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.14em", color:C.goldLight }}>
-            <span style={{ width:"6px", height:"6px", borderRadius:"50%",
-              background:C.goldLight, animation:"pulse 2s ease infinite", display:"inline-block" }}/>
-            LIVE
-          </div>
+          {/* Account link — top-left, always visible */}
+          <button onClick={openAccount} style={{ ...mono, fontSize:"clamp(11px,0.85vw,13px)", color:C.sage,
+            background:"transparent", border:"none", cursor:"pointer", padding:"2px 0",
+            whiteSpace:"nowrap", opacity: screen === "account" ? 0.5 : 1,
+            pointerEvents: screen === "account" ? "none" : "auto" }}>
+            ⚙ Account
+          </button>
           {/* Chips — mono treatment. Streak/MW are honest session counters. */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"8px", alignItems:"center" }}>
-            {displayHandle && (
-              <span className="fdc-mw fdc-chip" title="Your leaderboard handle" style={{ ...mono, color:C.goldLight,
-                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
-                whiteSpace:"nowrap", maxWidth:"150px", overflow:"hidden", textOverflow:"ellipsis" }}>
-                @{displayHandle}
-              </span>
-            )}
             <span className="fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
               borderRadius:"5px", whiteSpace:"nowrap" }}>
-              Streak <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
+              🔥 <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
             </span>
             <span className="fdc-mw fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
               borderRadius:"5px", whiteSpace:"nowrap" }}>
@@ -1692,21 +1895,6 @@ export default function DailyChallenge() {
                 whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
               Leaderboard
             </a>
-            <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
-              className="fdc-chip"
-              style={{ ...mono, color:C.forest, background:C.goldLight,
-                border:`1px solid ${C.goldLight}`, borderRadius:"5px",
-                whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
-              Academy →
-            </a>
-            {email && (
-              <a href="/account" className="fdc-chip"
-                style={{ ...mono, color:C.goldLight, background:"transparent",
-                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
-                  whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
-                Account
-              </a>
-            )}
             {!email && screen === "lobby" && (
               <button onClick={() => { setGateReason("default"); setScreen("gate"); }}
                 className="fdc-chip"
@@ -1716,7 +1904,16 @@ export default function DailyChallenge() {
                 Sign in →
               </button>
             )}
-            {screen !== "lobby" && (
+            {email && displayHandle && (
+              <button onClick={openAccount} className="fdc-chip"
+                style={{ ...mono, color:C.goldLight, background:"transparent",
+                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
+                  whiteSpace:"nowrap", cursor:"pointer",
+                  maxWidth:"150px", overflow:"hidden", textOverflow:"ellipsis" }}>
+                @{displayHandle}
+              </button>
+            )}
+            {screen === "game" && (
               <button onClick={() => setScreen("lobby")}
                 className="fdc-chip"
                 style={{ ...mono, color:C.cream, background:"transparent",
@@ -1729,6 +1926,8 @@ export default function DailyChallenge() {
         </div>
       </header>
       <div style={{ height:"2px", background:C.gold }} />
+
+      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
 
       {/* ── BODY ── */}
       <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
@@ -1799,37 +1998,15 @@ export default function DailyChallenge() {
               </p>
               <div style={{ display:"flex", flexWrap:"wrap", gap:"10px 18px", marginTop:"14px",
                 ...mono, fontSize:"12px" }}>
-                {[
-                  { label:"Live Agent", href:"/live-agent" },
-                  { label:"Intelligent Alert", href:"/intelligent-alert" },
-                  { label:"Briefing Library", href:"/briefing-library" },
-                  { label:"Jurisdiction Watch", href:"/jurisdiction-watch" },
-                  { label:"Faraday Academy", href:"/academy" },
-                ].map(s => (
-                  <a key={s.href} href={s.href} style={{ color:C.forest, textDecoration:"none",
-                    borderBottom:`1px solid ${C.gray}`, paddingBottom:"1px" }}>{s.label} →</a>
+                {COMING_SOON_PRODUCTS.map(p => (
+                  <button key={p.name} onClick={() => setShowComingSoon(true)}
+                    style={{ color:C.forest, textDecoration:"none", background:"transparent",
+                      border:"none", cursor:"pointer", borderBottom:`1px solid ${C.gray}`,
+                      paddingBottom:"1px", ...mono, fontSize:"12px" }}>
+                    {p.name} →
+                  </button>
                 ))}
               </div>
-            </div>
-
-            {/* Tip of the day — Faraday's Take treatment */}
-            <div style={{ background:C.forest, borderRadius:"10px", borderTop:`3px solid ${C.gold}`,
-              padding:"26px 28px", color:C.cream, margin:"28px 0 56px" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", gap:"10px",
-                flexWrap:"wrap", ...mono, fontSize:"11px", letterSpacing:"0.16em" }}>
-                <span style={{ color:C.cream }}>FARADAY TIP OF THE DAY</span>
-                {tipOfTheDay?.domain && (
-                  <span style={{ color:C.goldLight, border:"1px solid rgba(196,146,42,.45)",
-                    borderRadius:"4px", padding:"2px 9px" }}>
-                    {tipOfTheDay.domain.toUpperCase()}
-                  </span>
-                )}
-              </div>
-              <blockquote style={{ ...serif, fontStyle:"italic", fontSize:"17px", lineHeight:1.65,
-                marginTop:"14px", color:C.cream }}>
-                {tipOfTheDay?.body ||
-                  `"The 800V DC transition isn't a technology decision — it's a real estate decision. Legacy AC facilities can't retrofit fast enough to host Blackwell-class density. The hardware roadmap and the facility obsolescence schedule are the same document."`}
-              </blockquote>
             </div>
           </div>
         )}
@@ -1908,6 +2085,19 @@ export default function DailyChallenge() {
               <SocialGate trigger={gateReason} onRegister={onRegister} onDismiss={onGateDismiss} />
             </div>
           </div>
+        )}
+
+        {/* ACCOUNT */}
+        {screen === "account" && (
+          <AccountPage
+            email={email}
+            handle={handle}
+            streak={streak}
+            mwBalance={mwBalance}
+            onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
+            onShowComingSoon={() => setShowComingSoon(true)}
+            onSignOut={handleSignOut}
+          />
         )}
       </main>
     </div>
