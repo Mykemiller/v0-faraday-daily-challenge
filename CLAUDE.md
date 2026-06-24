@@ -243,3 +243,31 @@ Moratorium Tracker* (moved off the AUTO-049 collision).
 ID block, AUTO-049 reassignment, stale-tag fix, conference repoint, and full Tier-1
 activation (deploy + dry-run + flip). No `source_type` enum was added; the 39
 whitespace routines remain Designed pending per-routine build.
+
+## Daily Challenge win-screen daily total + persistence (FAR-211 + FAR-207, shipped 2026-06-24)
+
+**FAR-211 (Display):** `ScoreCard` now renders `score/dayTotal` on every win screen.
+`/dayTotal` uses sage `#8CA68A` at 22px/500-weight, subordinate to the 48px gold score.
+Label beneath reads "this game / today · {puzzleType}". First game of the day shows
+`N/N`; each subsequent game shows `thisGame/cumulativeToday`. All 7 puzzle types share
+the change via the single `ScoreCard` component.
+
+**FAR-207 (Persistence):** Three-layer accumulation:
+1. **Seed on load** — `subscriber-state` already returns `todayCompletions` (from
+   `dc_completions`). The hydration effect now sums those scores and seeds `lastDailyTotal`.
+   Returning authenticated subscribers load with their correct running total, not zero.
+2. **In-session optimistic total** — `onGameComplete` updates `lastDailyTotal` immediately
+   (pre-server-response) for both authenticated (via `todayCompletions` sum) and anonymous
+   (simple `t + score` increment) players.
+3. **Authoritative server write** — `/api/score` POST upserts `leaderboard_daily` and locks
+   `dc_daily_attempts`; the response `runningDailyTotal` reconciles the optimistic value.
+
+**Schema (applied 2026-06-24):**
+- `dc_daily_attempts` — one-attempt-per-day idempotency gate; UNIQUE on
+  `(subscriber_id, game_type, play_date)`. Migration: `20260624000001_dc_daily_attempts.sql`.
+- `leaderboard_daily` — running daily score aggregate; PRIMARY KEY `(subscriber_id, play_date)`.
+  Migration: `20260624000002_leaderboard_daily.sql`.
+- Both have RLS enabled (service-role-only write path via `/api/score`).
+
+**Identity / isolation:** daily totals are keyed to `dc_subscribers.id` (UUID, stable across
+handle edits); no player's total can leak into another's session.

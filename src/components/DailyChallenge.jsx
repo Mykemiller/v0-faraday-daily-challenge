@@ -319,16 +319,13 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
-        <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"6px" }}>
+        <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"2px" }}>
           <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{score}</div>
-          {dailyTotal > 0 && (
-            <div style={{ fontSize:"22px", fontWeight:500, color:C.muted, letterSpacing:"-0.02em", ...sans }}>
-              /{dailyTotal}
-              <span style={{ fontSize:"10px", color:C.muted, display:"block", textAlign:"center", ...mono }}>today</span>
-            </div>
-          )}
+          <div style={{ fontSize:"22px", fontWeight:500, color:C.sage, letterSpacing:"-0.02em", ...sans }}>
+            /{dailyTotal}
+          </div>
         </div>
-        <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>points · {puzzleType}</div>
+        <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>this game / today · {puzzleType}</div>
       </div>
       <div style={{ background:`rgba(196,146,42,0.06)`, border:`1px solid rgba(196,146,42,0.2)`,
         borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
@@ -402,7 +399,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
     }
   }
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
@@ -513,7 +510,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
-  if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
@@ -641,7 +638,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
@@ -735,7 +732,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
@@ -832,7 +829,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
@@ -918,7 +915,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
@@ -1022,7 +1019,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
@@ -1451,6 +1448,10 @@ export default function DailyChallenge() {
         setMwBalance(data.mwBalance || 0);
         setTodayCompletions(data.todayCompletions || {});
         setGamesPlayed(Object.keys(data.todayCompletions || {}).length);
+        // Seed the running daily total from today's already-played games (FAR-207).
+        const seedTotal = Object.values(data.todayCompletions || {})
+          .reduce((sum, c) => sum + (c.score || 0), 0);
+        if (seedTotal > 0) setLastDailyTotal(seedTotal);
         if (data.active === false) {
           setOptedOut(true);
           try { localStorage.setItem(OPTED_OUT_STORAGE_KEY, "1"); } catch { /* ignore */ }
@@ -1582,6 +1583,11 @@ export default function DailyChallenge() {
         (sum, c) => sum + (c.score || 0), 0
       );
       setLastDailyTotal(optimisticTotal);
+    } else {
+      // Anonymous session: accumulate session-local daily total (no server write).
+      setLastDailyTotal(t => t + score);
+    }
+    if (sessionToken && playedGame) {
       // Authoritative score write — enforces one-attempt-per-day + leaderboard_daily.
       fetch(`/api/score`, {
         method: "POST",
