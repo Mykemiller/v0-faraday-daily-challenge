@@ -105,3 +105,31 @@ button:focus-visible {
 .brand-gradient {
   background: linear-gradient(135deg, var(--color-forest) 0%, var(--color-forest-mid) 100%);
 }
+
+/* ── Daily Challenge masthead — responsive scaling ──────────────────────────
+   Mobile/tablet (< 1024px): compact 820px column.
+   Desktop (≥ 1024px): wider container + larger chip text so the banner
+   reads at desktop scale without looking like a thin mobile strip. */
+.fdc-header-inner {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fdc-chip {
+  font-size: 11px;
+  padding: 6px 10px;
+}
+@media (min-width: 1024px) {
+  .fdc-header-inner {
+    max-width: 1200px;
+    padding: 18px 48px;
+    gap: 16px;
+  }
+  .fdc-chip {
+    font-size: 13px;
+    padding: 8px 14px;
+  }
+}

@@ -1612,8 +1612,12 @@ export default function DailyChallenge() {
         })
         .catch(() => { /* offline — keep optimistic counters */ });
     }
-    // Show social gate after first game if not registered.
-    if (!email && gamesPlayed === 0) {
+    // Show social gate after first game only for truly anonymous sessions.
+    // Check localStorage directly — subscriber-state may not have resolved yet
+    // when the first game completes, leaving email null for registered users.
+    let hasSession = false;
+    try { hasSession = !!localStorage.getItem(SESSION_STORAGE_KEY); } catch {}
+    if (!email && !hasSession && gamesPlayed === 0) {
       setGateReason("leaderboard");
       setScreen("gate");
     } else {
@@ -1652,16 +1656,15 @@ export default function DailyChallenge() {
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
       <div style={{ height:"2px", background:C.gold }} />
       <header style={{ background:C.forest, position:"sticky", top:0, zIndex:50 }}>
-        <div style={{ maxWidth:"820px", margin:"0 auto", padding:"12px 20px",
-          display:"flex", alignItems:"center", gap:"12px" }}>
+        <div className="fdc-header-inner">
           <BrandMark size={20} framed />
           <div style={{ lineHeight:1.25 }}>
-            <b style={{ ...serif, fontWeight:700, fontSize:"16px", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
-            <span style={{ display:"block", ...mono, fontSize:"11px", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
+            <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
+            <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
           {/* Live indicator — status, not a metric */}
           <div className="fdc-live" style={{ display:"flex", alignItems:"center", gap:"6px", ...mono,
-            fontSize:"11px", letterSpacing:"0.14em", color:C.goldLight }}>
+            fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.14em", color:C.goldLight }}>
             <span style={{ width:"6px", height:"6px", borderRadius:"50%",
               background:C.goldLight, animation:"pulse 2s ease infinite", display:"inline-block" }}/>
             LIVE
@@ -1669,53 +1672,56 @@ export default function DailyChallenge() {
           {/* Chips — mono treatment. Streak/MW are honest session counters. */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"8px", alignItems:"center" }}>
             {displayHandle && (
-              <span className="fdc-mw" title="Your leaderboard handle" style={{ ...mono, fontSize:"11px", color:C.goldLight,
-                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
+              <span className="fdc-mw fdc-chip" title="Your leaderboard handle" style={{ ...mono, color:C.goldLight,
+                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
                 whiteSpace:"nowrap", maxWidth:"150px", overflow:"hidden", textOverflow:"ellipsis" }}>
                 @{displayHandle}
               </span>
             )}
-            <span style={{ ...mono, fontSize:"11px", color:C.cream, border:"1px solid rgba(248,245,240,.22)",
-              borderRadius:"5px", padding:"6px 10px", whiteSpace:"nowrap" }}>
+            <span className="fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
+              borderRadius:"5px", whiteSpace:"nowrap" }}>
               Streak <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
             </span>
-            <span className="fdc-mw" style={{ ...mono, fontSize:"11px", color:C.cream, border:"1px solid rgba(248,245,240,.22)",
-              borderRadius:"5px", padding:"6px 10px", whiteSpace:"nowrap" }}>
+            <span className="fdc-mw fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
+              borderRadius:"5px", whiteSpace:"nowrap" }}>
               <b style={{ color:C.goldLight, fontWeight:500 }}>{mwBalance}</b> MW
             </span>
-            <a href="/leaderboard"
-              style={{ ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
-                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
+            <a href="/leaderboard" className="fdc-chip"
+              style={{ ...mono, color:C.goldLight, background:"transparent",
+                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
                 whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
               Leaderboard
             </a>
             <a href="https://faraday-academy.vercel.app/academy" target="_blank" rel="noopener noreferrer"
-              style={{ ...mono, fontSize:"11px", color:C.forest, background:C.goldLight,
-                border:`1px solid ${C.goldLight}`, borderRadius:"5px", padding:"6px 10px",
+              className="fdc-chip"
+              style={{ ...mono, color:C.forest, background:C.goldLight,
+                border:`1px solid ${C.goldLight}`, borderRadius:"5px",
                 whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
               Academy →
             </a>
             {email && (
-              <a href="/account"
-                style={{ ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
-                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
+              <a href="/account" className="fdc-chip"
+                style={{ ...mono, color:C.goldLight, background:"transparent",
+                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
                   whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
                 Account
               </a>
             )}
             {!email && screen === "lobby" && (
-              <button onClick={() => { setGateReason("default"); setScreen("gate"); }} style={{
-                ...mono, fontSize:"11px", color:C.goldLight, background:"transparent",
-                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px", padding:"6px 10px",
-                whiteSpace:"nowrap", cursor:"pointer" }}>
+              <button onClick={() => { setGateReason("default"); setScreen("gate"); }}
+                className="fdc-chip"
+                style={{ ...mono, color:C.goldLight, background:"transparent",
+                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
+                  whiteSpace:"nowrap", cursor:"pointer" }}>
                 Sign in →
               </button>
             )}
             {screen !== "lobby" && (
-              <button onClick={() => setScreen("lobby")} style={{
-                ...mono, fontSize:"11px", color:C.cream, background:"transparent",
-                border:"1px solid rgba(248,245,240,.22)", borderRadius:"5px", padding:"6px 10px",
-                whiteSpace:"nowrap", cursor:"pointer" }}>
+              <button onClick={() => setScreen("lobby")}
+                className="fdc-chip"
+                style={{ ...mono, color:C.cream, background:"transparent",
+                  border:"1px solid rgba(248,245,240,.22)", borderRadius:"5px",
+                  whiteSpace:"nowrap", cursor:"pointer" }}>
                 ← Lobby
               </button>
             )}
