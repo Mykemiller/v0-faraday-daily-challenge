@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const s = svc();
   if (!s) return Response.json({ error: "Account service not configured" }, { status: 500 });
 
-  let body: { token?: string; action?: string };
+  let body: { token?: string; action?: string; newHandle?: string };
   try {
     body = await request.json();
   } catch {
@@ -84,13 +84,52 @@ export async function POST(request: Request) {
   const token = (body.token || "").trim();
   const action = body.action;
   if (!token) return Response.json({ error: "Missing session" }, { status: 401 });
-  if (action !== "leave" && action !== "rejoin") {
+  if (action !== "leave" && action !== "rejoin" && action !== "update-handle") {
     return Response.json({ error: "Invalid action" }, { status: 400 });
   }
 
   const id = await resolveSubscriber(s, token);
   if (!id) return Response.json({ error: "Invalid or expired session" }, { status: 401 });
 
+  // ── Handle update ──────────────────────────────────────────────────────────
+  if (action === "update-handle") {
+    const raw = typeof body.newHandle === "string" ? body.newHandle.trim().toLowerCase() : "";
+    // Validate: 3-20 chars, alphanumeric only (no _ or . — grandfathered legacy
+    // handles may still have _ in the DB but new submissions must be clean).
+    if (!/^[a-z0-9]{3,20}$/.test(raw)) {
+      return Response.json(
+        { error: "Handle must be 3–20 characters, letters and numbers only." },
+        { status: 422 }
+      );
+    }
+    // Uniqueness check (case-insensitive via citext).
+    const uniqR = await fetch(
+      `${s.base}/dc_subscribers?handle=eq.${encodeURIComponent(raw)}&select=id`,
+      { headers: s.headers, cache: "no-store" }
+    );
+    if (uniqR.ok) {
+      const rows = await uniqR.json().catch(() => null);
+      const existing = Array.isArray(rows) ? rows[0] : null;
+      if (existing && existing.id !== id) {
+        return Response.json({ error: "That handle is already taken." }, { status: 409 });
+      }
+    }
+    const patchR = await fetch(`${s.base}/dc_subscribers?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { ...s.headers, Prefer: "return=representation" },
+      body: JSON.stringify({ handle: raw }),
+    });
+    if (!patchR.ok) {
+      const detail = await patchR.text().catch(() => "");
+      return Response.json(
+        { error: "Could not update handle", detail: detail.slice(0, 300) },
+        { status: 500 }
+      );
+    }
+    return Response.json({ ok: true, handle: raw });
+  }
+
+  // ── Soft opt-out / rejoin ──────────────────────────────────────────────────
   const active = action === "rejoin";
   const r = await fetch(`${s.base}/dc_subscribers?id=eq.${id}`, {
     method: "PATCH",
