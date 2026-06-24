@@ -1,7 +1,7 @@
 // Unit tests for faraday-crawl parser hardening.
 // Run with: deno test supabase/functions/faraday-crawl/faraday-crawl.test.ts
 import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { extractAndParse } from "./index.ts";
+import { extractAndParse, normalizeRecords } from "./index.ts";
 
 Deno.test("extractAndParse — valid JSON", () => {
   const text = JSON.stringify({
@@ -55,4 +55,57 @@ Deno.test("extractAndParse — fully empty / junk response returns empty with sa
   const { artifacts, salvaged } = extractAndParse("I could not find any relevant articles today.");
   assertEquals(salvaged, true);
   assertEquals(artifacts.length, 0);
+});
+
+// ─── FAR-188: per-record isolation ─────────────────────────────────────────────
+Deno.test("normalizeRecords — a 50-record batch with one bad record does not abort", () => {
+  // 13 automations → cap 4 each = capacity for all 49 good records.
+  const batch = Array.from({ length: 13 }, (_, i) => ({
+    auto_id: `AUTO-${String(900 + i)}`,
+    source_type: "web_news",
+    ifs_domains: ["D1"],
+    queries: ["q"],
+  }));
+
+  const records: unknown[] = [];
+  for (let i = 0; i < 49; i++) {
+    records.push({
+      auto_id: batch[i % batch.length].auto_id,
+      source_url: `https://example.com/article-${i}`,
+      title: `Title ${i}`,
+      source: "Pub",
+      summary: "Summary.",
+      published_at: null,
+      ifs_domains: ["D1"],
+      keyword_matches: [],
+    });
+  }
+  // The 50th record throws the moment `title` is read (hostile getter).
+  const hostile: Record<string, unknown> = {
+    auto_id: batch[0].auto_id,
+    source_url: "https://example.com/boom",
+  };
+  Object.defineProperty(hostile, "title", { get() { throw new Error("boom-record"); }, enumerable: true });
+  records.splice(25, 0, hostile); // bad record in the middle of the batch
+
+  const { artifacts, parseErrors } = normalizeRecords(records, batch);
+
+  // The whole batch was processed: 49 good artifacts survived the one bad row.
+  assertEquals(artifacts.length, 49);
+  assertEquals(parseErrors.length, 1);
+  assertEquals(parseErrors[0].auto_id, batch[0].auto_id); // FK preserved
+  assertEquals(parseErrors[0].reason, "boom-record");
+});
+
+Deno.test("normalizeRecords — null / non-object records are skipped, not fatal", () => {
+  const batch = [{ auto_id: "AUTO-001", source_type: "web_news", ifs_domains: ["D1"], queries: ["q"] }];
+  const records: unknown[] = [
+    null,
+    "not an object",
+    { auto_id: "AUTO-001", source_url: "https://ok.com/x", title: "Good", ifs_domains: ["D1"] },
+    42,
+  ];
+  const { artifacts, parseErrors } = normalizeRecords(records, batch);
+  assertEquals(artifacts.length, 1);
+  assertEquals(parseErrors.length, 0); // non-conforming ≠ parse error
 });

@@ -31,7 +31,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 // Constant-time compare — avoids trivial timing attacks on the secret.
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -39,12 +39,12 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 // "Myke Miller <mykemiller@gmail.com>" → "mykemiller@gmail.com"
-function normalizeEmail(raw: string): string {
+export function normalizeEmail(raw: string): string {
   const m = raw.match(/<([^>]+)>/);
   return (m ? m[1] : raw).trim().toLowerCase();
 }
 
-async function sha256Hex(s: string): Promise<string> {
+export async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
