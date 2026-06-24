@@ -57,6 +57,11 @@ export default function AccountPage() {
   const [err, setErr] = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
 
+  // Handle editing state
+  const [editingHandle, setEditingHandle] = useState(false);
+  const [newHandle, setNewHandle] = useState("");
+  const [handleWarningShown, setHandleWarningShown] = useState(false);
+
   // Affiliation form state
   const [joinCode, setJoinCode] = useState("");
   const [newName, setNewName] = useState("");
@@ -134,6 +139,40 @@ export default function AccountPage() {
         setJoinCode("");
         setNewName("");
         setParentCode("");
+      })
+      .catch(() => setErr("Network error — try again."))
+      .finally(() => setBusy(false));
+  }
+
+  function updateHandle() {
+    if (!token) return;
+    const clean = newHandle.trim().toLowerCase();
+    if (!/^[a-z0-9]{3,20}$/.test(clean)) {
+      setErr("Handle must be 3–20 characters, letters and numbers only.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    fetch(`/api/account`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, action: "update-handle", newHandle: clean }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) {
+          setErr(d?.error || "Could not update handle — try again.");
+          return;
+        }
+        try {
+          if (d.handle) localStorage.setItem("dc_handle", d.handle);
+        } catch { /* ignore */ }
+        setAcct((a) => (a ? { ...a, handle: d.handle } : a));
+        setEditingHandle(false);
+        setNewHandle("");
+        setHandleWarningShown(false);
+        setMsg("Handle updated. Your leaderboard standings are linked to your new handle.");
       })
       .catch(() => setErr("Network error — try again."))
       .finally(() => setBusy(false));
@@ -288,17 +327,58 @@ export default function AccountPage() {
         {/* Identity */}
         <section style={card}>
           <div style={label}>Your identity</div>
-          <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={{ fontSize: "20px", fontWeight: 700, color: C.forest, ...sans }}>
-              @{acct?.handle || (acct?.email ? acct.email.split("@")[0] : "you")}
+          {!editingHandle ? (
+            <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ fontSize: "20px", fontWeight: 700, color: C.forest, ...sans }}>
+                  @{acct?.handle || (acct?.email ? acct.email.split("@")[0] : "you")}
+                </div>
+                <button
+                  disabled={busy}
+                  onClick={() => { setEditingHandle(true); setNewHandle(acct?.handle || ""); setErr(""); setMsg(""); }}
+                  style={{ ...btn("ghost"), fontSize: "11px", padding: "5px 10px" }}
+                >
+                  Edit handle
+                </button>
+              </div>
+              <div style={{ ...mono, fontSize: "13px", color: C.muted }}>
+                {acct?.email || ""}
+              </div>
             </div>
-            <div style={{ ...mono, fontSize: "13px", color: C.muted }}>
-              {acct?.email || ""}
+          ) : (
+            <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {!handleWarningShown ? (
+                <div style={{ ...mono, fontSize: "12px", color: "#94560A", background: "rgba(148,86,10,0.06)", border: "1px solid rgba(148,86,10,0.25)", borderRadius: "6px", padding: "10px 14px" }}>
+                  Changing your handle may affect your standings history. Continue?{" "}
+                  <button onClick={() => setHandleWarningShown(true)} style={{ ...btn("ghost"), fontSize: "11px", padding: "3px 8px", display: "inline" }}>Yes, continue</button>
+                  {" "}
+                  <button onClick={() => { setEditingHandle(false); setNewHandle(""); }} style={{ ...btn("ghost"), fontSize: "11px", padding: "3px 8px", display: "inline" }}>Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <input
+                      value={newHandle}
+                      onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
+                      placeholder="new-handle"
+                      maxLength={20}
+                      style={input}
+                      onKeyDown={(e) => e.key === "Enter" && !busy && updateHandle()}
+                    />
+                    <button disabled={busy || newHandle.length < 3} onClick={updateHandle} style={btn()}>
+                      {busy ? "Saving…" : "Save handle"}
+                    </button>
+                    <button disabled={busy} onClick={() => { setEditingHandle(false); setNewHandle(""); setHandleWarningShown(false); }} style={btn("ghost")}>
+                      Cancel
+                    </button>
+                  </div>
+                  <div style={{ ...mono, fontSize: "11px", color: C.muted }}>
+                    3–20 characters, letters and numbers only.
+                  </div>
+                </>
+              )}
             </div>
-            <div style={{ ...mono, fontSize: "12px", color: C.muted }}>
-              Your handle is your permanent leaderboard name and can&apos;t be changed here.
-            </div>
-          </div>
+          )}
         </section>
 
         {/* Team & company */}

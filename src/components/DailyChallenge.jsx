@@ -318,7 +318,7 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
-function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
+function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   const [shareLabel, setShareLabel] = useState("↑ Share Result");
   async function handleShare() {
@@ -346,7 +346,15 @@ function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mw
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
-        <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{score}</div>
+        <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"6px" }}>
+          <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{score}</div>
+          {dailyTotal > 0 && (
+            <div style={{ fontSize:"22px", fontWeight:500, color:C.muted, letterSpacing:"-0.02em", ...sans }}>
+              /{dailyTotal}
+              <span style={{ fontSize:"10px", color:C.muted, display:"block", textAlign:"center", ...mono }}>today</span>
+            </div>
+          )}
+        </div>
         <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>points · {puzzleType}</div>
       </div>
       <div style={{ background:`rgba(196,146,42,0.06)`, border:`1px solid rgba(196,146,42,0.2)`,
@@ -381,7 +389,7 @@ function ScoreCard({ score, puzzleType, puzzleName, publicId, domain, streak, mw
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: RACKL — Connections-style tile grouping
 // ══════════════════════════════════════════════════════════════════════════════
-function GameRackl({ puzzle, streak, onComplete }) {
+function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const allItems = puzzle.groups.flatMap((g, gi) => g.items.map((item, i) => ({ item, groupIdx:gi, id:`${gi}-${i}` })));
   const [tiles,    setTiles]    = useState(() => [...allItems].sort(() => Math.random()-0.5));
   const [selected, setSelected] = useState([]);
@@ -421,9 +429,9 @@ function GameRackl({ puzzle, streak, onComplete }) {
     }
   }
 
-  if (done) return <ScoreCard score={scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-    isNew7Day={streak===7} />;
+    isNew7Day={streak===6} />;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
@@ -485,7 +493,7 @@ function GameRackl({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: SIGNAL DROP — Wordle-style
 // ══════════════════════════════════════════════════════════════════════════════
-function GameSignalDrop({ puzzle, streak, onComplete }) {
+function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const word     = puzzle.word.toUpperCase();
   const [guesses, setGuesses]   = useState([]);
   const [current, setCurrent]   = useState("");
@@ -532,9 +540,9 @@ function GameSignalDrop({ puzzle, streak, onComplete }) {
   const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
-  if (won || lost) return <ScoreCard score={scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-    isNew7Day={streak===7} />;
+    isNew7Day={streak===6} />;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
@@ -606,7 +614,7 @@ function GameSignalDrop({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: THE STACK — Drag-to-rank
 // ══════════════════════════════════════════════════════════════════════════════
-function GameStack({ puzzle, streak, onComplete }) {
+function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
   const [order,    setOrder]    = useState(() => [...puzzle.items.map((_,i)=>i)].sort(()=>Math.random()-0.5));
   const [dragging, setDragging] = useState(null);
   const [submitted,setSubmitted]= useState(false);
@@ -660,9 +668,9 @@ function GameStack({ puzzle, streak, onComplete }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-        isNew7Day={streak===7} />
+        isNew7Day={streak===6} />
     </div>
   );
 
@@ -699,7 +707,7 @@ function GameStack({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: CIRCUIT — True/False sprint with timer
 // ══════════════════════════════════════════════════════════════════════════════
-function GameCircuit({ puzzle, streak, onComplete }) {
+function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [timeLeft,setTimeLeft]= useState(puzzle.timeLimit);
@@ -754,9 +762,9 @@ function GameCircuit({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-        isNew7Day={streak===7} />
+        isNew7Day={streak===6} />
     </div>
   );
 
@@ -801,7 +809,7 @@ function GameCircuit({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: THE BRIEF — Read + comprehension
 // ══════════════════════════════════════════════════════════════════════════════
-function GameBrief({ puzzle, streak, onComplete }) {
+function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
   const [phase,   setPhase]   = useState("read"); // read | quiz | done
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
@@ -851,9 +859,9 @@ function GameBrief({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-        isNew7Day={streak===7} />
+        isNew7Day={streak===6} />
     </div>
   );
 
@@ -905,7 +913,7 @@ function GameBrief({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: DARK FIBER — Term ↔ Definition matching
 // ══════════════════════════════════════════════════════════════════════════════
-function GameDarkFiber({ puzzle, streak, onComplete }) {
+function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [selectedDef,  setSelectedDef]  = useState(null);
   const [matched,      setMatched]      = useState([]);
@@ -937,9 +945,9 @@ function GameDarkFiber({ puzzle, streak, onComplete }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-    isNew7Day={streak===7} />;
+    isNew7Day={streak===6} />;
 
   return (
     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" }}>
@@ -994,7 +1002,7 @@ function GameDarkFiber({ puzzle, streak, onComplete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: FREQUENCY — Multiple choice quiz
 // ══════════════════════════════════════════════════════════════════════════════
-function GameFrequency({ puzzle, streak, onComplete }) {
+function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [selected,setSelected]= useState(null);
@@ -1041,9 +1049,9 @@ function GameFrequency({ puzzle, streak, onComplete }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={dailyTotal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
-        isNew7Day={streak===7} />
+        isNew7Day={streak===6} />
     </div>
   );
 
@@ -1222,22 +1230,32 @@ const GAME_CONFIGS = [
 ];
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
-// glow in the game's locked neon (hover rules injected in the global style block).
-function GameTile({ config, onPlay }) {
+// glow in the game's locked neon. When `played` is true (today's attempt consumed)
+// the icon is desaturated/dimmed and a "Played" label replaces the format chip.
+function GameTile({ config, onPlay, played, priorScore }) {
   const glow = GAME_NEON[config.type]?.glow || "rgba(196,146,42,.3)";
   return (
-    <button onClick={onPlay} className="fdc-game" style={{
+    <button onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
       "--glow": glow,
-      background:C.white, border:`1px solid ${C.gray}`, borderRadius:"12px",
-      padding:"16px", cursor:"pointer", textAlign:"left",
+      background:C.white, border:`1px solid ${played ? C.gray : C.gray}`, borderRadius:"12px",
+      padding:"16px", cursor: played ? "default" : "pointer", textAlign:"left",
       display:"flex", gap:"16px", alignItems:"center",
       transition:"transform .12s, border-color .12s",
+      opacity: played ? 0.55 : 1,
+      filter: played ? "grayscale(0.7)" : "none",
     }}>
       <GameIcon game={config.type} size={64} />
       <span style={{ minWidth:0, flex:1 }}>
         <span style={{ display:"block", fontSize:"18px", fontWeight:600, color:C.black, ...serif }}>{config.type}</span>
         <span style={{ display:"block", fontSize:"11.5px", color:"rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
-        <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
+        {played ? (
+          <span style={{ display:"inline-flex", alignItems:"center", gap:"6px", marginTop:"9px" }}>
+            <span style={{ fontSize:"11px", letterSpacing:"0.1em", color:C.sage, textTransform:"uppercase", border:`1px solid ${C.sage}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>Played</span>
+            {priorScore > 0 && <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{priorScore} pts</span>}
+          </span>
+        ) : (
+          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
+        )}
       </span>
       <span style={{ fontSize:"11px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
     </button>
@@ -1402,6 +1420,7 @@ export default function DailyChallenge() {
   // Supabase — the masthead chips and stat line show real results.
   const [sessionToken,     setSessionToken]     = useState(null);
   const [todayCompletions, setTodayCompletions] = useState({});
+  const [lastDailyTotal,   setLastDailyTotal]   = useState(0);
   // Team leaderboard (teams_v1) wired to per-player MW: public standings, plus
   // the caller's team when signed in. Refreshed after each completion.
   const [leaderboard, setLeaderboard] = useState([]);
@@ -1436,12 +1455,11 @@ export default function DailyChallenge() {
     if (!token) return;
 
     let cancelled = false;
-    fetch(`${EDGE_FUNCTIONS_BASE}/get-subscriber-state?token=${encodeURIComponent(token)}`)
+    fetch(`/api/subscriber-state?token=${encodeURIComponent(token)}`)
       .then(r => r.json().then(data => ({ ok: r.ok, status: r.status, data })))
       .then(({ ok, status, data }) => {
         if (cancelled) return;
         if (!ok) {
-          // Expired/invalid session: clear it so the gate offers sign-in again.
           if (status === 401) {
             try {
               localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -1452,10 +1470,18 @@ export default function DailyChallenge() {
         }
         setSessionToken(token);
         setEmail(data.email);
+        if (data.handle) {
+          setHandle(data.handle);
+          try { localStorage.setItem(HANDLE_STORAGE_KEY, data.handle); } catch { /* ignore */ }
+        }
         setStreak(data.playStreak || 0);
         setMwBalance(data.mwBalance || 0);
         setTodayCompletions(data.todayCompletions || {});
         setGamesPlayed(Object.keys(data.todayCompletions || {}).length);
+        if (data.active === false) {
+          setOptedOut(true);
+          try { localStorage.setItem(OPTED_OUT_STORAGE_KEY, "1"); } catch { /* ignore */ }
+        }
       })
       .catch(() => { /* offline — keep anonymous session counters */ });
     return () => { cancelled = true; };
@@ -1562,40 +1588,52 @@ export default function DailyChallenge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function onGameComplete(score) {
+  function onGameComplete(score, result) {
     const playedGame = activeGame;
     const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
     setLastScore(score);
-    // Soft opt-out ("left the game"): no streak/MW accrual, no server persistence.
-    // Full leaderboard exclusion is the deferred follow-on (needs ranking-RPC deploy).
+    // Soft opt-out: no streak/MW accrual, no server persistence.
     if (optedOut) { setScreen("lobby"); return; }
     setGamesPlayed(g => g+1);
     setMwBalance(b => b + mwEarned);
     setStreak(s => s+1);
-    // Signed-in players: persist the completion; the server's streak/MW
-    // response then overwrites the optimistic local increments above.
     if (sessionToken && playedGame) {
-      setTodayCompletions(prev => ({
-        ...prev,
+      // Optimistic update: mark this game completed locally.
+      const updatedCompletions = {
+        ...todayCompletions,
         [playedGame]: { score, completedAt: new Date().toISOString() },
-      }));
-      fetch(`${EDGE_FUNCTIONS_BASE}/complete-puzzle`, {
+      };
+      setTodayCompletions(updatedCompletions);
+      // Compute optimistic running daily total for win screen.
+      const optimisticTotal = Object.values(updatedCompletions).reduce(
+        (sum, c) => sum + (c.score || 0), 0
+      );
+      setLastDailyTotal(optimisticTotal);
+      // Authoritative score write — enforces one-attempt-per-day + leaderboard_daily.
+      fetch(`/api/score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionToken, puzzleType: playedGame, score, mwEarned }),
+        body: JSON.stringify({
+          token: sessionToken,
+          gameType: playedGame,
+          score,
+          mwEarned,
+          result: result || "win",
+        }),
       })
         .then(r => r.json())
         .then(data => {
-          if (data && data.ok && typeof data.playStreak === "number") {
-            setStreak(data.playStreak);
-            setMwBalance(data.mwBalance);
+          if (data?.alreadyPlayed) return; // idempotent — already counted
+          if (typeof data?.playStreak === "number") setStreak(data.playStreak);
+          if (typeof data?.mwBalance === "number") setMwBalance(data.mwBalance);
+          if (typeof data?.runningDailyTotal === "number") {
+            setLastDailyTotal(data.runningDailyTotal);
           }
-          // Completion fed the player's team MW (DB trigger) — refresh standings.
           refreshLeaderboard();
         })
         .catch(() => { /* offline — keep optimistic counters */ });
     }
-    // Show social gate after first game if not registered
+    // Show social gate after first game if not registered.
     if (!email && gamesPlayed === 0) {
       setGateReason("leaderboard");
       setScreen("gate");
@@ -1729,10 +1767,15 @@ export default function DailyChallenge() {
             {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
               gap:"14px", padding:"28px 0 8px" }}>
-              {GAME_CONFIGS.map(config => (
-                <GameTile key={config.type} config={config}
-                  onPlay={() => startGame(config.type)} />
-              ))}
+              {GAME_CONFIGS.map(config => {
+                const attempt = todayCompletions[config.type];
+                return (
+                  <GameTile key={config.type} config={config}
+                    played={!!attempt}
+                    priorScore={attempt?.score || 0}
+                    onPlay={() => attempt ? undefined : startGame(config.type)} />
+                );
+              })}
             </div>
 
             {/* Subscriber stat line — real Supabase results only (no mock
@@ -1822,11 +1865,17 @@ export default function DailyChallenge() {
                     <GameIcon game={activeGame} size={32} />
                     <span style={{ fontSize:"16px", fontWeight:700, color:C.white, ...serif }}>{activeGame}</span>
                   </div>
-                  <div style={{ display:"flex", gap:"8px" }}>
+                  <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
                     <span style={{ fontSize:"11px", color:C.muted, background:"rgba(255,255,255,0.04)",
                       border:`1px solid ${C.border}`, padding:"3px 8px", borderRadius:"3px", ...mono }}>
                       {puzzle.domain}
                     </span>
+                    {puzzle.__publicId && (
+                      <span style={{ fontSize:"10px", color:C.muted, letterSpacing:"0.06em", ...mono }}
+                        title="Puzzle ID">
+                        {puzzle.__publicId}
+                      </span>
+                    )}
                     <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>
@@ -1862,7 +1911,7 @@ export default function DailyChallenge() {
                   </div>
                 </div>
               )}
-              <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} />
+              <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
             </div>
           );
         })()}
