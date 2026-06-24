@@ -1,0 +1,817 @@
+{
+  "manifest": "FAR-201 — IDF 4.0 Whitespace Crawler Creation Manifest",
+  "generated_from": "supabase/functions/faraday-crawl/coverage-bridge.ts (WHITESPACE_SCAFFOLDS) — canonical source",
+  "jira": "FAR-201",
+  "status": "AWAITING MYKE APPROVAL — do NOT write net-new rows to Airtable until AUTO-ID block is confirmed",
+  "airtable": {
+    "base": "appxfti7VuoHYUeu6",
+    "table": "tbl1ef6FgxUc3Uevg (Automation Registry)"
+  },
+  "auto_id_assignment": {
+    "prompt_said_start_at": "AUTO-134",
+    "correction": "AUTO-134/135/136 are already Active engine fns (engine-idf-entities / engine-prognostications / engine-two-analyst). Highest live ID is AUTO-176.",
+    "proposed_block": "AUTO-137 → AUTO-175 (39 whitespace routines)",
+    "next_free_after_block": "AUTO-177",
+    "live_state_note": "These 39 rows ALREADY EXIST in Airtable as Status=Designed (created by a prior session, commit a7bef8f; repo records Myke approval 2026-06-24). Jira FAR-199/201 still list the AUTO-ID block as a pending human gate. CONFIRM whether the approval/registration is sanctioned."
+  },
+  "field_mapping_note": "The live Automation Registry has NO sub_domain_id/source_url/query_template fields. Real fields: Auto ID (fldUqqRnGeOQzyr7j), Auto Name (fldMo8drJopsNm6wB), Status (fldk6NPtWxxhcH5Qi, singleSelect), Source Type (fldgXVivMluJRk5dr), IFS Domains (fldhu5bKICVhzh8wb, aiText), Trigger/Cadence (fldArPTc1LxKUumU0). Query sets live in coverage-bridge.ts, not Airtable. typecast:true required for any new Source Type select value.",
+  "counts": {
+    "total_scaffolds": 39,
+    "by_mechanism": {
+      "crawler": 30,
+      "primary_source": 2,
+      "cowork": 4,
+      "claude_routine": 3
+    },
+    "by_domain": {
+      "D7": 4,
+      "D9": 4,
+      "D1": 4,
+      "D2": 5,
+      "D10": 4,
+      "D4": 2,
+      "D6": 1,
+      "D11": 3,
+      "D16": 2,
+      "D17": 1,
+      "D14": 2,
+      "D8": 4,
+      "D5": 2,
+      "D18": 1
+    }
+  },
+  "priority_whitespace_domains": {
+    "D7 (Cooling, entire domain)": [
+      "AUTO-137",
+      "AUTO-138",
+      "AUTO-139",
+      "AUTO-140"
+    ],
+    "D9 (Orchestration, entire domain)": [
+      "AUTO-141",
+      "AUTO-142",
+      "AUTO-143",
+      "AUTO-144"
+    ],
+    "D1/D2/D10 fills": [
+      "AUTO-145",
+      "AUTO-146",
+      "AUTO-147",
+      "AUTO-148",
+      "AUTO-149",
+      "AUTO-150",
+      "AUTO-151",
+      "AUTO-152",
+      "AUTO-153",
+      "AUTO-154",
+      "AUTO-155",
+      "AUTO-156",
+      "AUTO-157"
+    ],
+    "hot 4.0-new (D4.6/D4.5/D6.3)": [
+      "AUTO-158",
+      "AUTO-159",
+      "AUTO-160"
+    ]
+  },
+  "taxonomy_flag": "Prompt named hot sub-domains 'D4.6/D4.5/D4.7'. Repo scaffolds cover D4.6, D4.5, and D6.3 (not D4.7). Confirm whether D4.7 needs a scaffold or D6.3 was the intended third thread.",
+  "records": [
+    {
+      "auto_id": "AUTO-137",
+      "auto_name_suggestion": "D7.1 [crawler]",
+      "sub_domain_id": "D7.1",
+      "domain": "D7",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:05 America/Chicago",
+      "queries": [
+        "direct to chip liquid cooling CDU Vertiv CoolIT Motivair JetCool 2026",
+        "DLC cold plate data center deployment",
+        "liquid cooling capex data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D7.1'])",
+      "source_recommendation": "Coolant-chemistry vendor sites (3M/Chemours PFAS exit, Boyd, Parker, Danfoss), ASHRAE/standards publications, OCP specs (GitHub), DLC/immersion vendor PRs (Vertiv, CoolIT, Submer, Iceotope, LiquidStack), data-center trade press. Reduces web_news over-reliance per source-fit gap."
+    },
+    {
+      "auto_id": "AUTO-138",
+      "auto_name_suggestion": "D7.2 [crawler]",
+      "sub_domain_id": "D7.2",
+      "domain": "D7",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:10 America/Chicago",
+      "queries": [
+        "immersion cooling Submer Iceotope LiquidStack 2026",
+        "two-phase immersion data center TCO",
+        "immersion vs DLC data center deployment 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D7.2'])",
+      "source_recommendation": "Coolant-chemistry vendor sites (3M/Chemours PFAS exit, Boyd, Parker, Danfoss), ASHRAE/standards publications, OCP specs (GitHub), DLC/immersion vendor PRs (Vertiv, CoolIT, Submer, Iceotope, LiquidStack), data-center trade press. Reduces web_news over-reliance per source-fit gap."
+    },
+    {
+      "auto_id": "AUTO-139",
+      "auto_name_suggestion": "D7.3 [crawler]",
+      "sub_domain_id": "D7.3",
+      "domain": "D7",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:15 America/Chicago",
+      "queries": [
+        "data center water use WUE waterless cooling 2026",
+        "data center water stress drought siting",
+        "evaporative cooling alternative data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D7.3'])",
+      "source_recommendation": "Coolant-chemistry vendor sites (3M/Chemours PFAS exit, Boyd, Parker, Danfoss), ASHRAE/standards publications, OCP specs (GitHub), DLC/immersion vendor PRs (Vertiv, CoolIT, Submer, Iceotope, LiquidStack), data-center trade press. Reduces web_news over-reliance per source-fit gap."
+    },
+    {
+      "auto_id": "AUTO-140",
+      "auto_name_suggestion": "D7.4 [primary_source]",
+      "sub_domain_id": "D7.4",
+      "domain": "D7",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "primary_source",
+      "cadence": "weekly Mon 07:00 America/Chicago",
+      "queries": [
+        "coolant chemistry PG25 two-phase dielectric PFAS-free data center 2026",
+        "3M Chemours fluorinated fluid exit data center coolant",
+        "cold plate manifold quick disconnect supply constraint 2026"
+      ],
+      "primary_source": "ASHRAE/standards bodies + coolant-chemistry vendors (3M/Chemours PFAS exit, Boyd, Parker, Danfoss)",
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D7.4'])",
+      "source_recommendation": "Coolant-chemistry vendor sites (3M/Chemours PFAS exit, Boyd, Parker, Danfoss), ASHRAE/standards publications, OCP specs (GitHub), DLC/immersion vendor PRs (Vertiv, CoolIT, Submer, Iceotope, LiquidStack), data-center trade press. Reduces web_news over-reliance per source-fit gap."
+    },
+    {
+      "auto_id": "AUTO-141",
+      "auto_name_suggestion": "D9.1 [crawler]",
+      "sub_domain_id": "D9.1",
+      "domain": "D9",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:20 America/Chicago",
+      "queries": [
+        "NVIDIA DSX NVL72 AI factory orchestration DCIM 2026",
+        "AI factory cluster management software 2026",
+        "data center orchestration control plane announcement"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D9.1'])",
+      "source_recommendation": "GitHub infra repos (extend already-Active AUTO-045 — wired path), NVIDIA/vendor orchestration docs, run:ai / vLLM / TensorRT-LLM / Triton project releases, DCIM vendor PRs, trade press."
+    },
+    {
+      "auto_id": "AUTO-142",
+      "auto_name_suggestion": "D9.2 [crawler]",
+      "sub_domain_id": "D9.2",
+      "domain": "D9",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:25 America/Chicago",
+      "queries": [
+        "run:ai GPU utilization scheduling multi-tenancy 2026",
+        "GPU compute scheduling economics benchmark",
+        "GPU utilization optimization data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D9.2'])",
+      "source_recommendation": "GitHub infra repos (extend already-Active AUTO-045 — wired path), NVIDIA/vendor orchestration docs, run:ai / vLLM / TensorRT-LLM / Triton project releases, DCIM vendor PRs, trade press."
+    },
+    {
+      "auto_id": "AUTO-143",
+      "auto_name_suggestion": "D9.3 [crawler]",
+      "sub_domain_id": "D9.3",
+      "domain": "D9",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:30 America/Chicago",
+      "queries": [
+        "vLLM TensorRT-LLM Triton inference serving model routing 2026",
+        "KV cache management inference control plane",
+        "model router token economics scheduling 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D9.3'])",
+      "source_recommendation": "GitHub infra repos (extend already-Active AUTO-045 — wired path), NVIDIA/vendor orchestration docs, run:ai / vLLM / TensorRT-LLM / Triton project releases, DCIM vendor PRs, trade press."
+    },
+    {
+      "auto_id": "AUTO-144",
+      "auto_name_suggestion": "D9.4 [crawler]",
+      "sub_domain_id": "D9.4",
+      "domain": "D9",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:35 America/Chicago",
+      "queries": [
+        "power-aware workload orchestration carbon-aware compute 2026",
+        "grid-responsive scheduling demand response data center software",
+        "carbon aware compute scheduling 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D9.4'])",
+      "source_recommendation": "GitHub infra repos (extend already-Active AUTO-045 — wired path), NVIDIA/vendor orchestration docs, run:ai / vLLM / TensorRT-LLM / Triton project releases, DCIM vendor PRs, trade press."
+    },
+    {
+      "auto_id": "AUTO-145",
+      "auto_name_suggestion": "D1.1 [crawler]",
+      "sub_domain_id": "D1.1",
+      "domain": "D1",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:40 America/Chicago",
+      "queries": [
+        "NVIDIA Blackwell Vera Rubin Feynman roadmap 2026",
+        "NVIDIA GPU generational transition infrastructure impact",
+        "NVIDIA datacenter GPU roadmap announcement 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D1.1'])",
+      "source_recommendation": "Vendor roadmaps (NVIDIA/AMD/Intel), foundry/packaging disclosures (TSMC CoWoS), HBM supplier reports (SK Hynix/Samsung/Micron), OCP/ORW specs, trade press."
+    },
+    {
+      "auto_id": "AUTO-146",
+      "auto_name_suggestion": "D1.2 [crawler]",
+      "sub_domain_id": "D1.2",
+      "domain": "D1",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:45 America/Chicago",
+      "queries": [
+        "rack power density 120kW OCP ORW 2026",
+        "kW per rack roadmap data center design",
+        "high density rack data center facility forcing function 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D1.2'])",
+      "source_recommendation": "Vendor roadmaps (NVIDIA/AMD/Intel), foundry/packaging disclosures (TSMC CoWoS), HBM supplier reports (SK Hynix/Samsung/Micron), OCP/ORW specs, trade press."
+    },
+    {
+      "auto_id": "AUTO-147",
+      "auto_name_suggestion": "D1.3 [crawler]",
+      "sub_domain_id": "D1.3",
+      "domain": "D1",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:50 America/Chicago",
+      "queries": [
+        "AMD Instinct MI Intel Gaudi merchant accelerator 2026",
+        "merchant inference silicon architecture 2026",
+        "AMD Intel data center GPU competition 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D1.3'])",
+      "source_recommendation": "Vendor roadmaps (NVIDIA/AMD/Intel), foundry/packaging disclosures (TSMC CoWoS), HBM supplier reports (SK Hynix/Samsung/Micron), OCP/ORW specs, trade press."
+    },
+    {
+      "auto_id": "AUTO-148",
+      "auto_name_suggestion": "D1.6 [crawler]",
+      "sub_domain_id": "D1.6",
+      "domain": "D1",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Tue 07:05 America/Chicago",
+      "queries": [
+        "NVIDIA GPU allocation hyperscaler neocloud sovereign 2026",
+        "GPU secondary market allocation leading indicator",
+        "chip allocation supply politics data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D1.6'])",
+      "source_recommendation": "Vendor roadmaps (NVIDIA/AMD/Intel), foundry/packaging disclosures (TSMC CoWoS), HBM supplier reports (SK Hynix/Samsung/Micron), OCP/ORW specs, trade press."
+    },
+    {
+      "auto_id": "AUTO-149",
+      "auto_name_suggestion": "D2.1 [crawler]",
+      "sub_domain_id": "D2.1",
+      "domain": "D2",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 06:55 America/Chicago",
+      "queries": [
+        "800V DC power distribution data center 2026",
+        "415V AC to 800V DC data center NFPA OCP",
+        "facility to rack DC power architecture 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D2.1'])",
+      "source_recommendation": "Power-OEM PRs (ABB/Hitachi/Eaton/GE Vernova), NRC ADAMS (SMR — recommended re-point), FERC dockets (grid-interactive load), NFPA/OCP power specs, PPA/storage announcements."
+    },
+    {
+      "auto_id": "AUTO-150",
+      "auto_name_suggestion": "D2.2 [crawler]",
+      "sub_domain_id": "D2.2",
+      "domain": "D2",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:10 America/Chicago",
+      "queries": [
+        "behind the meter data center economics decision framework 2026",
+        "BTM data center power asset mix",
+        "behind the meter generation data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D2.2'])",
+      "source_recommendation": "Power-OEM PRs (ABB/Hitachi/Eaton/GE Vernova), NRC ADAMS (SMR — recommended re-point), FERC dockets (grid-interactive load), NFPA/OCP power specs, PPA/storage announcements."
+    },
+    {
+      "auto_id": "AUTO-151",
+      "auto_name_suggestion": "D2.3 [crawler]",
+      "sub_domain_id": "D2.3",
+      "domain": "D2",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:15 America/Chicago",
+      "queries": [
+        "data center UPS BESS lithium-ion power conditioning 2026",
+        "data center energy storage UPS evolution",
+        "battery energy storage data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D2.3'])",
+      "source_recommendation": "Power-OEM PRs (ABB/Hitachi/Eaton/GE Vernova), NRC ADAMS (SMR — recommended re-point), FERC dockets (grid-interactive load), NFPA/OCP power specs, PPA/storage announcements."
+    },
+    {
+      "auto_id": "AUTO-152",
+      "auto_name_suggestion": "D2.4 [crawler]",
+      "sub_domain_id": "D2.4",
+      "domain": "D2",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:20 America/Chicago",
+      "queries": [
+        "in-rack DC power delivery bus bar hot swap shelf 2026",
+        "GPU-native DC-DC converter rack power",
+        "inside rack power delivery data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D2.4'])",
+      "source_recommendation": "Power-OEM PRs (ABB/Hitachi/Eaton/GE Vernova), NRC ADAMS (SMR — recommended re-point), FERC dockets (grid-interactive load), NFPA/OCP power specs, PPA/storage announcements."
+    },
+    {
+      "auto_id": "AUTO-153",
+      "auto_name_suggestion": "D2.9 [crawler]",
+      "sub_domain_id": "D2.9",
+      "domain": "D2",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Wed 07:25 America/Chicago",
+      "queries": [
+        "data center microgrid islanding switchgear black start 2026",
+        "island mode paralleling data center power",
+        "microgrid integration data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D2.9'])",
+      "source_recommendation": "Power-OEM PRs (ABB/Hitachi/Eaton/GE Vernova), NRC ADAMS (SMR — recommended re-point), FERC dockets (grid-interactive load), NFPA/OCP power specs, PPA/storage announcements."
+    },
+    {
+      "auto_id": "AUTO-154",
+      "auto_name_suggestion": "D10.1 [crawler]",
+      "sub_domain_id": "D10.1",
+      "domain": "D10",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:30 America/Chicago",
+      "queries": [
+        "transformer switchgear generator lead time data center 2026",
+        "long lead equipment ABB Hitachi Eaton data center",
+        "data center equipment supply chain constraint 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D10.1'])",
+      "source_recommendation": "Long-lead equipment supplier disclosures, GC/EPC backlog reports (Mortenson/Turner/DPR), modular vendors (Vertiv/Schneider/BladeRoom), construction cost indices."
+    },
+    {
+      "auto_id": "AUTO-155",
+      "auto_name_suggestion": "D10.2 [crawler]",
+      "sub_domain_id": "D10.2",
+      "domain": "D10",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:35 America/Chicago",
+      "queries": [
+        "data center GC EPC Mortenson Turner DPR capacity 2026",
+        "stick built data center execution contractor",
+        "data center general contractor backlog 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D10.2'])",
+      "source_recommendation": "Long-lead equipment supplier disclosures, GC/EPC backlog reports (Mortenson/Turner/DPR), modular vendors (Vertiv/Schneider/BladeRoom), construction cost indices."
+    },
+    {
+      "auto_id": "AUTO-156",
+      "auto_name_suggestion": "D10.3 [crawler]",
+      "sub_domain_id": "D10.3",
+      "domain": "D10",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 07:40 America/Chicago",
+      "queries": [
+        "prefabricated modular data center PMDC skid 2026",
+        "containerized cooling power module Vertiv Schneider BladeRoom",
+        "modular data center delivery 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D10.3'])",
+      "source_recommendation": "Long-lead equipment supplier disclosures, GC/EPC backlog reports (Mortenson/Turner/DPR), modular vendors (Vertiv/Schneider/BladeRoom), construction cost indices."
+    },
+    {
+      "auto_id": "AUTO-157",
+      "auto_name_suggestion": "D10.5 [crawler]",
+      "sub_domain_id": "D10.5",
+      "domain": "D10",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Thu 07:45 America/Chicago",
+      "queries": [
+        "data center construction cost per MW inflation 2026",
+        "data center materials labor cost curve regional",
+        "construction cost escalation data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D10.5'])",
+      "source_recommendation": "Long-lead equipment supplier disclosures, GC/EPC backlog reports (Mortenson/Turner/DPR), modular vendors (Vertiv/Schneider/BladeRoom), construction cost indices."
+    },
+    {
+      "auto_id": "AUTO-158",
+      "auto_name_suggestion": "D4.6 [primary_source]",
+      "sub_domain_id": "D4.6",
+      "domain": "D4",
+      "status": "Designed",
+      "source_type": "financial",
+      "mechanism": "primary_source",
+      "cadence": "daily 08:00 America/Chicago",
+      "queries": [
+        "GPU collateralized lending CoreWeave Lambda debt facility 2026",
+        "NVIDIA vendor financing warehouse facility neocloud",
+        "GPU backed financing circularity risk 2026"
+      ],
+      "primary_source": "GPU-collateral / neocloud debt filings (CoreWeave/Lambda facilities), NVIDIA vendor financing, warehouse facilities",
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D4.6'])",
+      "source_recommendation": "GPU-collateral / neocloud debt filings (CoreWeave/Lambda), NVIDIA vendor-financing disclosures, ABS/private-credit issuance (Apollo/Ares), SEC filings."
+    },
+    {
+      "auto_id": "AUTO-159",
+      "auto_name_suggestion": "D4.5 [crawler]",
+      "sub_domain_id": "D4.5",
+      "domain": "D4",
+      "status": "Designed",
+      "source_type": "financial",
+      "mechanism": "crawler",
+      "cadence": "daily 08:05 America/Chicago",
+      "queries": [
+        "data center ABS securitization private credit Apollo Ares 2026",
+        "hyperscaler bond issuance lease-backed structure",
+        "data center project finance private credit 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D4.5'])",
+      "source_recommendation": "GPU-collateral / neocloud debt filings (CoreWeave/Lambda), NVIDIA vendor-financing disclosures, ABS/private-credit issuance (Apollo/Ares), SEC filings."
+    },
+    {
+      "auto_id": "AUTO-160",
+      "auto_name_suggestion": "D6.3 [crawler]",
+      "sub_domain_id": "D6.3",
+      "domain": "D6",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "daily 08:10 America/Chicago",
+      "queries": [
+        "OpenAI Stargate Anthropic xAI Colossus infrastructure buyer 2026",
+        "AI lab capacity owner data center principal",
+        "model developer infrastructure consortium 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D6.3'])",
+      "source_recommendation": "AI-lab capacity announcements (OpenAI Stargate, Anthropic, xAI Colossus), infrastructure consortium news, principal-buyer disclosures."
+    },
+    {
+      "auto_id": "AUTO-161",
+      "auto_name_suggestion": "D11.1 [crawler]",
+      "sub_domain_id": "D11.1",
+      "domain": "D11",
+      "status": "Designed",
+      "source_type": "regulatory",
+      "mechanism": "crawler",
+      "cadence": "weekly Mon 08:15 America/Chicago",
+      "queries": [
+        "24/7 carbon free energy matching additionality data center 2026",
+        "clean energy procurement REC CFE corporate reporting",
+        "data center renewable procurement disclosure 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D11.1'])",
+      "source_recommendation": "Clean-energy procurement disclosures (PPA/REC/CFE), GHG/CSRD/SB253 filings, embodied-carbon materials vendors (Sublime/Brimstone)."
+    },
+    {
+      "auto_id": "AUTO-162",
+      "auto_name_suggestion": "D11.2 [crawler]",
+      "sub_domain_id": "D11.2",
+      "domain": "D11",
+      "status": "Designed",
+      "source_type": "regulatory",
+      "mechanism": "crawler",
+      "cadence": "weekly Mon 08:20 America/Chicago",
+      "queries": [
+        "data center carbon accounting GHG protocol scope 1 2 3 2026",
+        "TCFD CDP data center operational emissions",
+        "data center carbon disclosure 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D11.2'])",
+      "source_recommendation": "Clean-energy procurement disclosures (PPA/REC/CFE), GHG/CSRD/SB253 filings, embodied-carbon materials vendors (Sublime/Brimstone)."
+    },
+    {
+      "auto_id": "AUTO-163",
+      "auto_name_suggestion": "D11.6 [crawler]",
+      "sub_domain_id": "D11.6",
+      "domain": "D11",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Mon 08:25 America/Chicago",
+      "queries": [
+        "embodied carbon low carbon concrete Sublime Brimstone data center 2026",
+        "green steel recycled copper data center materials",
+        "embodied carbon materials data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D11.6'])",
+      "source_recommendation": "Clean-energy procurement disclosures (PPA/REC/CFE), GHG/CSRD/SB253 filings, embodied-carbon materials vendors (Sublime/Brimstone)."
+    },
+    {
+      "auto_id": "AUTO-164",
+      "auto_name_suggestion": "D16.5 [crawler]",
+      "sub_domain_id": "D16.5",
+      "domain": "D16",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Tue 08:30 America/Chicago",
+      "queries": [
+        "firmware BMC supply chain SBOM hardware implant data center 2026",
+        "software supply chain vendor risk data center security",
+        "third party risk SBOM data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D16.5'])",
+      "source_recommendation": "SBOM/firmware supply-chain advisories, SOC/IR practice reports, security trade press."
+    },
+    {
+      "auto_id": "AUTO-165",
+      "auto_name_suggestion": "D16.6 [crawler]",
+      "sub_domain_id": "D16.6",
+      "domain": "D16",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Tue 08:35 America/Chicago",
+      "queries": [
+        "SOC threat hunting incident response data center 2026",
+        "tabletop exercise data center security operations",
+        "incident response practice data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D16.6'])",
+      "source_recommendation": "SBOM/firmware supply-chain advisories, SOC/IR practice reports, security trade press."
+    },
+    {
+      "auto_id": "AUTO-166",
+      "auto_name_suggestion": "D17.3 [crawler]",
+      "sub_domain_id": "D17.3",
+      "domain": "D17",
+      "status": "Designed",
+      "source_type": "regulatory",
+      "mechanism": "crawler",
+      "cadence": "weekly Wed 08:40 America/Chicago",
+      "queries": [
+        "visa policy specialized data center roles immigration 2026",
+        "regional labor competition data center campus workforce incentive",
+        "workforce development incentive data center siting 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D17.3'])",
+      "source_recommendation": "Visa/immigration policy, regional labor/workforce incentive filings, BLS/AGC labor data."
+    },
+    {
+      "auto_id": "AUTO-167",
+      "auto_name_suggestion": "D14.7 [crawler]",
+      "sub_domain_id": "D14.7",
+      "domain": "D14",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "crawler",
+      "cadence": "weekly Wed 08:45 America/Chicago",
+      "queries": [
+        "build to suit powered shell own vs lease data center campus 2026",
+        "campus portfolio strategy data center build model",
+        "powered shell takedown data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D14.7'])",
+      "source_recommendation": "Build-to-suit / powered-shell campus strategy disclosures, REIT filings."
+    },
+    {
+      "auto_id": "AUTO-168",
+      "auto_name_suggestion": "D8.2 [cowork]",
+      "sub_domain_id": "D8.2",
+      "domain": "D8",
+      "status": "Designed",
+      "source_type": "synthesis",
+      "mechanism": "cowork",
+      "cadence": "weekly Fri 09:00 America/Chicago",
+      "queries": [
+        "[Scheduled Cowork] conference panel-topic evolution DCD/GTC/OCP Summit"
+      ],
+      "primary_source": "Industry Conferences table (tblb1S5IKFBPEmUJL) — gated on AUTO-028/029 ID conflict resolution",
+      "postgres_insert": "artifacts(synthesis; ifs_domains=['D8.2'])",
+      "source_recommendation": "Industry Conferences table (tblb1S5IKFBPEmUJL — synthesis/cowork), founder/operator network mapping, earnings-call/investor-day transcripts, hiring-velocity signals."
+    },
+    {
+      "auto_id": "AUTO-169",
+      "auto_name_suggestion": "D8.4 [cowork]",
+      "sub_domain_id": "D8.4",
+      "domain": "D8",
+      "status": "Designed",
+      "source_type": "synthesis",
+      "mechanism": "cowork",
+      "cadence": "weekly Fri 09:15 America/Chicago",
+      "queries": [
+        "[Scheduled Cowork] founder/operator network mapping, board interlocks, repeat operators"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(synthesis; ifs_domains=['D8.4'])",
+      "source_recommendation": "Industry Conferences table (tblb1S5IKFBPEmUJL — synthesis/cowork), founder/operator network mapping, earnings-call/investor-day transcripts, hiring-velocity signals."
+    },
+    {
+      "auto_id": "AUTO-170",
+      "auto_name_suggestion": "D8.5 [cowork]",
+      "sub_domain_id": "D8.5",
+      "domain": "D8",
+      "status": "Designed",
+      "source_type": "synthesis",
+      "mechanism": "cowork",
+      "cadence": "weekly Fri 09:30 America/Chicago",
+      "queries": [
+        "[Scheduled Cowork] earnings-call & investor-day signal extraction (capex guidance, backlog, tone)"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(synthesis; ifs_domains=['D8.5'])",
+      "source_recommendation": "Industry Conferences table (tblb1S5IKFBPEmUJL — synthesis/cowork), founder/operator network mapping, earnings-call/investor-day transcripts, hiring-velocity signals."
+    },
+    {
+      "auto_id": "AUTO-171",
+      "auto_name_suggestion": "D14.1 [cowork]",
+      "sub_domain_id": "D14.1",
+      "domain": "D14",
+      "status": "Designed",
+      "source_type": "synthesis",
+      "mechanism": "cowork",
+      "cadence": "monthly 1st 09:45 America/Chicago",
+      "queries": [
+        "[Scheduled Cowork] site selection methodology scoring frameworks synthesis"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(synthesis; ifs_domains=['D14.1'])",
+      "source_recommendation": "Build-to-suit / powered-shell campus strategy disclosures, REIT filings."
+    },
+    {
+      "auto_id": "AUTO-172",
+      "auto_name_suggestion": "D8.3 [crawler]",
+      "sub_domain_id": "D8.3",
+      "domain": "D8",
+      "status": "Designed",
+      "source_type": "social",
+      "mechanism": "crawler",
+      "cadence": "daily 08:50 America/Chicago",
+      "queries": [
+        "data center hiring velocity cooling power specialist scarcity 2026",
+        "operator talent migration data center engineering",
+        "specialized hiring signal data center 2026"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D8.3'])",
+      "source_recommendation": "Industry Conferences table (tblb1S5IKFBPEmUJL — synthesis/cowork), founder/operator network mapping, earnings-call/investor-day transcripts, hiring-velocity signals."
+    },
+    {
+      "auto_id": "AUTO-173",
+      "auto_name_suggestion": "D5.3 [claude_routine]",
+      "sub_domain_id": "D5.3",
+      "domain": "D5",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "claude_routine",
+      "cadence": "weekly Thu 09:00 America/Chicago",
+      "queries": [
+        "[Claude Routine] build vs lease hyperscaler powered shell wholesale leasing QTS Vantage Aligned"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D5.3'])",
+      "source_recommendation": "Build-vs-lease / wholesale-leasing disclosures (QTS/Vantage/Aligned), cloud region-launch announcements."
+    },
+    {
+      "auto_id": "AUTO-174",
+      "auto_name_suggestion": "D5.4 [claude_routine]",
+      "sub_domain_id": "D5.4",
+      "domain": "D5",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "claude_routine",
+      "cadence": "weekly Thu 09:15 America/Chicago",
+      "queries": [
+        "[Claude Routine] cloud region launch availability zone sovereign region capacity geography"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D5.4'])",
+      "source_recommendation": "Build-vs-lease / wholesale-leasing disclosures (QTS/Vantage/Aligned), cloud region-launch announcements."
+    },
+    {
+      "auto_id": "AUTO-175",
+      "auto_name_suggestion": "D18.3 [claude_routine]",
+      "sub_domain_id": "D18.3",
+      "domain": "D18",
+      "status": "Designed",
+      "source_type": "web_news",
+      "mechanism": "claude_routine",
+      "cadence": "weekly Thu 09:30 America/Chicago",
+      "queries": [
+        "[Claude Routine] data center reputational political risk op-ed ballot measure national press"
+      ],
+      "primary_source": null,
+      "postgres_insert": "artifacts(content_hash dedupe; ifs_domains=['D18.3'])",
+      "source_recommendation": "Reputational/political-risk press, op-eds, ballot measures."
+    }
+  ],
+  "related_reassignment": {
+    "auto_id": "AUTO-176",
+    "auto_name": "Community Opposition & Moratorium Tracker",
+    "note": "Reassigned off the AUTO-049 collision (AUTO-049 stays Email Ingestion, Active). Already Designed in Airtable."
+  },
+  "source_fit_repoints": [
+    {
+      "subdomain": "D2.5",
+      "from": "web_news (AUTO-064)",
+      "to": "NRC ADAMS primary source",
+      "status": "recommended"
+    },
+    {
+      "subdomain": "D3.4",
+      "from": "broad web_news",
+      "to": "FERC eLibrary / Order 1920 docket",
+      "status": "recommended"
+    },
+    {
+      "subdomain": "D3.5",
+      "from": "broad web_news",
+      "to": "FERC / PJM docket filings",
+      "status": "recommended"
+    },
+    {
+      "subdomain": "D1.8",
+      "from": "web_news (AUTO-063)",
+      "to": "USPTO + foundry capacity disclosures",
+      "status": "recommended"
+    },
+    {
+      "subdomain": "D7.4",
+      "from": "n/a (whitespace)",
+      "to": "standards bodies + coolant chemistry (3M/Chemours/PFAS)",
+      "status": "recommended"
+    },
+    {
+      "subdomain": "D9.x",
+      "from": "broad web_news",
+      "to": "GitHub infra repos — extend AUTO-045 (already Active)",
+      "status": "wired (extends AUTO-045)"
+    },
+    {
+      "subdomain": "D4.6",
+      "from": "broad financial",
+      "to": "GPU-collateral / neocloud debt filings",
+      "status": "recommended"
+    }
+  ]
+}
