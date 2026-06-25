@@ -1,12 +1,12 @@
 "use client";
 
 // /account — Account & Settings. Dark theme matching the rest of the app.
-// Team section: join by code, create new, leave. Soft opt-out via Game Status.
+// Team section: view current teams; edit during Free Agency window via search picker.
+// Auth: OTP (email + 6-digit code, no passwords).
 
 import { useCallback, useEffect, useState } from "react";
-import SocialGate from "@/components/SocialGate";
+import OTPGate from "@/components/OTPGate";
 import {
-  EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
   HANDLE_STORAGE_KEY,
   OPTED_OUT_STORAGE_KEY,
@@ -32,7 +32,6 @@ const C = {
 const mono = { fontFamily: "'IBM Plex Mono',monospace" } as const;
 const sans = { fontFamily: "'Bricolage Grotesque',sans-serif" } as const;
 
-// SL = section label — IBM Plex Mono 10px, #9A938C, 0.14em tracking, uppercase
 const slLabel: React.CSSProperties = {
   ...mono,
   fontSize: "10px",
@@ -106,34 +105,42 @@ interface SubState {
   joined_at: string | null;
   todayCompletions?: Record<string, { score: number; completedAt: string }>;
 }
-interface Group { team_id?: string; name?: string; code?: string; group_type?: string; }
+interface Team { team_id: string; team_name: string; pending?: boolean; }
+interface AvailableTeam { id: string; name: string; }
+interface Season {
+  id: string;
+  name: string;
+  ends_on: string;
+  free_agency_start: string | null;
+  free_agency_notice_start: string | null;
+  locked_at: string | null;
+}
+
+const MAX_TEAMS = 5;
 
 export default function AccountPage() {
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [acct, setAcct] = useState<Account | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [subState, setSubState] = useState<SubState | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [subState, setSubState] = useState<SubState | null>(null);
 
   // Handle editing
   const [editingHandle, setEditingHandle] = useState(false);
   const [newHandle, setNewHandle] = useState("");
   const [handleWarningShown, setHandleWarningShown] = useState(false);
 
-  // Team section
-  const [joinCode, setJoinCode] = useState("");
-  const [joinError, setJoinError] = useState("");
-  const [joinBusy, setJoinBusy] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createType, setCreateType] = useState<"company" | "team">("company");
-  const [createError, setCreateError] = useState("");
-  const [createBusy, setCreateBusy] = useState(false);
-  const [createdCode, setCreatedCode] = useState<string | null>(null);
+  // Teams
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
+  const [availableTeams, setAvailableTeams] = useState<AvailableTeam[]>([]);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamSaving, setTeamSaving] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [season, setSeason] = useState<Season | null>(null);
 
   useEffect(() => {
     let t: string | null = null;
@@ -174,23 +181,43 @@ export default function AccountPage() {
       .catch(() => {});
   }, []);
 
-  const loadGroups = useCallback((t: string) => {
-    fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?token=${encodeURIComponent(t)}&limit=1`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d) return;
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else if (d.myTeam) setGroups([d.myTeam]);
-      })
-      .catch(() => { /* non-critical */ });
+  const loadSeason = useCallback(() => {
+    fetch("/api/season/active")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.season) setSeason(d.season); })
+      .catch(() => {});
+  }, []);
+
+  const loadMyTeams = useCallback((t: string) => {
+    setTeamsLoading(true);
+    fetch(`/api/teams?scope=my&token=${encodeURIComponent(t)}`)
+      .then((r) => r.ok ? r.json() : { teams: [] })
+      .then((d) => setMyTeams(Array.isArray(d.teams) ? d.teams : []))
+      .catch(() => {})
+      .finally(() => setTeamsLoading(false));
   }, []);
 
   useEffect(() => {
     if (!token) return;
     loadAccount(token);
-    loadGroups(token);
     loadSubState(token);
-  }, [token, loadAccount, loadGroups, loadSubState]);
+    loadSeason();
+    loadMyTeams(token);
+  }, [token, loadAccount, loadSubState, loadSeason, loadMyTeams]);
+
+  // Load available teams for search (only during Free Agency)
+  const today = new Date().toISOString().slice(0, 10);
+  const inFreeAgency = season?.free_agency_start != null && today >= season.free_agency_start;
+  const isLocked = season?.locked_at != null && new Date() > new Date(season.locked_at);
+  const canEditTeams = token && inFreeAgency && !isLocked;
+
+  useEffect(() => {
+    if (!canEditTeams) return;
+    fetch(`/api/teams${teamSearch ? `?q=${encodeURIComponent(teamSearch)}` : ""}`)
+      .then((r) => r.ok ? r.json() : { teams: [] })
+      .then((d) => setAvailableTeams(Array.isArray(d.teams) ? d.teams : []))
+      .catch(() => {});
+  }, [canEditTeams, teamSearch]);
 
   function signOut() {
     try {
@@ -199,68 +226,6 @@ export default function AccountPage() {
       localStorage.removeItem(OPTED_OUT_STORAGE_KEY);
     } catch { /* ignore */ }
     window.location.href = "/challenge";
-  }
-
-  function doJoin() {
-    if (!token || !joinCode.trim()) return;
-    setJoinBusy(true);
-    setJoinError("");
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "join", code: joinCode.trim() }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setJoinError(d?.error || "Invalid code — try again."); return; }
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else loadGroups(token);
-        setJoinCode("");
-      })
-      .catch(() => setJoinError("Network error — try again."))
-      .finally(() => setJoinBusy(false));
-  }
-
-  function doCreate() {
-    if (!token || !createName.trim()) return;
-    const nameSnapshot = createName.trim();
-    setCreateBusy(true);
-    setCreateError("");
-    setCreatedCode(null);
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "create", name: nameSnapshot, groupType: createType }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setCreateError(d?.error || "Could not create team."); return; }
-        const myTeams: Group[] = Array.isArray(d.myTeams) ? d.myTeams : [];
-        setGroups(myTeams);
-        const newTeam = myTeams.find((g) => g.name === nameSnapshot);
-        if (newTeam?.code) setCreatedCode(newTeam.code);
-        setCreateName("");
-        setShowCreate(false);
-      })
-      .catch(() => setCreateError("Network error — try again."))
-      .finally(() => setCreateBusy(false));
-  }
-
-  function doLeave(code: string) {
-    if (!token) return;
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "leave", code }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setErr(d?.error || "Could not leave team."); return; }
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else loadGroups(token);
-        if (createdCode) setCreatedCode(null);
-      })
-      .catch(() => setErr("Network error — try again."));
   }
 
   function updateHandle() {
@@ -276,15 +241,40 @@ export default function AccountPage() {
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
         if (!ok) { setErr(d?.error || "Could not update handle."); return; }
-        try { if (d.handle) localStorage.setItem("dc_handle", d.handle); } catch { /* ignore */ }
+        try { if (d.handle) localStorage.setItem(HANDLE_STORAGE_KEY, d.handle); } catch { /* ignore */ }
         setAcct((a) => (a ? { ...a, handle: d.handle } : a));
         setEditingHandle(false);
         setNewHandle("");
         setHandleWarningShown(false);
-        setMsg("Handle updated. Your leaderboard standings are linked to your new handle.");
+        setMsg("Handle updated.");
       })
       .catch(() => setErr("Network error — try again."))
       .finally(() => setBusy(false));
+  }
+
+  async function toggleTeam(teamId: string, teamName: string) {
+    if (!canEditTeams || !token) return;
+    const alreadyIn = myTeams.some((t) => t.team_id === teamId);
+    let next: Team[];
+    if (alreadyIn) {
+      next = myTeams.filter((t) => t.team_id !== teamId);
+    } else {
+      if (myTeams.length >= MAX_TEAMS) return;
+      next = [...myTeams, { team_id: teamId, team_name: teamName, pending: true }];
+    }
+    setMyTeams(next);
+    setTeamSaving(true); setTeamError("");
+    try {
+      const r = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, team_ids: next.map((t) => t.team_id), season_id: season?.id ?? null }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setTeamError(d?.error || "Could not update teams."); return; }
+      if (Array.isArray(d.teams)) setMyTeams(d.teams);
+    } catch { setTeamError("Network error — try again."); }
+    finally { setTeamSaving(false); }
   }
 
   function setOptOut(leave: boolean) {
@@ -332,10 +322,28 @@ export default function AccountPage() {
           <h1 style={{ ...sans, fontSize: "28px", fontWeight: 700, color: C.text, margin: "0 0 8px" }}>
             Account &amp; settings
           </h1>
-          <p style={{ fontSize: "14px", color: C.muted, marginBottom: "24px" }}>
-            Sign in to manage your handle, team, and game status.
+          <p style={{ fontSize: "14px", color: C.muted, marginBottom: "28px" }}>
+            Sign in to manage your handle, teams, and game status.
           </p>
-          <SocialGate trigger="account" heading="Sign in" subhead="One email, no password — we send a magic link." />
+          <div style={darkCard}>
+            <OTPGate
+              trigger="account"
+              C={C}
+              sans={sans}
+              mono={mono}
+              Btn={Btn}
+              onComplete={(newToken: string, subscriber: { email: string; handle?: string; id?: string }) => {
+                try {
+                  localStorage.setItem(SESSION_STORAGE_KEY, newToken);
+                  if (subscriber.email) localStorage.setItem("dc_email", subscriber.email);
+                  if (subscriber.handle) localStorage.setItem(HANDLE_STORAGE_KEY, subscriber.handle);
+                  if (subscriber.id) localStorage.setItem("dc_subscriber_id", subscriber.id);
+                } catch { /* ignore */ }
+                setToken(newToken);
+              }}
+              onDismiss={() => { window.location.href = "/challenge"; }}
+            />
+          </div>
           <p style={{ marginTop: "24px" }}>
             <a href="/challenge" style={{ ...mono, fontSize: "13px", color: C.gold }}>← Back to the challenge</a>
           </p>
@@ -428,114 +436,78 @@ export default function AccountPage() {
           </div>
         </section>
 
-        {/* ── SUBSCRIPTION ─────────────────────────────────────────────────── */}
+        {/* ── TEAMS ────────────────────────────────────────────────────────── */}
         <section style={darkCard}>
-          <div style={slLabel}>Subscription</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-            <span style={{ ...sans, fontSize: "18px", fontWeight: 600, color: C.text, textTransform: "capitalize" }}>
-              {subState?.tier ?? "free"}
-            </span>
-            {subState?.joined_at && (
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>
-                member since {new Date(subState.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-              </span>
-            )}
-          </div>
-        </section>
+          <div style={slLabel}>Teams</div>
 
-        {/* ── TEAM ─────────────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>Team</div>
-
-          {/* Current memberships */}
-          {groups.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
-              {groups.map((g, i) => (
-                <div key={g.code || g.team_id || i} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: "8px", padding: "10px 14px" }}>
-                  <span style={{ ...sans, fontSize: "14px", fontWeight: 600, color: C.text }}>{g.name}</span>
-                  {g.group_type && (
-                    <span style={{ ...mono, fontSize: "10px", color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{g.group_type}</span>
+          {teamsLoading ? (
+            <div style={{ ...mono, fontSize: "12px", color: C.muted }}>Loading…</div>
+          ) : myTeams.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: canEditTeams ? "16px" : "0" }}>
+              {myTeams.map((t) => (
+                <span key={t.team_id} style={{
+                  ...mono, fontSize: "12px", padding: "5px 12px", borderRadius: "20px",
+                  border: `1px solid ${t.pending ? "rgba(196,146,42,0.5)" : "rgba(255,255,255,0.15)"}`,
+                  background: t.pending ? "rgba(196,146,42,0.08)" : "rgba(255,255,255,0.05)",
+                  color: t.pending ? C.gold : C.text,
+                  display: "flex", alignItems: "center", gap: "6px",
+                }}>
+                  {t.team_name}
+                  {t.pending && <span style={{ fontSize: "9px", opacity: 0.7 }}>pending</span>}
+                  {canEditTeams && (
+                    <button
+                      onClick={() => toggleTeam(t.team_id, t.team_name)}
+                      disabled={teamSaving}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1, fontSize: "14px", opacity: 0.6 }}
+                    >
+                      ×
+                    </button>
                   )}
-                  {g.code && <span style={{ ...mono, fontSize: "11px", color: C.muted }}>· {g.code}</span>}
-                  <button
-                    disabled={!g.code}
-                    onClick={() => g.code && doLeave(g.code)}
-                    style={{ ...mono, marginLeft: "auto", background: "none", border: "none", color: C.red, cursor: g.code ? "pointer" : "not-allowed", fontSize: "12px", opacity: g.code ? 1 : 0.4 }}
-                  >
-                    Leave
-                  </button>
-                </div>
+                </span>
               ))}
             </div>
-          )}
-
-          {/* Newly created code chip */}
-          {createdCode && (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "rgba(196,146,42,0.08)", border: `1px solid rgba(196,146,42,0.3)`, borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", flexWrap: "wrap" }}>
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>Team code:</span>
-              <span style={{ ...mono, fontSize: "14px", fontWeight: 700, color: C.gold, letterSpacing: "0.08em" }}>{createdCode}</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(createdCode)}
-                style={{ ...mono, background: "rgba(196,146,42,0.12)", border: `1px solid rgba(196,146,42,0.3)`, color: C.gold, borderRadius: "4px", padding: "3px 10px", fontSize: "11px", cursor: "pointer" }}
-              >
-                Copy
-              </button>
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>Share this code so others can join.</span>
-            </div>
-          )}
-
-          {groups.length === 0 && !createdCode && (
-            <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: "14px" }}>You&apos;re not in any team yet.</p>
-          )}
-
-          {/* Join by code */}
-          <div style={{ marginBottom: "14px" }}>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <input
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="Enter team code"
-                style={darkInput}
-                onKeyDown={(e) => e.key === "Enter" && joinCode.trim() && doJoin()}
-              />
-              <Btn disabled={joinBusy || !joinCode.trim()} onClick={doJoin}>
-                {joinBusy ? "Joining…" : "Join"}
-              </Btn>
-            </div>
-            {joinError && <div style={{ ...mono, fontSize: "11px", color: C.red, marginTop: "6px" }}>{joinError}</div>}
-          </div>
-
-          {/* Create (collapsible) */}
-          {!showCreate ? (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ ...mono, background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: "12px", padding: 0, textDecoration: "underline" }}
-            >
-              Create a new team
-            </button>
           ) : (
-            <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, borderRadius: "8px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ ...mono, fontSize: "10px", color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>Create team</div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <input
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  placeholder="Team name"
-                  style={darkInput}
-                  onKeyDown={(e) => e.key === "Enter" && !createBusy && createName.trim() && doCreate()}
-                />
-                <select
-                  value={createType}
-                  onChange={(e) => setCreateType(e.target.value as "company" | "team")}
-                  style={{ ...darkInput, flex: "0 0 auto", minWidth: "100px" }}
-                >
-                  <option value="company">Company</option>
-                  <option value="team">Team</option>
-                </select>
-                <Btn disabled={createBusy || !createName.trim()} onClick={doCreate}>{createBusy ? "Creating…" : "Create"}</Btn>
-                <Btn variant="ghost" onClick={() => { setShowCreate(false); setCreateName(""); setCreateError(""); }}>Cancel</Btn>
+            <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: canEditTeams ? "16px" : "0" }}>
+              {canEditTeams ? "No teams selected yet." : "No teams."}
+            </p>
+          )}
+
+          {/* Team picker — only during Free Agency */}
+          {canEditTeams && (
+            <>
+              <input
+                value={teamSearch}
+                onChange={(e) => setTeamSearch(e.target.value)}
+                placeholder="Search teams…"
+                style={{ ...darkInput, flex: "1 1 100%", marginBottom: "10px" }}
+              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", maxHeight: "160px", overflowY: "auto" }}>
+                {availableTeams
+                  .filter((t) => !myTeams.some((m) => m.team_id === t.id))
+                  .map((t) => (
+                    <button key={t.id} onClick={() => toggleTeam(t.id, t.name)}
+                      disabled={myTeams.length >= MAX_TEAMS || teamSaving}
+                      style={{
+                        ...mono, fontSize: "11px", padding: "5px 12px", borderRadius: "20px",
+                        border: `1px solid ${C.border}`, background: "transparent", color: C.muted,
+                        cursor: myTeams.length >= MAX_TEAMS ? "not-allowed" : "pointer",
+                        opacity: myTeams.length >= MAX_TEAMS ? 0.5 : 1,
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
               </div>
-              {createError && <div style={{ ...mono, fontSize: "11px", color: C.red }}>{createError}</div>}
+              {teamError && <div style={{ ...mono, fontSize: "11px", color: C.red, marginTop: "8px" }}>{teamError}</div>}
+              <div style={{ ...mono, fontSize: "10px", color: C.muted, marginTop: "10px" }}>
+                Select up to {MAX_TEAMS} teams. Changes take effect at the start of the next season.
+              </div>
+            </>
+          )}
+
+          {!canEditTeams && token && season && !inFreeAgency && (
+            <div style={{ ...mono, fontSize: "11px", color: C.muted, marginTop: "8px" }}>
+              Team membership can be changed during the Free Agency window (final 3 days of each season).
             </div>
           )}
         </section>
@@ -548,7 +520,7 @@ export default function AccountPage() {
               {recentGames.map(([type, data], i) => (
                 <div key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < recentGames.length - 1 ? `1px solid ${C.border}` : "none" }}>
                   <span style={{ ...mono, fontSize: "12px", color: C.text, textTransform: "capitalize" }}>{type.replace(/_/g, " ")}</span>
-                  <span style={{ ...mono, fontSize: "13px", fontWeight: 700, color: C.gold }}>{data.score} pts</span>
+                  <span style={{ ...mono, fontSize: "13px", fontWeight: 700, color: C.gold }}>{(data as { score: number }).score} pts</span>
                 </div>
               ))}
             </div>
