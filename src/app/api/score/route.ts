@@ -1,10 +1,10 @@
-// Authoritative score-write path for the Daily Challenge (go-live closeout).
-//   POST /api/score { token, gameType, score, mwEarned, publicId?, result? }
+// Authoritative score-write path for the Daily Challenge.
+//   POST /api/score { token, gameType, score, publicId?, result? }
 //
 // Responsibilities:
 //   1. Validate session via service role.
 //   2. Check dc_daily_attempts — return existing result if already played today.
-//   3. Call the complete-puzzle edge function to handle streak/MW/badge logic.
+//   3. Call the complete-puzzle edge function to handle streak/badge logic.
 //   4. Insert dc_daily_attempts (attempt lock).
 //   5. Upsert leaderboard_daily (increment running daily score total).
 //   6. Return full result including runningDailyTotal.
@@ -72,17 +72,11 @@ export async function POST(request: Request) {
   const gameType = typeof body.gameType === "string" ? body.gameType.trim() : "";
   const score =
     typeof body.score === "number" && body.score >= 0 ? Math.round(body.score) : null;
-  const mwEarned =
-    typeof body.mwEarned === "number" && body.mwEarned >= 0
-      ? Math.round(body.mwEarned)
-      : null;
 
   if (!token) return Response.json({ error: "Missing session" }, { status: 401 });
   if (!gameType) return Response.json({ error: "Missing gameType" }, { status: 400 });
   if (score === null)
     return Response.json({ error: "Invalid score" }, { status: 400 });
-  if (mwEarned === null)
-    return Response.json({ error: "Invalid mwEarned" }, { status: 400 });
 
   const result = body.result === "lose" ? "lose" : "win";
   const publicId =
@@ -110,12 +104,11 @@ export async function POST(request: Request) {
         existingResult: rows[0],
         runningDailyTotal: dailyTotal,
         playStreak: null,
-        mwBalance: null,
       });
     }
   }
 
-  // Delegate streak/MW/badge logic to the existing complete-puzzle edge function.
+  // Delegate streak/badge logic to the existing complete-puzzle edge function.
   let completionResult: Record<string, unknown> = {};
   try {
     const cpRes = await fetch(`${EDGE_FN_BASE}/complete-puzzle`, {
@@ -129,7 +122,6 @@ export async function POST(request: Request) {
         sessionToken: token,
         puzzleType: gameType,
         score,
-        mwEarned,
         ...(publicId ? { publicId } : {}),
       }),
     });
@@ -165,7 +157,6 @@ export async function POST(request: Request) {
     alreadyPlayed: false,
     runningDailyTotal,
     playStreak: completionResult.playStreak ?? null,
-    mwBalance: completionResult.mwBalance ?? null,
     fullSetJustCompleted: completionResult.fullSetJustCompleted ?? false,
   });
 }

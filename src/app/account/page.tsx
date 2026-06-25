@@ -102,7 +102,6 @@ function Btn({
 interface Account { email: string; handle: string | null; active: boolean; }
 interface SubState {
   playStreak: number;
-  mwBalance: number;
   tier: string;
   joined_at: string | null;
   todayCompletions?: Record<string, { score: number; completedAt: string }>;
@@ -167,7 +166,6 @@ export default function AccountPage() {
       .then((d) => {
         if (d) setSubState({
           playStreak: d.playStreak ?? 0,
-          mwBalance: d.mwBalance ?? 0,
           tier: d.tier ?? "free",
           joined_at: d.joined_at ?? null,
           todayCompletions: d.todayCompletions ?? {},
@@ -430,15 +428,6 @@ export default function AccountPage() {
           </div>
         </section>
 
-        {/* ── MW BALANCE ───────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>MW Balance</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
-            <span style={{ ...sans, fontSize: "28px", fontWeight: 700, color: C.gold }}>{subState?.mwBalance ?? "—"}</span>
-            <span style={{ ...mono, fontSize: "13px", color: C.muted }}>MW</span>
-          </div>
-        </section>
-
         {/* ── SUBSCRIPTION ─────────────────────────────────────────────────── */}
         <section style={darkCard}>
           <div style={slLabel}>Subscription</div>
@@ -559,7 +548,7 @@ export default function AccountPage() {
               {recentGames.map(([type, data], i) => (
                 <div key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < recentGames.length - 1 ? `1px solid ${C.border}` : "none" }}>
                   <span style={{ ...mono, fontSize: "12px", color: C.text, textTransform: "capitalize" }}>{type.replace(/_/g, " ")}</span>
-                  <span style={{ ...mono, fontSize: "13px", fontWeight: 700, color: C.gold }}>{data.score} MW</span>
+                  <span style={{ ...mono, fontSize: "13px", fontWeight: 700, color: C.gold }}>{data.score} pts</span>
                 </div>
               ))}
             </div>
@@ -572,7 +561,7 @@ export default function AccountPage() {
           {optedOut ? (
             <>
               <p style={{ fontSize: "14px", color: C.text, margin: "0 0 8px" }}>You&apos;ve left the game.</p>
-              <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: "16px" }}>Your streak, MW, and history are all kept. Rejoin whenever you&apos;re ready.</p>
+              <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: "16px" }}>Your streak and history are all kept. Rejoin whenever you&apos;re ready.</p>
               <Btn disabled={busy} onClick={() => setOptOut(false)}>Rejoin the game</Btn>
             </>
           ) : !confirmLeave ? (

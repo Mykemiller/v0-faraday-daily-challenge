@@ -21,6 +21,5 @@ export interface SubscriberState {
   email: string;
   playStreak: number;
   fullSetStreak: number;
-  mwBalance: number;
   todayCompletions: Record<string, { score: number; completedAt: string }>;
 }

@@ -181,7 +181,7 @@ export default function LeaderboardPage() {
     if (!you) return;
     const tp = topPercentLabel(you.percentile) ?? "Unranked";
     const groupName = data?.group?.name;
-    const text = `${you.signals.toLocaleString()} Signals · #${you.rank} (${tp}) · ${you.playStreak}-day streak${groupName ? ` · ${groupName}` : ""} — faraday-intelligence.ai/leaderboard`;
+    const text = `${you.signals.toLocaleString()} Score · #${you.rank} (${tp}) · ${you.playStreak}-day streak${groupName ? ` · ${groupName}` : ""} — faraday-intelligence.ai/leaderboard`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try { await navigator.share({ text }); } catch { /* user cancelled */ }
     } else {
@@ -316,7 +316,7 @@ export default function LeaderboardPage() {
                 <div className="flex shrink-0 items-center gap-3">
                   <div className="text-right">
                     <div className="text-xl font-bold text-near-black" style={NUM}>{you.signals.toLocaleString()}</div>
-                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">Signals</div>
+                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">SCORE</div>
                   </div>
                   <button onClick={share} aria-label="Share" className="rounded border border-forest/30 px-3 py-2 text-sm text-forest hover:bg-warm-white">
                     Share
@@ -332,7 +332,7 @@ export default function LeaderboardPage() {
         {/* Band B — Standings */}
         <section>
           <div className={`${GRID} px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40`}>
-            <span>Rank</span><span>Player</span><span className="text-right">Signals</span><span className="text-right">Move</span>
+            <span>Rank</span><span>Player</span><span className="text-right">SCORE</span><span className="text-right">Move</span>
           </div>
 
           {status === "loading" && <SkeletonRows />}
@@ -361,6 +361,37 @@ export default function LeaderboardPage() {
               )}
             </div>
           )}
+        </section>
+
+        {/* TODO: REMOVE BEFORE PRODUCTION — temporary admin testing utilities */}
+        <section className="mt-10 border-t border-red-200 pt-6">
+          <p className="mb-3 text-[11px] uppercase tracking-wide text-red-400">Admin · Testing Only</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={async () => {
+                if (!confirm("Are you sure? This will zero out ALL player scores (Today and Season) for all subscribers. This cannot be undone.")) return;
+                const res = await fetch("/api/admin/reset-scores", { method: "POST" });
+                if (res.ok) { alert("All scores reset."); load(scope, period); }
+                else { const d = await res.json().catch(() => ({})); alert(`Reset failed: ${d.error ?? res.status}`); }
+              }}
+              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
+              className="rounded px-4 py-2 text-sm font-mono"
+            >
+              ⚠ Reset All Scores
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm("Are you sure? This will permanently delete all subscriber records from Supabase, except for the account with handle 'myke'. This cannot be undone.")) return;
+                const res = await fetch("/api/admin/clear-subscribers", { method: "POST" });
+                if (res.ok) { alert("Subscribers cleared (myke preserved)."); load(scope, period); }
+                else { const d = await res.json().catch(() => ({})); alert(`Clear failed: ${d.error ?? res.status}`); }
+              }}
+              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
+              className="rounded px-4 py-2 text-sm font-mono"
+            >
+              ⚠ Clear All Subscribers
+            </button>
+          </div>
         </section>
 
         {/* Band D — Context (global scope only). Season → hero; Today → patterns. */}

@@ -48,8 +48,6 @@ const STREAK_MULTIPLIERS = [
 ];
 const SPEED_BONUS_THRESHOLD = 0.5; // complete in <50% of time → +10pts
 const PERFECT_BONUS = 15;
-const MW_PER_PUZZLE = 5;
-const MW_STREAK_BONUS = 25; // at 7-day streak
 
 function getStreakMultiplier(streak) {
   for (let i = STREAK_MULTIPLIERS.length - 1; i >= 0; i--) {
@@ -292,7 +290,7 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
-function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, mwEarned, onShare, onNext, isNew7Day }) {
+function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   const [shareLabel, setShareLabel] = useState("↑ Share Result");
   async function handleShare() {
@@ -333,18 +331,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
           <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day streak</div>
         </div>
-        <div style={{ width:"1px", background:C.border }}/>
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:"16px", fontWeight:700, color:C.green, ...sans }}>+{mwEarned}</div>
-          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>MW earned</div>
-        </div>
       </div>
-      {isNew7Day && (
-        <div style={{ background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)",
-          borderRadius:"6px", padding:"10px 16px", fontSize:"11px", color:C.amber, ...mono }}>
-          Week Warrior — 7-day streak! +{MW_STREAK_BONUS} bonus MW
-        </div>
-      )}
       <div style={{ display:"flex", gap:"10px" }}>
         <Btn onClick={handleShare} variant="ghost" small>{shareLabel}</Btn>
         <Btn onClick={onNext}>Play Another →</Btn>
@@ -400,7 +387,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   }
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
   return (
@@ -514,7 +501,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
   if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
   return (
@@ -642,7 +629,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
         Ranking by: {puzzle.metric}
       </div>
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -736,7 +723,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -833,7 +820,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -919,7 +906,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   }, [selectedTerm, selectedDef]);
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
     isNew7Day={streak===6} />;
 
   return (
@@ -1023,7 +1010,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} mwEarned={MW_PER_PUZZLE} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1134,7 +1121,7 @@ const MOCK_GAME_HISTORY = [
   { type:"The Stack",   score:115, date:"2026-06-21" },
 ];
 
-function AccountPage({ email, handle, streak, mwBalance, onBack, onShowComingSoon, onSignOut }) {
+function AccountPage({ email, handle, streak, onBack, onShowComingSoon, onSignOut }) {
   const [editHandle, setEditHandle] = useState(handle || "");
   const [handleError, setHandleError] = useState("");
   const [handleSaved, setHandleSaved] = useState(false);
@@ -1207,16 +1194,6 @@ function AccountPage({ email, handle, streak, mwBalance, onBack, onShowComingSoo
             <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
               background: i < Math.min(streak, 7) ? C.gold : C.dim }} />
           ))}
-        </div>
-      </div>
-
-      {/* MW Balance */}
-      <div style={card}>
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:"12px" }}>MW Balance</div>
-        <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
-          <span style={{ ...sans, fontSize:"28px", fontWeight:700, color:C.green }}>{mwBalance}</span>
-          <span style={{ ...mono, fontSize:"11px", color:C.muted }}>MW banked</span>
         </div>
       </div>
 
@@ -1449,12 +1426,12 @@ function GameSwitcher({ current, onSwitch }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TEAM LEADERBOARD — teams_v1 standings, wired to per-player MW
+// TEAM LEADERBOARD — teams_v1 standings, wired to per-player Score
 // ══════════════════════════════════════════════════════════════════════════════
 // Reads the seasonal team standings (public.team_leaderboard via the
-// get-team-leaderboard edge function). Each player's puzzle MW feeds their
+// get-team-leaderboard edge function). Each player's puzzle score feeds their
 // team's total through a DB trigger, so these numbers are real results — no
-// mock data. Signed-in players can start or join a team to put MW on the board.
+// mock data. Signed-in players can start or join a team to put their score on the board.
 function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate, onJoin, onLeave }) {
   const [mode, setMode] = useState(null); // null | "create" | "join"
   const [name, setName] = useState("");
@@ -1484,7 +1461,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
         <span style={{ ...mono, fontSize:"11px", letterSpacing:"0.14em", color:C.deepAmber, textTransform:"uppercase" }}>
           Team Leaderboard
         </span>
-        <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>Ranked by MW earned this season</span>
+        <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>Ranked by Score this season</span>
       </div>
 
       {rows.length === 0 ? (
@@ -1504,7 +1481,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
                 <span style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.black, flex:1, minWidth:0,
                   overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</span>
                 <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
-                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw} MW</span>
+                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw}</span>
               </div>
             );
           })}
@@ -1514,13 +1491,13 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
       <div style={{ marginTop:"16px", borderTop:`1px solid ${C.gray}`, paddingTop:"14px" }}>
         {!signedIn ? (
           <div style={{ ...mono, fontSize:"12px", color:"rgba(20,18,16,0.62)" }}>
-            Sign in to start or join a team and put your MW on the board.
+            Sign in to start or join a team and put your score on the board.
           </div>
         ) : myTeam ? (
           <div style={{ display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
             <span style={{ ...mono, fontSize:"11px", color:C.forest }}>
               On <b>{myTeam.name}</b> · code <b>{myTeam.code}</b>
-              {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total} MW
+              {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total}
               {typeof myTeam.my_mw === "number" ? ` (you: ${myTeam.my_mw})` : ""}
             </span>
             <button onClick={handleInvite} disabled={busy} style={ghostBtn}>{inviteLabel}</button>
@@ -1569,21 +1546,20 @@ export default function DailyChallenge() {
   const [prevScreen, setPrevScreen] = useState("lobby");
   const [pendingSwitch, setPendingSwitch] = useState(null); // game-switcher confirm (discard in-progress puzzle)
   // Session counters — honest defaults for an anonymous session (0). These
-  // increment as the player completes games in-session. Cross-session streak/MW
+  // increment as the player completes games in-session. Cross-session streak
   // persistence belongs to the subscriber session (Supabase) and is wired
   // separately; we never seed these with fabricated values. (FAR-63 stats AC.)
   const [streak,     setStreak]     = useState(0);
-  const [mwBalance,  setMwBalance]  = useState(0);
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
   // Verified subscriber session (set by /auth after a magic link). When
-  // present, streak/MW/completions are hydrated from and persisted to
+  // present, streak/completions are hydrated from and persisted to
   // Supabase — the masthead chips and stat line show real results.
   const [sessionToken,     setSessionToken]     = useState(null);
   const [todayCompletions, setTodayCompletions] = useState({});
   const [lastDailyTotal,   setLastDailyTotal]   = useState(0);
-  // Team leaderboard (teams_v1) wired to per-player MW: public standings, plus
+  // Team leaderboard (teams_v1) wired to per-player Score: public standings, plus
   // the caller's team when signed in. Refreshed after each completion.
   const [leaderboard, setLeaderboard] = useState([]);
   const [myTeam,      setMyTeam]      = useState(null);
@@ -1609,7 +1585,7 @@ export default function DailyChallenge() {
     return () => { cancelled = true; };
   }, []);
 
-  // Hydrate the subscriber's real state (play streak, MW balance, today's
+  // Hydrate the subscriber's real state (play streak, today's
   // completions) from Supabase when a verified session exists in storage.
   useEffect(() => {
     let token = null;
@@ -1637,7 +1613,6 @@ export default function DailyChallenge() {
           try { localStorage.setItem(HANDLE_STORAGE_KEY, data.handle); } catch { /* ignore */ }
         }
         setStreak(data.playStreak || 0);
-        setMwBalance(data.mwBalance || 0);
         setTodayCompletions(data.todayCompletions || {});
         setGamesPlayed(Object.keys(data.todayCompletions || {}).length);
         // Seed the running daily total from today's already-played games (FAR-207).
@@ -1777,12 +1752,10 @@ export default function DailyChallenge() {
 
   function onGameComplete(score, result) {
     const playedGame = activeGame;
-    const mwEarned = MW_PER_PUZZLE + (streak === 6 ? MW_STREAK_BONUS : 0);
     setLastScore(score);
-    // Soft opt-out: no streak/MW accrual, no server persistence.
+    // Soft opt-out: no streak accrual, no server persistence.
     if (optedOut) { setScreen("lobby"); return; }
     setGamesPlayed(g => g+1);
-    setMwBalance(b => b + mwEarned);
     setStreak(s => s+1);
     if (sessionToken && playedGame) {
       // Optimistic update: mark this game completed locally.
@@ -1809,7 +1782,6 @@ export default function DailyChallenge() {
           token: sessionToken,
           gameType: playedGame,
           score,
-          mwEarned,
           result: result || "win",
         }),
       })
@@ -1817,7 +1789,6 @@ export default function DailyChallenge() {
         .then(data => {
           if (data?.alreadyPlayed) return; // idempotent — already counted
           if (typeof data?.playStreak === "number") setStreak(data.playStreak);
-          if (typeof data?.mwBalance === "number") setMwBalance(data.mwBalance);
           if (typeof data?.runningDailyTotal === "number") {
             setLastDailyTotal(data.runningDailyTotal);
           }
@@ -1875,22 +1846,16 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Account link — top-left, always visible */}
-          <button onClick={openAccount} style={{ ...mono, fontSize:"clamp(11px,0.85vw,13px)", color:C.sage,
-            background:"transparent", border:"none", cursor:"pointer", padding:"2px 0",
-            whiteSpace:"nowrap", opacity: screen === "account" ? 0.5 : 1,
-            pointerEvents: screen === "account" ? "none" : "auto" }}>
-            ⚙ Account
-          </button>
-          {/* Chips — mono treatment. Streak/MW are honest session counters. */}
+          {/* Chips — mono treatment */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"8px", alignItems:"center" }}>
             <span className="fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
               borderRadius:"5px", whiteSpace:"nowrap" }}>
               🔥 <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
             </span>
-            <span className="fdc-mw fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
+            <span className="fdc-chip" style={{ ...mono, fontSize:"10px", color:C.gold,
+              background:"rgba(196,146,42,0.12)", border:"1px solid rgba(196,146,42,0.4)",
               borderRadius:"5px", whiteSpace:"nowrap" }}>
-              <b style={{ color:C.goldLight, fontWeight:500 }}>{mwBalance}</b> MW
+              Score: <b style={{ fontWeight:600 }}>{lastDailyTotal}</b>
             </span>
             <a href="/leaderboard" className="fdc-chip"
               style={{ ...mono, color:C.goldLight, background:"transparent",
@@ -1898,6 +1863,14 @@ export default function DailyChallenge() {
                 whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
               Leaderboard
             </a>
+            <button onClick={openAccount} className="fdc-chip"
+              style={{ background:"rgba(196,146,42,0.12)", border:"1px solid rgba(196,146,42,0.4)",
+                color:C.gold, borderRadius:"4px", padding:"5px 12px", fontSize:"9px",
+                cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", ...mono,
+                opacity: screen === "account" ? 0.5 : 1,
+                pointerEvents: screen === "account" ? "none" : "auto" }}>
+              Account
+            </button>
             {!email && screen === "lobby" && (
               <button onClick={() => { setGateReason("default"); setScreen("gate"); }}
                 className="fdc-chip"
@@ -1966,18 +1939,18 @@ export default function DailyChallenge() {
             </div>
 
             {/* Subscriber stat line — real Supabase results only (no mock
-                engagement stats): play streak, MW balance, and today's
-                completion count come from get-subscriber-state / complete-puzzle. */}
+                engagement stats): play streak and today's completion count
+                come from get-subscriber-state / complete-puzzle. */}
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
-                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · {mwBalance} MW banked
+                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · Score: {lastDailyTotal}
                 · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
             )}
 
-            {/* Team leaderboard — real per-player MW, wired via DB trigger */}
+            {/* Team leaderboard — real per-player score, wired via DB trigger */}
             <TeamLeaderboard
               leaderboard={leaderboard}
               myTeam={myTeam}
@@ -2096,7 +2069,6 @@ export default function DailyChallenge() {
             email={email}
             handle={handle}
             streak={streak}
-            mwBalance={mwBalance}
             onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
             onShowComingSoon={() => setShowComingSoon(true)}
             onSignOut={handleSignOut}
