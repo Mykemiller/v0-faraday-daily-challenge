@@ -132,6 +132,12 @@ export async function POST(request: Request) {
     // Non-fatal: continue to lock the attempt and update leaderboard.
   }
 
+  // Check season locked_at — reject score writes after the season locks.
+  const activeSeason = await getActiveSeason(s);
+  if (activeSeason?.locked_at && new Date() > new Date(activeSeason.locked_at)) {
+    return Response.json({ error: "Season is locked — no more scores accepted" }, { status: 403 });
+  }
+
   // Lock the attempt.
   await fetch(`${s.base}/dc_daily_attempts`, {
     method: "POST",
@@ -144,6 +150,21 @@ export async function POST(request: Request) {
       score,
     }),
   }).catch(() => {});
+
+  // Write score_event (season-scoped, source of truth for leaderboard).
+  if (activeSeason?.id) {
+    await fetch(`${s.base}/score_events`, {
+      method: "POST",
+      headers: { ...s.headers, Prefer: "return=minimal" },
+      body: JSON.stringify({
+        subscriber_id: subscriberId,
+        season_id: activeSeason.id,
+        game_id: gameType,
+        points: score,
+        played_at: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+  }
 
   // Upsert leaderboard_daily: increment running daily score + games_played.
   // Read-then-write is safe here because dc_daily_attempts already prevents
@@ -206,6 +227,18 @@ async function upsertLeaderboardDaily(
       }
     ).catch(() => {});
   }
+}
+
+async function getActiveSeason(
+  s: Svc
+): Promise<{ id: string; locked_at: string | null } | null> {
+  const r = await fetch(
+    `${s.base}/seasons?status=eq.active&select=id,locked_at&limit=1`,
+    { headers: s.headers, cache: "no-store" }
+  );
+  if (!r.ok) return null;
+  const rows = await r.json().catch(() => null);
+  return Array.isArray(rows) ? rows[0] ?? null : null;
 }
 
 async function getDailyTotal(

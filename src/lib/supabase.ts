@@ -16,6 +16,8 @@ export const HANDLE_STORAGE_KEY = 'dc_handle';
 // (set via /api/account). This client mirror lets the app suppress streak accrual
 // and hide the player from the in-app team board without an edge-function deploy.
 export const OPTED_OUT_STORAGE_KEY = 'dc_opted_out';
+// Subscriber UUID — stored after OTP auth to support team membership lookups
+export const SUBSCRIBER_ID_KEY = 'dc_subscriber_id';
 
 export interface SubscriberState {
   email: string;
