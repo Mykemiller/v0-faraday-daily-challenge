@@ -252,6 +252,10 @@ function NavPill({ children, onClick, active, style: extraStyle }) {
 // ── Viral share — generated score card + device share/copy/download ───────────
 const SITE_URL = "https://faraday-intelligence.ai";
 const DC_URL = `${SITE_URL}/daily-challenge`;
+// Public-facing share domain — the short, memorable URL we hand to recipients.
+// faradaydailychallenge.com 301-redirects to the canonical /daily-challenge
+// route, so deep links resolve while the shared text stays brandable.
+const SHARE_URL = "https://www.faradaydailychallenge.com";
 
 // Load an SVG-string into an <Image> for canvas drawing. Resolves null on any
 // failure so a missing icon never blocks the card. Self-contained data URL ⇒
@@ -322,7 +326,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
     const blob = await buildShareIconBlob(puzzleType);
     // Deep-link back to the game so the receiver can play; carry the puzzle's
     // unique Public ID (when set) so the share points at this exact puzzle.
-    const url = `${DC_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
+    const url = `${SHARE_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
     // Simple NYT-Connections-style headline: game + score, Public ID on its own
     // line. The neon-icon image carries the brand; no stats baked into the copy.
     const text = `Faraday Daily Challenge - ${puzzleType} Score - ${score}${publicId ? `\n${publicId}` : ""}`;
@@ -1914,6 +1918,86 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
   );
 }
 
+// ── First-visit splash ────────────────────────────────────────────────────────
+// One-time, full-screen cream welcome shown on a player's first visit. Dismissed
+// by the single "Enter →" CTA, which persists faraday_splash_seen so it never
+// returns. Rendered as a fixed overlay above the whole app (see DailyChallenge).
+const SPLASH_SEEN_KEY = "faraday_splash_seen";
+
+function SplashScreen({ onEnter }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Welcome to Faraday's Daily Challenge"
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: C.cream, color: C.black,
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", padding: "32px 24px",
+        overflowY: "auto", ...sans,
+      }}
+    >
+      {/* thin gold rule top & bottom to echo the masthead lockup */}
+      <div style={{ position:"absolute", top:0, left:0, right:0, height:"3px", background:C.gold }} />
+      <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"3px", background:C.gold }} />
+
+      <div style={{ maxWidth:"520px", width:"100%", textAlign:"center",
+        display:"flex", flexDirection:"column", alignItems:"center", gap:"22px" }}>
+
+        {/* Faraday F logo + wordmark */}
+        <BrandMark size={44} framed />
+        <div style={{ lineHeight:1.2 }}>
+          <div style={{ ...serif, fontWeight:700, fontSize:"clamp(24px,5vw,34px)",
+            letterSpacing:"0.02em", color:C.black }}>Faraday</div>
+          <div style={{ ...mono, fontSize:"12px", letterSpacing:"0.22em",
+            color:C.gold, marginTop:"6px" }}>DAILY CHALLENGE</div>
+        </div>
+
+        <div className="double-rule" aria-hidden="true" style={{ width:"56px" }} />
+
+        {/* Welcome copy (exact, brand-approved) */}
+        <p style={{ fontSize:"15px", lineHeight:1.65, color:"rgba(20,18,16,0.78)",
+          maxWidth:"46ch", margin:0 }}>
+          Faraday is your unfair advantage in an uncertain market. It is an
+          intelligence service that ingests and scans thousands of data sources
+          each day and provides insights into the signals and threads without the
+          noise and clutter. This intelligence has been distilled into a set of
+          challenges accessible as competitive and familiar games.
+        </p>
+        <p style={{ ...serif, fontSize:"18px", lineHeight:1.5, color:C.black,
+          fontWeight:600, margin:0 }}>
+          Welcome to Faraday&rsquo;s Daily Challenge! Good Luck!
+        </p>
+
+        {/* Single CTA — sets faraday_splash_seen and dismisses */}
+        <button
+          type="button"
+          onClick={onEnter}
+          autoFocus
+          style={{
+            marginTop:"6px",
+            background: C.forest,
+            border: `1px solid ${C.gold}`,
+            color: C.cream,
+            borderRadius: "8px",
+            padding: "13px 38px",
+            fontSize: "14px",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            cursor: "pointer",
+            transition: "all 0.15s",
+            boxShadow: "0 2px 14px rgba(28,52,36,0.18)",
+            ...mono,
+          }}
+        >
+          ENTER →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1934,6 +2018,10 @@ export default function DailyChallenge() {
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
+  // First-visit welcome splash. Initialised false so SSR/first paint match
+  // (no hydration mismatch); the mount effect flips it on only when the
+  // faraday_splash_seen flag is absent. Dismiss persists the flag for good.
+  const [showSplash, setShowSplash] = useState(false);
 
   // One-play-per-day local results: { [gameType]: { score, completedAt, puzzleSnapshot } }
   const [dailyResults, setDailyResults] = useState(() => {
@@ -1974,6 +2062,19 @@ export default function DailyChallenge() {
   // so the lobby always renders all 7 games even if Airtable is unreachable.
   const [livePuzzles,  setLivePuzzles]  = useState({});
   const [tipOfTheDay,  setTipOfTheDay]  = useState(null);
+
+  // Show the welcome splash once per browser. Runs on mount only, so it is
+  // SSR-safe (localStorage is never touched during render).
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(SPLASH_SEEN_KEY)) setShowSplash(true);
+    } catch { /* storage disabled — skip the splash silently */ }
+  }, []);
+
+  function dismissSplash() {
+    try { localStorage.setItem(SPLASH_SEEN_KEY, "1"); } catch { /* ignore */ }
+    setShowSplash(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -2252,6 +2353,7 @@ export default function DailyChallenge() {
 
   return (
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
+      {showSplash && <SplashScreen onEnter={dismissSplash} />}
       <GameIconDefs />
 
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
