@@ -115,7 +115,12 @@ export function isCtHour5(date: Date): boolean {
 }
 
 export function jiraBasicAuth(email: string, token: string): string {
-  return "Basic " + btoa(`${email}:${token}`);
+  const str = `${email}:${token}`;
+  // btoa only handles Latin1; encode to UTF-8 bytes first
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return "Basic " + btoa(binary);
 }
 
 export function priorityBand(jiraPriority: string, labels: string[]): "P1" | "P2" | "P3" | "P4" {
@@ -260,9 +265,9 @@ async function fetchJiraIssues(
     );
   } else if (openRes.status === "fulfilled") {
     const txt = await openRes.value.text();
-    console.error("Jira open issues:", openRes.value.status, txt.slice(0, 200));
+    throw new Error(`Jira open issues HTTP ${openRes.value.status}: ${txt.slice(0, 300)}`);
   } else {
-    console.error("Jira open issues fetch threw:", openRes.reason);
+    throw new Error(`Jira open issues network error: ${openRes.reason}`);
   }
 
   let transitions: JiraTransition[] = [];
@@ -271,9 +276,9 @@ async function fetchJiraIssues(
     transitions = extractTransitions(data.issues ?? []);
   } else if (transRes.status === "fulfilled") {
     const txt = await transRes.value.text();
-    console.error("Jira transitions:", transRes.value.status, txt.slice(0, 200));
+    console.error("Jira transitions HTTP error:", transRes.value.status, txt.slice(0, 200));
   } else {
-    console.error("Jira transitions fetch threw:", transRes.reason);
+    console.error("Jira transitions network error:", transRes.reason);
   }
 
   return { open, transitions };
