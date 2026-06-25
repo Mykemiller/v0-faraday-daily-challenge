@@ -1340,6 +1340,11 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [season, setSeason] = useState(null);
   const [showFreeAgencyInfo, setShowFreeAgencyInfo] = useState(false);
 
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [createTeamSaving, setCreateTeamSaving] = useState(false);
+  const [createTeamError, setCreateTeamError] = useState("");
+
   const today = new Date().toISOString().slice(0, 10);
   const inFreeAgencyNotice = season?.free_agency_notice_start && today >= season.free_agency_notice_start;
   const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
@@ -1430,6 +1435,32 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
       setTimeout(() => setTeamsSaved(false), 2500);
     } catch { setTeamError("Network error — try again"); }
     finally { setTeamSaving(false); }
+  }
+
+  async function createTeam() {
+    const name = newTeamName.trim();
+    if (!name || !canEditTeams || myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+    setCreateTeamSaving(true); setCreateTeamError("");
+    try {
+      const r = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", token: sessionToken, team_name: name, season_id: season?.id }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        if (d.error === "team_name_taken") setCreateTeamError("A team with that name already exists — search to join it.");
+        else if (d.error === "team_limit_reached") setCreateTeamError("You're already in 5 teams.");
+        else setCreateTeamError(d.error || "Could not create team");
+        return;
+      }
+      setMyTeams(prev => [...prev, { team_id: d.team_id, team_name: d.team_name, pending: d.pending }]);
+      setShowCreateTeam(false);
+      setNewTeamName("");
+      setTeamsSaved(true);
+      setTimeout(() => setTeamsSaved(false), 2500);
+    } catch { setCreateTeamError("Network error — try again"); }
+    finally { setCreateTeamSaving(false); }
   }
 
   const card = {
@@ -1552,122 +1583,158 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
 
       {/* Teams */}
       <div style={card}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", flexWrap:"wrap", gap:"8px" }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"16px" }}>
           <div style={{ ...labelStyle, marginBottom:0 }}>Teams</div>
-          <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
-            {myTeams.length > 0 && (
-              <span style={{ ...mono, fontSize:"10px", background: C.forest, color: C.cream,
-                borderRadius:"20px", padding:"2px 8px" }}>{myTeams.length}/{MAX_ACCOUNT_TEAMS}</span>
-            )}
-            {teamsSaved && <span style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.6)" }}>Saved ✓</span>}
+          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+            <span style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.5)" }}>
+              {myTeams.length}/{MAX_ACCOUNT_TEAMS}
+            </span>
+            {teamsSaved && <span style={{ ...mono, fontSize:"11px", color:C.sage }}>Saved ✓</span>}
           </div>
         </div>
 
-        {/* Free Agency notice */}
-        {inFreeAgencyNotice && !showFreeAgencyInfo && (
-          <button type="button" onClick={() => setShowFreeAgencyInfo(true)}
-            style={{ ...mono, fontSize:"11px", color:C.gold, background:"rgba(196,146,42,0.08)",
-              border:`1px solid rgba(196,146,42,0.3)`, borderRadius:"6px", padding:"8px 12px",
-              cursor:"pointer", display:"block", width:"100%", textAlign:"left", marginBottom:"12px" }}>
-            Tell me about Free Agency →
-          </button>
-        )}
-
-        {showFreeAgencyInfo && (
-          <div style={{ background:"rgba(196,146,42,0.06)", border:`1px solid rgba(196,146,42,0.25)`,
-            borderRadius:"8px", padding:"14px 16px", marginBottom:"14px" }}>
-            <div style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.forest, marginBottom:"8px" }}>
-              Free Agency window
-            </div>
-            <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.7)", lineHeight:1.6 }}>
-              For a brief window at the end of each season, you can switch teams for next season.
-              Changes made during Free Agency take effect when the new season begins.
-              Outside of Free Agency, team membership is locked.
-            </div>
-            {inFreeAgency ? (
-              <div style={{ ...mono, fontSize:"11px", color:C.gold, marginTop:"10px" }}>
-                Free Agency is open — you can update your teams below.
-              </div>
-            ) : (
-              <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.55)", marginTop:"10px" }}>
-                Free Agency opens soon. Your current teams are locked until then.
-              </div>
-            )}
-            <button type="button" onClick={() => setShowFreeAgencyInfo(false)}
-              style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.5)", background:"none", border:"none",
-                cursor:"pointer", padding:0, marginTop:"10px" }}>
-              Close ×
+        {/* ── Your teams ── */}
+        {teamsLoading ? (
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)", paddingBottom:"12px" }}>Loading…</div>
+        ) : !sessionToken ? (
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.45)", marginBottom:"8px" }}>
+            <button type="button" onClick={onSignIn}
+              style={{ ...mono, fontSize:"12px", color:C.gold, background:"none", border:"none",
+                cursor:"pointer", padding:0, textDecoration:"underline" }}>
+              Sign in to join teams →
             </button>
           </div>
-        )}
-
-        {/* Current team memberships */}
-        {teamsLoading ? (
-          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)" }}>Loading…</div>
-        ) : myTeams.length === 0 && !canEditTeams ? (
-          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.45)" }}>
-            {sessionToken ? "No teams selected." : (
-              <button type="button" onClick={onSignIn}
-                style={{ ...mono, fontSize:"12px", color:C.gold, background:"none", border:"none",
-                  cursor:"pointer", padding:0, textDecoration:"underline" }}>
-                Sign in to join teams →
-              </button>
-            )}
+        ) : myTeams.length === 0 ? (
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)", paddingBottom:"12px" }}>
+            {canEditTeams ? "No teams yet — add one below." : "No teams selected."}
           </div>
         ) : (
-          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginBottom: canEditTeams ? "14px" : "0" }}>
-            {myTeams.map(t => (
-              <span key={t.team_id} style={{ ...mono, fontSize:"11px",
-                border: `1px solid ${t.pending ? "rgba(196,146,42,0.5)" : C.forest}`,
-                background: t.pending ? "rgba(196,146,42,0.08)" : C.forest,
-                color: t.pending ? C.gold : C.cream,
-                borderRadius:"20px", padding:"5px 12px",
-                display:"flex", alignItems:"center", gap:"6px" }}>
-                {t.team_name}
-                {t.pending && <span style={{ fontSize:"9px", opacity:0.8 }}>pending</span>}
+          <div style={{ marginBottom: canEditTeams ? "16px" : "4px" }}>
+            {myTeams.map((t, i) => (
+              <div key={t.team_id}
+                style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                  padding:"10px 0",
+                  borderBottom: i < myTeams.length - 1 ? "1px solid rgba(28,52,36,0.07)" : "none" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"8px", flex:1, minWidth:0 }}>
+                  <span style={{ ...mono, fontSize:"13px", color:C.forest,
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {t.team_name}
+                  </span>
+                  {t.pending && (
+                    <span style={{ ...mono, fontSize:"10px", color:C.gold,
+                      background:"rgba(196,146,42,0.1)", borderRadius:"10px",
+                      padding:"2px 7px", flexShrink:0 }}>pending</span>
+                  )}
+                </div>
                 {canEditTeams && (
                   <button type="button" onClick={() => toggleTeam(t.team_id, t.team_name)}
-                    style={{ background:"none", border:"none", cursor:"pointer", color:"inherit",
-                      padding:0, lineHeight:1, fontSize:"13px", opacity:0.7 }}>×</button>
+                    disabled={teamSaving}
+                    style={{ ...mono, fontSize:"18px", color:"rgba(28,52,36,0.3)", background:"none",
+                      border:"none", cursor:"pointer", padding:"2px 8px", flexShrink:0, lineHeight:1 }}>×</button>
                 )}
-              </span>
+              </div>
             ))}
           </div>
         )}
 
-        {/* Team picker — only during Free Agency */}
+        {/* ── Browse & join — only when editable ── */}
         {canEditTeams && (
           <>
+            {myTeams.length > 0 && (
+              <div style={{ borderTop:"1px solid rgba(28,52,36,0.08)", marginBottom:"14px" }} />
+            )}
+
             <input
               value={teamSearch}
               onChange={e => setTeamSearch(e.target.value)}
               placeholder="Search teams…"
-              style={{ ...inputStyle, flex:"1 1 100%", marginBottom:"10px" }}
+              style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:"10px" }}
             />
-            <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", maxHeight:"160px", overflowY:"auto" }}>
-              {availableTeams
-                .filter(t => !myTeams.some(m => m.team_id === t.id))
-                .map(t => (
-                  <button key={t.id} type="button" onClick={() => toggleTeam(t.id, t.name)}
+
+            <div style={{ border:"1px solid rgba(28,52,36,0.1)", borderRadius:"8px",
+              maxHeight:"200px", overflowY:"auto", marginBottom:"12px" }}>
+              {(() => {
+                const joinable = availableTeams.filter(t => !myTeams.some(m => m.team_id === t.id));
+                if (joinable.length === 0) {
+                  return (
+                    <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)", padding:"14px 16px" }}>
+                      {teamSearch ? "No teams match your search." : "No more teams to add."}
+                    </div>
+                  );
+                }
+                return joinable.map((t, i) => (
+                  <button key={t.id} type="button"
+                    onClick={() => toggleTeam(t.id, t.name)}
                     disabled={myTeams.length >= MAX_ACCOUNT_TEAMS || teamSaving}
-                    style={{ ...mono, fontSize:"11px", padding:"5px 12px", borderRadius:"20px",
-                      border:`1px solid rgba(28,52,36,0.2)`, background:"transparent", color:C.forest,
+                    style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                      width:"100%", padding:"11px 16px", background:"none", border:"none",
+                      borderBottom: i < joinable.length - 1 ? "1px solid rgba(28,52,36,0.06)" : "none",
+                      textAlign:"left",
                       cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
                       opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
-                    {t.name}
+                    <span style={{ ...mono, fontSize:"13px", color:C.forest }}>{t.name}</span>
+                    <span style={{ ...mono, fontSize:"18px", color:C.forest, opacity:0.4, lineHeight:1 }}>+</span>
                   </button>
-                ))}
+                ));
+              })()}
             </div>
-            {teamError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"8px" }}>{teamError}</div>}
-            <div style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.45)", marginTop:"10px" }}>
-              Select up to 5 teams. Changes take effect at the start of the next season.
-            </div>
+
+            {/* Create a new team */}
+            {!showCreateTeam ? (
+              <button type="button" onClick={() => setShowCreateTeam(true)}
+                disabled={myTeams.length >= MAX_ACCOUNT_TEAMS}
+                style={{ ...mono, fontSize:"12px", color:C.forest, background:"none",
+                  border:`1px solid rgba(28,52,36,0.2)`, borderRadius:"6px",
+                  padding:"8px 14px", cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
+                  opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                + Create a new team
+              </button>
+            ) : (
+              <div style={{ background:"rgba(28,52,36,0.04)", borderRadius:"8px", padding:"14px" }}>
+                <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.55)", marginBottom:"8px" }}>
+                  New team name
+                </div>
+                <div style={{ display:"flex", gap:"8px" }}>
+                  <input
+                    value={newTeamName}
+                    onChange={e => { setNewTeamName(e.target.value); setCreateTeamError(""); }}
+                    onKeyDown={e => e.key === "Enter" && createTeam()}
+                    placeholder="e.g. Deloitte, Team Faraday…"
+                    maxLength={80}
+                    autoFocus
+                    style={{ ...inputStyle, flex:1 }}
+                  />
+                  <button type="button" onClick={createTeam}
+                    disabled={createTeamSaving || !newTeamName.trim()}
+                    style={{ ...saveBtn, opacity: (createTeamSaving || !newTeamName.trim()) ? 0.45 : 1 }}>
+                    {createTeamSaving ? "…" : "Create"}
+                  </button>
+                </div>
+                {createTeamError && (
+                  <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"6px" }}>{createTeamError}</div>
+                )}
+                <button type="button"
+                  onClick={() => { setShowCreateTeam(false); setNewTeamName(""); setCreateTeamError(""); }}
+                  style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", background:"none",
+                    border:"none", cursor:"pointer", padding:0, marginTop:"10px" }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {teamError && (
+              <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"8px" }}>{teamError}</div>
+            )}
           </>
         )}
 
-        {!canEditTeams && sessionToken && !inFreeAgency && myTeams.length > 0 && (
-          <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
-            Team changes are locked until the Free Agency window (final 3 days of the season).
+        {/* Locked / status message */}
+        {!canEditTeams && sessionToken && myTeams.length > 0 && (
+          <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"4px" }}>
+            {inFreeAgencyNotice
+              ? "Free Agency opens soon — you'll be able to switch teams."
+              : "Your teams are set for this season."}
           </div>
         )}
       </div>
