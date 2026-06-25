@@ -366,8 +366,12 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 // GAME: RACKL — Connections-style tile grouping
 // ══════════════════════════════════════════════════════════════════════════════
+const RACKL_TIME_LIMIT = 180;
+const RACKL_MAX_MISTAKES = 5;
+
 function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const allItems = puzzle.groups.flatMap((g, gi) => g.items.map((item, i) => ({ item, groupIdx:gi, id:`${gi}-${i}` })));
   const [tiles,    setTiles]    = useState(() => [...allItems].sort(() => Math.random()-0.5));
@@ -376,16 +380,44 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const [mistakes, setMistakes] = useState(0);
   const [feedback, setFeedback] = useState(null);
   const [done,     setDone]     = useState(false);
+  const [lost,     setLost]     = useState(false);
   const [scoreVal, setScoreVal] = useState(null);
-  const startTime = useRef(Date.now());
+  const [timeLeft, setTimeLeft] = useState(RACKL_TIME_LIMIT);
+  const startTime  = useRef(Date.now());
+  const gameOver   = useRef(false);
+
+  // Countdown timer — starts on mount, expiry = loss
+  useEffect(() => {
+    if (done || lost) return;
+    const t = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(t);
+          if (!gameOver.current) {
+            gameOver.current = true;
+            const s = 10;
+            setScoreVal(s);
+            setLost(true);
+            onComplete(s, { solvedGroups: [], mistakes: RACKL_MAX_MISTAKES, timedOut: true });
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [done, lost]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hints — puzzle.hints array if provided, else derive from group labels
+  const hints = puzzle.hints || puzzle.groups.map(g => `One group is: "${g.label}"`);
 
   function toggle(id) {
-    if (solved.includes(id)) return;
+    if (solved.includes(id) || done || lost) return;
     setSelected(prev => prev.includes(id) ? prev.filter(x=>x!==id) : prev.length < 4 ? [...prev, id] : prev);
   }
 
   function submit() {
-    if (selected.length !== 4) return;
+    if (selected.length !== 4 || done || lost) return;
     const groups = selected.map(id => tiles.find(t=>t.id===id).groupIdx);
     if (groups.every(g => g === groups[0])) {
       const newSolved = [...solved, ...selected];
@@ -396,24 +428,86 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       if (newSolved.length === 16) {
         const elapsed = (Date.now() - startTime.current) / 1000;
         const perfect = mistakes === 0;
-        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak });
-        setScoreVal(s);
-        setDone(true);
+        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:RACKL_TIME_LIMIT, perfect, streak });
+        if (!gameOver.current) {
+          gameOver.current = true;
+          setScoreVal(s);
+          setDone(true);
+          onComplete(s, { solvedGroups: puzzle.groups.map(g => g.label), mistakes });
+        }
       }
     } else {
-      setMistakes(m => m+1);
+      const newMistakes = mistakes + 1;
+      setMistakes(newMistakes);
       setFeedback({ type:"wrong" });
       setSelected([]);
-      setTimeout(() => setFeedback(null), 800);
+      if (newMistakes >= RACKL_MAX_MISTAKES) {
+        setTimeout(() => {
+          if (!gameOver.current) {
+            gameOver.current = true;
+            const s = 10;
+            setScoreVal(s);
+            setLost(true);
+            onComplete(s, { solvedGroups: [], mistakes: newMistakes });
+          }
+        }, 900);
+      } else {
+        setTimeout(() => setFeedback(null), 800);
+      }
     }
   }
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
-    isNew7Day={streak===6} />;
+  const timePct   = (timeLeft / RACKL_TIME_LIMIT) * 100;
+  const timeColor = timePct > 50 ? C.green : timePct > 20 ? C.amber : C.red;
+
+  if (done || (lost && scoreVal !== null)) return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      {lost && (
+        <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.3)",
+          borderRadius:"8px", padding:"14px 16px", textAlign:"center" }}>
+          <div style={{ fontSize:"15px", fontWeight:700, color:C.red, ...sans }}>
+            {timeLeft === 0 ? "Time's up!" : "Too many mistakes"}
+          </div>
+          <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", ...mono }}>
+            {`${mistakes} mistake${mistakes !== 1 ? "s" : ""} · Better luck tomorrow`}
+          </div>
+        </div>
+      )}
+      {lost && puzzle.groups.map((g, gi) => (
+        <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
+          display:"flex", alignItems:"center", gap:"12px", opacity:0.8 }}>
+          <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
+          <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{g.items.join(" · ")}</span>
+        </div>
+      ))}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl"
+        domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
+        isNew7Day={streak===6} />
+    </div>
+  );
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      {/* Timer bar */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <SL>Group the tiles — 4 connected sets</SL>
+        <span style={{ fontSize:"16px", fontWeight:700, color:timeColor, ...mono }}>{timeLeft}s</span>
+      </div>
+      <ProgressBar value={timeLeft} max={RACKL_TIME_LIMIT} color={timeColor} />
+
+      {/* Hints — reveal one per mistake, max 3 */}
+      {mistakes > 0 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
+          {hints.slice(0, Math.min(mistakes, 3)).map((h, i) => (
+            <div key={i} style={{ fontSize:"11px", color:C.amber, background:"rgba(245,158,11,0.08)",
+              border:"1px solid rgba(245,158,11,0.3)", borderRadius:"6px", padding:"8px 12px", ...mono }}>
+              💡 Hint {i + 1}: {h}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Solved groups */}
       {puzzle.groups.filter((_, gi) => solved.some(id => tiles.find(t=>t.id===id)?.groupIdx===gi)).map((g, gi) => {
         const solvedItems = tiles.filter(t => t.groupIdx === gi).map(t => t.item);
@@ -426,12 +520,12 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         );
       })}
 
-      {/* Active tiles — crème background for readability */}
+      {/* Active tiles */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px" }}>
         {tiles.filter(t => !solved.includes(t.id)).map(t => {
           const isSelected = selected.includes(t.id);
           return (
-            <button key={t.id} onClick={() => toggle(t.id)} style={{
+            <button type="button" key={t.id} onClick={() => toggle(t.id)} style={{
               background: isSelected ? `rgba(196,146,42,0.2)` : C.cream,
               border: `2px solid ${isSelected ? C.gold : "rgba(28,52,36,0.15)"}`,
               borderRadius:"8px", padding:"14px 8px",
@@ -457,12 +551,14 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       )}
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ display:"flex", gap:"6px" }}>
-          {[...Array(4)].map((_, i) => (
+        <div style={{ display:"flex", gap:"5px", alignItems:"center" }}>
+          {[...Array(RACKL_MAX_MISTAKES)].map((_, i) => (
             <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
               background: i < mistakes ? C.red : C.dim }} />
           ))}
-          <span style={{ fontSize:"11px", color:C.muted, marginLeft:"6px", ...mono }}>{mistakes} mistakes</span>
+          <span style={{ fontSize:"11px", color:C.muted, marginLeft:"6px", ...mono }}>
+            {mistakes}/{RACKL_MAX_MISTAKES} mistakes
+          </span>
         </div>
         <Btn onClick={submit} disabled={selected.length !== 4}>
           Submit {selected.length}/4
@@ -472,7 +568,6 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
 // GAME: SIGNAL DROP — Wordle-style
 // ══════════════════════════════════════════════════════════════════════════════
 function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
@@ -2381,13 +2476,6 @@ export default function DailyChallenge() {
                   </div>
                 </div>
                 <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
-
-                {/* Identity */}
-                <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"10px", flexWrap:"wrap" }}>
-                  <span style={{ fontSize:"11px", ...mono, color: displayHandle ? C.goldLight : C.muted }}>
-                    {displayHandle ? `@${displayHandle}` : "Playing as guest"}
-                  </span>
-                </div>
 
                 {/* Game switcher — only show in live game, not replay */}
                 {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} />}
