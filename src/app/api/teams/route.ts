@@ -94,7 +94,7 @@ export async function POST(request: Request) {
   catch { return Response.json({ error: 'invalid_body' }, { status: 400 }); }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
-  const teamIds = Array.isArray(body.team_ids) ? body.team_ids.slice(0, 5) : [];
+  const action = typeof body.action === 'string' ? body.action : 'upsert';
   const seasonId = typeof body.season_id === 'string' ? body.season_id : null;
 
   if (!token) return Response.json({ error: 'missing_token' }, { status: 401 });
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
   const subscriberId = await resolveSubscriber(token);
   if (!subscriberId) return Response.json({ error: 'invalid_session' }, { status: 401 });
 
-  // Determine Free Agency window for this season
+  // Fetch season details (needed for both actions)
   const seasonR = await fetch(
     `${SUPABASE_URL}/rest/v1/seasons?id=eq.${seasonId}&select=id,ends_on,free_agency_start,locked_at&limit=1`,
     { headers: h, cache: 'no-store' }
@@ -113,13 +113,62 @@ export async function POST(request: Request) {
   if (!season) return Response.json({ error: 'season_not_found' }, { status: 404 });
 
   const today = new Date().toISOString().slice(0, 10);
-  const inFreeAgency = season.free_agency_start && today >= season.free_agency_start;
+  const inFreeAgency = !!(season.free_agency_start && today >= season.free_agency_start);
   const isLocked = season.locked_at && new Date() > new Date(season.locked_at);
   if (isLocked) return Response.json({ error: 'season_locked' }, { status: 403 });
-
-  // Outside Free Agency: only allow setting initial teams (pending=false)
-  // During Free Agency: changes are staged as pending=true
   const pending = inFreeAgency;
+
+  // ── Create a new team and auto-join it ──────────────────────────────────────
+  if (action === 'create') {
+    const teamName = typeof body.team_name === 'string' ? body.team_name.trim() : '';
+    if (!teamName || teamName.length < 2 || teamName.length > 80) {
+      return Response.json({ error: 'invalid_team_name' }, { status: 400 });
+    }
+
+    // Guard membership cap
+    const myMemR = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id`,
+      { headers: h, cache: 'no-store' }
+    );
+    const myMem: { team_id: string }[] = myMemR.ok ? await myMemR.json().catch(() => []) : [];
+    if (myMem.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
+
+    // Insert team record
+    const createR = await fetch(`${SUPABASE_URL}/rest/v1/teams`, {
+      method: 'POST',
+      headers: { ...h, Prefer: 'return=representation' },
+      body: JSON.stringify({ name: teamName }),
+    });
+    if (!createR.ok) {
+      const err = await createR.text();
+      if (err.includes('23505') || err.includes('unique')) {
+        return Response.json({ error: 'team_name_taken' }, { status: 409 });
+      }
+      console.error('team create failed', err);
+      return Response.json({ error: 'create_failed' }, { status: 500 });
+    }
+    const created = await createR.json().catch(() => null);
+    const newTeamId: string | null =
+      Array.isArray(created) ? (created[0]?.id ?? null) : ((created as Record<string, unknown>)?.id as string ?? null);
+    if (!newTeamId) return Response.json({ error: 'create_failed' }, { status: 500 });
+
+    // Join the new team
+    const memInsR = await fetch(`${SUPABASE_URL}/rest/v1/team_memberships`, {
+      method: 'POST',
+      headers: { ...h, Prefer: 'return=minimal' },
+      body: JSON.stringify([{ subscriber_id: subscriberId, team_id: newTeamId, season_id: seasonId, pending }]),
+    });
+    if (!memInsR.ok) {
+      const err = await memInsR.text();
+      console.error('team_memberships create-join failed', err);
+      return Response.json({ error: 'join_failed' }, { status: 500 });
+    }
+
+    return Response.json({ ok: true, team_id: newTeamId, team_name: teamName, pending });
+  }
+
+  // ── Upsert: replace membership set ──────────────────────────────────────────
+  const teamIds = Array.isArray(body.team_ids) ? (body.team_ids as string[]).slice(0, 5) : [];
 
   // Delete existing memberships of same pending type to replace them
   await fetch(
