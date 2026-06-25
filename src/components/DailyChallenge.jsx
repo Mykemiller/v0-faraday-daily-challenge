@@ -406,13 +406,16 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
       {/* Solved groups */}
-      {puzzle.groups.filter((_, gi) => solved.some(id => tiles.find(t=>t.id===id)?.groupIdx===gi)).map((g, gi) => (
-        <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
-          display:"flex", alignItems:"center", gap:"12px" }}>
-          <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
-          <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{g.items.join(" · ")}</span>
-        </div>
-      ))}
+      {puzzle.groups.filter((_, gi) => solved.some(id => tiles.find(t=>t.id===id)?.groupIdx===gi)).map((g, gi) => {
+        const solvedItems = tiles.filter(t => t.groupIdx === gi).map(t => t.item);
+        return (
+          <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
+            display:"flex", alignItems:"center", gap:"12px" }}>
+            <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
+            <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{solvedItems.join(" · ")}</span>
+          </div>
+        );
+      })}
 
       {/* Active tiles — crème background for readability */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px" }}>
