@@ -286,3 +286,10 @@ handle edits); no player's total can leak into another's session.
 - Fix: derive solvedItems from tiles array filtered by groupIdx
 - File: faraday-daily-challenge.jsx — GameRackl, solved groups render block (~line 409)
 - Branch: fix/rackl-solved-group-items | PR: https://github.com/Mykemiller/v0-faraday-daily-challenge/pull/39
+
+## Daily Results State
+- Key: `faraday_daily_{YYYY-MM-DD}` in localStorage
+- Shape: `{ [gameType: string]: { score: number, completedAt: number, puzzleSnapshot: object } }`
+- One entry per game per calendar day. Never overwrite an existing entry.
+- Profile key: `faraday_profile` → `{ handle, name, email, favoriteTeams: string[] }`
+- todayScore is always derived: Object.values(dailyResults).reduce((s,r) => s + r.score, 0)
