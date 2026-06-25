@@ -1,7 +1,7 @@
 // Subscriber state hydration endpoint — replaces the missing get-subscriber-state
-// edge function. Called on mount to hydrate streak/MW/today's completions.
+// edge function. Called on mount to hydrate streak/today's completions.
 //   GET /api/subscriber-state?token=<session>
-// Returns: { email, handle, playStreak, fullSetStreak, mwBalance, active,
+// Returns: { email, handle, playStreak, fullSetStreak, active,
 //            tier, joined_at, todayCompletions }
 // Server-only. Requires env: SUPABASE_SERVICE_ROLE_KEY.
 
@@ -59,9 +59,9 @@ export async function GET(request: Request) {
 
   const subscriberId: string = sess.subscriber_id;
 
-  // Subscriber row — streak, MW, email, active, joined_at.
+  // Subscriber row — streak, email, active, joined_at.
   const subR = await fetch(
-    `${s.base}/dc_subscribers?id=eq.${subscriberId}&select=email,handle,play_streak,full_set_streak,mw_balance,active,created_at`,
+    `${s.base}/dc_subscribers?id=eq.${subscriberId}&select=email,handle,play_streak,full_set_streak,active,created_at`,
     { headers: s.headers, cache: "no-store" }
   );
   if (!subR.ok)
@@ -111,7 +111,6 @@ export async function GET(request: Request) {
     handle: sub.handle ?? null,
     playStreak: sub.play_streak ?? 0,
     fullSetStreak: sub.full_set_streak ?? 0,
-    mwBalance: sub.mw_balance ?? 0,
     active: sub.active !== false,
     tier,
     joined_at: sub.created_at ?? null,

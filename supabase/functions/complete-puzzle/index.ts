@@ -57,16 +57,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { sessionToken, puzzleType, score, mwEarned } = body ?? {};
+    const { sessionToken, puzzleType, score } = body ?? {};
     if (typeof sessionToken !== "string" || !sessionToken) return json({ error: "Missing session" }, 401);
     if (typeof puzzleType !== "string" || !puzzleType) return json({ error: "Missing puzzleType" }, 400);
     if (typeof score !== "number" || score < 0) return json({ error: "Invalid score" }, 400);
-    if (typeof mwEarned !== "number" || mwEarned < 0) return json({ error: "Invalid mwEarned" }, 400);
 
     // Optional Puzzle Bank V2 metadata. Both are additive and analytics-only:
     //   hintsUsed  — highest hint tier the player revealed (0..3); hints are FREE.
     //   publicId   — the puzzle's public code (e.g. "CIRC-2026-245").
-    // Neither is permitted to influence score, mwEarned, or streaks.
+    // Neither is permitted to influence score or streaks.
     const hintsUsed = normalizeHintsUsed((body ?? {}).hintsUsed);
     const rawPublicId = (body ?? {}).publicId;
     const publicId = typeof rawPublicId === "string" && rawPublicId.trim() !== "" ? rawPublicId.trim() : null;
@@ -94,7 +93,6 @@ Deno.serve(async (req: Request) => {
       puzzle_type: puzzleType,
       puzzle_date: puzzleDate,
       score,
-      mw_earned: mwEarned,
       // Analytics-only columns (Puzzle Bank V2). Never inputs to scoring.
       hints_used: hintsUsed,
       puzzle_public_id: publicId,
@@ -130,9 +128,9 @@ Deno.serve(async (req: Request) => {
 
     const yesterday = previousDay(puzzleDate);
 
-    // NOTE: streak/MW math below uses only puzzleDate, mwEarned, and the
-    // subscriber's prior streak state. hintsUsed/publicId are intentionally
-    // absent here — hints are free and must not change scoring or ranking.
+    // NOTE: streak math below uses only puzzleDate and the subscriber's prior
+    // streak state. hintsUsed/publicId are intentionally absent here — hints
+    // are free and must not change scoring or ranking.
     const playIncrementingDay = sub.play_streak_last_day !== puzzleDate;
     const playContinues = sub.play_streak_last_day === yesterday || sub.play_streak === 0;
     const newPlayStreak = playIncrementingDay
@@ -150,7 +148,6 @@ Deno.serve(async (req: Request) => {
       play_streak_last_day: puzzleDate,
       full_set_streak: newFullSetStreak,
       full_set_last_day: fullSetJustCompleted ? puzzleDate : sub.full_set_last_day,
-      mw_balance: sub.mw_balance + mwEarned,
       last_seen_at: new Date().toISOString(),
     }).eq("id", session.subscriber_id);
 
@@ -170,7 +167,6 @@ Deno.serve(async (req: Request) => {
       fullSetJustCompleted,
       playStreak: newPlayStreak,
       fullSetStreak: newFullSetStreak,
-      mwBalance: sub.mw_balance + mwEarned,
     });
   } catch (e) {
     console.error("Unhandled error:", e);
