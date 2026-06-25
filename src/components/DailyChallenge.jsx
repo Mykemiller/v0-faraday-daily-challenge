@@ -1344,7 +1344,8 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const inFreeAgencyNotice = season?.free_agency_notice_start && today >= season.free_agency_notice_start;
   const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
   const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
-  const canEditTeams = sessionToken && inFreeAgency && !isLocked;
+  // Free Agency: staged changes; no teams yet: allow initial setup any time
+  const canEditTeams = sessionToken && !isLocked && (inFreeAgency || myTeams.length === 0);
 
   useEffect(() => {
     (async () => {
@@ -1664,9 +1665,9 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           </>
         )}
 
-        {!canEditTeams && sessionToken && !inFreeAgency && (
+        {!canEditTeams && sessionToken && !inFreeAgency && myTeams.length > 0 && (
           <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
-            Team membership is locked outside of Free Agency.
+            Team changes are locked until the Free Agency window (final 3 days of the season).
           </div>
         )}
       </div>
