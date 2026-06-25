@@ -169,3 +169,33 @@ reverting live Airtable + an already-deployed edge fn is itself disruptive).
   or keep Designed / retire. Fix AUTO-118/119 `D17` → D17.2/D17.1 on activation.
 - **d.** Confirm hot-thread taxonomy: `D4.7` (prompt) vs `D6.3` (repo).
 - **e.** Review & merge this PR.
+
+---
+
+## UPDATE 2026-06-25 — Myke decisions applied
+
+Myke's directives (2026-06-25) executed:
+
+- **FAR-202 — activate D11–D23 (AUTO-070–119): DONE.** Authored query sets
+  (`coverage-bridge.ts` `TIER2_ACTIVATION`, 50 crawlers, AUTO-118→D17.2 / AUTO-119→D17.1),
+  merged into the live fleet (`mergeApproved`, 87 automations, no dup). Deployed
+  `faraday-crawl` **v6** to `ycadmmngkdhvpcsrcuaq` (`verify_jwt:false`). Flipped all 50
+  Registry rows Designed→Active. (Open-action **C: Fix, do NOT retire** — none retired.)
+  Runtime "87" confirmation deferred to the next `pg_cron` run → `automation_health_log`
+  (a direct invoke is blocked by session egress policy; not routed around).
+- **FAR-204 — AUTO-050 collision: RESOLVED.** Per Myke: Daily Faraday Todo Digest moved
+  **AUTO-050 → AUTO-055** (`recvgnvCL3etK0Vs4`); the blank *Lexicon-Powered Puzzle Draft
+  Agent* relocated **AUTO-055 → AUTO-177** (`recSGrsQQvtaOaDqk`, preserved). **AUTO-050**
+  now sole-owned by the *PUC & Utility Rate Case Monitor*. Code/docs updated
+  (`faraday-todo-daily` `AUTO_ID`, footers, CLAUDE.md, test). **Follow-up:** redeploy
+  `faraday-todo-daily` to apply the AUTO-055 label at runtime.
+- **FAR-201 — AUTO-137→175 block: APPROVED by Myke** (action A). 39 scaffolds stay
+  registered Designed; per-routine build is follow-on. Next free ID now **AUTO-178**.
+- **Taxonomy (action D):** repo is correct (hot threads D4.6/D4.5/D6.3); the prompt's
+  "D4.7" was the error. No change.
+- **PR #37** (reconciliation): merged. **PR #43**: this FAR-202 activation.
+
+**Jira note:** status flips (FAR-200/202 → Done, FAR-201 → In Progress) could not be
+applied this pass — the reconnected Atlassian MCP server cannot access the FAR-199–205
+subtasks (visible/editable earlier in-session via the prior server instance). Flagged
+for retry / manual flip.
