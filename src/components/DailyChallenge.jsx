@@ -2251,8 +2251,13 @@ export default function DailyChallenge() {
             <NavPill style={{ pointerEvents:"none", cursor:"default" }}>Score: {todayScore}</NavPill>
             <NavPill onClick={() => { window.location.href = "/leaderboard"; }}>Leaderboard</NavPill>
             <NavPill onClick={openAccount} active={screen === "account"}>Account</NavPill>
+            {displayHandle && (
+              <NavPill onClick={openAccount} style={{ maxWidth:"160px", overflow:"hidden", textOverflow:"ellipsis" }}>
+                @{displayHandle}
+              </NavPill>
+            )}
             {!email && (
-              <NavPill onClick={() => { setGateReason("default"); setScreen("gate"); }} active={false}>
+              <NavPill onClick={() => { setGateReason("default"); setScreen("gate"); }}>
                 Sign in →
               </NavPill>
             )}

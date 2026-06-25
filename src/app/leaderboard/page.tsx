@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
-import { EDGE_FUNCTIONS_BASE, SESSION_STORAGE_KEY } from "@/lib/supabase";
+import { EDGE_FUNCTIONS_BASE, SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 // Leaderboard V2 — Global + group-scoped board (§3, §7.4). Period-scoped ranking
 // from get-leaderboard (global) and get-team-leaderboard (team/company). Currency
@@ -147,6 +147,22 @@ export default function LeaderboardPage() {
   const [groups, setGroups] = useState<GroupRef[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [shareMsg, setShareMsg] = useState("");
+  // Client-side profile for nav header + scope tab sync
+  const [localHandle, setLocalHandle] = useState<string | null>(null);
+  const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const h = localStorage.getItem(HANDLE_STORAGE_KEY);
+      if (h) setLocalHandle(h);
+      const raw = localStorage.getItem("faraday_profile");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p.favoriteTeams)) setFavoriteTeams(p.favoriteTeams);
+        if (p.handle && !h) setLocalHandle(p.handle);
+      }
+    } catch { /* storage disabled */ }
+  }, []);
 
   const load = useCallback(async (sc: string, p: Period) => {
     setStatus("loading");
@@ -176,6 +192,20 @@ export default function LeaderboardPage() {
   const youInList = !!data?.leaderboard.some((r) => r.isYou);
   const companies = groups.filter((g) => g.groupType === "company");
   const teams = groups.filter((g) => g.groupType === "team");
+
+  // Merge favorite teams from Account page with server groups.
+  // Teams with a matching group code are clickable filters; others are shown
+  // as scope chips that attempt a name-based lookup.
+  const allScopeTeams: Array<{ label: string; code: string }> = [
+    ...teams.map((g) => ({ label: g.name, code: g.code })),
+    ...favoriteTeams
+      .filter((name) => !teams.some((g) => g.name === name))
+      .map((name) => ({ label: name, code: name })),
+  ];
+
+  const navStreak = you?.playStreak ?? 0;
+  const navScore = (status === "ready" && you) ? you.signals : 0;
+  const navHandle = you?.handle ?? localHandle;
 
   async function share() {
     if (!you) return;
@@ -212,15 +242,32 @@ export default function LeaderboardPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <div className="h-0.5 bg-gold" />
-      <header className="bg-forest">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
-          <Link href="/daily-challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
+      <header className="bg-forest sticky top-0 z-50">
+        <div className="mx-auto flex max-w-5xl items-center gap-3 px-5 py-2.5">
+          <Link href="/daily-challenge" className="flex items-center gap-3 shrink-0" aria-label="Daily Challenge">
             <BrandMark size={20} framed />
-            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+            <div className="leading-tight">
+              <span className="block font-serif text-[clamp(14px,1.5vw,18px)] font-bold tracking-wide text-warm-white">Faraday</span>
+              <span className="block font-mono text-[11px] tracking-[0.18em] text-sage">DAILY CHALLENGE</span>
+            </div>
           </Link>
-          <Link href="/daily-challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-            ← Daily Challenge
-          </Link>
+          {/* Nav pills */}
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <NavChip label={`🔥 ${navStreak}`} />
+            <NavChip label={`Score: ${navScore}`} />
+            <Link href="/daily-challenge">
+              <NavChip label="Daily Challenge" />
+            </Link>
+            <NavChip label="Leaderboard" active />
+            <Link href="/account">
+              <NavChip label="Account" />
+            </Link>
+            {navHandle && (
+              <Link href="/account">
+                <NavChip label={`@${navHandle}`} />
+              </Link>
+            )}
+          </div>
         </div>
       </header>
       <div className="h-0.5 bg-gold" />
@@ -229,12 +276,12 @@ export default function LeaderboardPage() {
         <h1 className="font-serif text-3xl font-bold text-forest">Leaderboard</h1>
         <p className="mb-5 mt-1 text-sm text-near-black/60">{subhead}</p>
 
-        {/* Scope selector: Global · My Team(s) · My Company */}
-        {groups.length > 0 && (
+        {/* Scope selector: Global · Favorite Teams · My Company */}
+        {(allScopeTeams.length > 0 || companies.length > 0) && (
           <div className="mb-3 flex flex-wrap gap-1.5">
             <ScopeChip label="Global" active={scope === "global"} onClick={() => setScope("global")} />
-            {teams.map((g) => (
-              <ScopeChip key={g.code} label={g.name} active={scope === g.code} onClick={() => setScope(g.code)} />
+            {allScopeTeams.map((t) => (
+              <ScopeChip key={t.code} label={t.label} active={scope === t.code} onClick={() => setScope(t.code)} />
             ))}
             {companies.map((g) => (
               <ScopeChip key={g.code} label={`🏢 ${g.name}`} active={scope === g.code} onClick={() => setScope(g.code)} />
@@ -442,5 +489,25 @@ function ScopeChip({ label, active, onClick }: { label: string; active: boolean;
     >
       {label}
     </button>
+  );
+}
+
+function NavChip({ label, active }: { label: string; active?: boolean }) {
+  return (
+    <span style={{
+      display: "inline-block",
+      background: active ? "rgba(196,146,42,0.15)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${active ? "#C4922A" : "rgba(196,146,42,0.35)"}`,
+      color: active ? "#C4922A" : "#EEE6DA",
+      borderRadius: "6px",
+      padding: "8px 18px",
+      fontSize: "13px",
+      fontWeight: 600,
+      letterSpacing: "0.04em",
+      whiteSpace: "nowrap",
+      fontFamily: "'Bricolage Grotesque', sans-serif",
+      cursor: "pointer",
+      lineHeight: 1,
+    }}>{label}</span>
   );
 }
