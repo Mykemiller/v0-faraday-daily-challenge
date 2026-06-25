@@ -1320,6 +1320,9 @@ const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 // ACCOUNT PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 const TEAMS_LIST = [
+  "Team ER&I",
+  "Team PE",
+  "Team TMT",
   "Hybrid Cloud Infrastructure",
   "Deloitte",
   "AI Infrastructure",
