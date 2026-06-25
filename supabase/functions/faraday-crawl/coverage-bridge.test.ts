@@ -1,7 +1,7 @@
 // Unit tests for the IDF 4.0 coverage-bridge scaffold (FAR IDF-4).
 // Run with: deno test supabase/functions/faraday-crawl/coverage-bridge.test.ts
 import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { TIER1_ACTIVATION, WHITESPACE_SCAFFOLDS, SOURCE_FIT_REPOINTS, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, WHITESPACE_SCAFFOLDS, SOURCE_FIT_REPOINTS, mergeApproved } from "./coverage-bridge.ts";
 
 const SUBDOMAIN_RE = /^D([1-9]|1[0-9]|2[0-3])\.\d{1,2}$/;
 
@@ -19,6 +19,34 @@ Deno.test("TIER1_ACTIVATION — covers the 10 dormant dedicated crawlers AUTO-06
   const ids = TIER1_ACTIVATION.map((a) => a.auto_id).sort();
   const expected = ["AUTO-060","AUTO-061","AUTO-062","AUTO-063","AUTO-064","AUTO-065","AUTO-066","AUTO-067","AUTO-068","AUTO-069"];
   assertEquals(ids, expected);
+});
+
+Deno.test("TIER2_ACTIVATION — every def is well-formed and tags exactly one D11–D23 sub-domain", () => {
+  for (const a of TIER2_ACTIVATION) {
+    assert(/^AUTO-(0[7-9]\d|1[01]\d)$/.test(a.auto_id), `bad auto_id ${a.auto_id}`);
+    assert(a.source_type.length > 0, `empty source_type for ${a.auto_id}`);
+    assertEquals(a.ifs_domains.length, 1, `${a.auto_id} must tag exactly one sub-domain`);
+    assert(SUBDOMAIN_RE.test(a.ifs_domains[0]), `${a.auto_id} tag ${a.ifs_domains[0]} not D#.#`);
+    assert(a.queries.length >= 2, `${a.auto_id} needs >=2 queries`);
+  }
+});
+
+Deno.test("TIER2_ACTIVATION — covers exactly the D11–D23 crawlers AUTO-070..119", () => {
+  const ids = TIER2_ACTIVATION.map((a) => a.auto_id).sort();
+  const expected = Array.from({ length: 50 }, (_, i) => `AUTO-${70 + i}`).sort();
+  assertEquals(ids, expected, "must be the contiguous block AUTO-070..119");
+});
+
+Deno.test("TIER2_ACTIVATION — AUTO-118→D17.2, AUTO-119→D17.1 (bare D17 tag fixed)", () => {
+  const by = Object.fromEntries(TIER2_ACTIVATION.map((a) => [a.auto_id, a.ifs_domains[0]]));
+  assertEquals(by["AUTO-118"], "D17.2");
+  assertEquals(by["AUTO-119"], "D17.1");
+});
+
+Deno.test("Full fleet merge (BASE+TIER1+TIER2) has no duplicate auto_id", () => {
+  const merged = mergeApproved(mergeApproved(TIER1_ACTIVATION, TIER2_ACTIVATION), []);
+  assertEquals(new Set(merged.map((a) => a.auto_id)).size, merged.length);
+  assertEquals(merged.length, 60, "10 Tier-1 + 50 Tier-2");
 });
 
 Deno.test("WHITESPACE_SCAFFOLDS — carry the granted block AUTO-137..175 (no placeholders left)", () => {

@@ -21,7 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TIER1_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -108,7 +108,14 @@ const BASE_AUTOMATIONS: AutoDef[] = [
 // IDF 4.0 Tier-1 activation (FAR-200, approved 2026-06-24): merge the 10 dormant
 // dedicated sub-domain crawlers AUTO-060–069 into the live fleet. mergeApproved
 // throws on any duplicate auto_id, so a re-merge can never silently shadow a row.
-const AUTOMATIONS: AutoDef[] = mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION);
+//
+// IDF 4.0 Tier-2 activation (FAR-202, approved 2026-06-24): merge the D11–D23
+// dedicated crawlers AUTO-070–119. Query sets authored in coverage-bridge.ts so the
+// rows actually crawl before they are flipped Status=Active in the Registry.
+const AUTOMATIONS: AutoDef[] = mergeApproved(
+  mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION),
+  TIER2_ACTIVATION,
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CrawledArtifact {

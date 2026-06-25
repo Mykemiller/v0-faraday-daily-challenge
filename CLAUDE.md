@@ -28,7 +28,12 @@ Invariants:
   domain). Do not build new surfaces there. This supersedes the earlier
   basePath+proxy arrangement (FAR-63) and reverses Decision Log D2.
 
-## Daily Todo Digest — faraday-todo-daily (AUTO-050, CC-13, added 2026-06-24)
+## Daily Todo Digest — faraday-todo-daily (AUTO-055, CC-13, added 2026-06-24)
+
+> **AUTO-ID reassigned 2026-06-24 (FAR-204, Myke-approved):** moved AUTO-050 → **AUTO-055**
+> to resolve the AUTO-050 collision with the *PUC & Utility Rate Case Monitor* (which keeps
+> AUTO-050). The displaced blank *Lexicon-Powered Puzzle Draft Agent* moved to AUTO-177.
+> Redeploy `faraday-todo-daily` to apply the new AUTO_ID label at runtime.
 
 Edge function `supabase/functions/faraday-todo-daily/index.ts` fires daily at **05:00 CT**
 (DST-safe: pg_cron fires at both 10:00 UTC and 11:00 UTC; function guards on
@@ -56,8 +61,8 @@ Failure sends a short "digest failed" notice and writes a health-log row — nev
 (`0 11 * * *`) — both active in `cron.job`. Migration:
 `supabase/migrations/20260624000001_register_daily_snapshot.sql`.
 
-**Airtable:** AUTO-050 registered in Automation Registry (`appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg`,
-record `recvgnvCL3etK0Vs4`). **Pending Myke approval before production deployment.**
+**Airtable:** **AUTO-055** registered in Automation Registry (`appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg`,
+record `recvgnvCL3etK0Vs4`, Status=Active). Reassigned from AUTO-050 (FAR-204 collision fix).
 
 **Tests:** `supabase/functions/faraday-todo-daily/faraday-todo-daily.test.ts`
 
@@ -201,10 +206,12 @@ Coverage of the IDF 4.0 canon (23 Domains / **116 Sub-Domains**, Notion
 (Airtable `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`). A `Designed` or `Broad-only`
 crawler is **not** coverage.
 
-**Coverage state (post FAR-200 activation, 2026-06-24):** 11 Dedicated-Active ·
-53 Dedicated-Designed (dormant) · 21 Broad-only · 31 Whitespace. The 10 Tier-1
-dedicated crawlers **AUTO-060–069 are now Active** (D1.4/.5/.7/.8, D2.5/.6/.7/.8/.10,
-D10.4); the rest of AUTO-070→119 stays Designed.
+**Coverage state (post FAR-200 + FAR-202 activation, 2026-06-24):** 61 Dedicated-Active ·
+3 Dedicated-Designed · 21 Broad-only · 31 Whitespace. The 10 Tier-1 dedicated crawlers
+**AUTO-060–069** (D1.4/.5/.7/.8, D2.5/.6/.7/.8/.10, D10.4) **and the 50 Tier-2 D11–D23
+crawlers AUTO-070–119 are now Active** (FAR-202): query sets authored in
+`coverage-bridge.ts` `TIER2_ACTIVATION`, merged into the live fleet (`faraday-crawl` v6,
+87 automations), Registry flipped Designed→Active. AUTO-118→D17.2, AUTO-119→D17.1.
 
 - **Coverage Matrix** (single source of truth): `scripts/idf4-coverage-matrix.mjs`
   → `docs/idf4-coverage/coverage-matrix.{md,csv}` (116 rows; asserts per-Domain
@@ -221,10 +228,13 @@ D10.4); the rest of AUTO-070→119 stays Designed.
 - **Plan / findings:** `docs/idf4-coverage/deployment-and-source-fit.md`,
   `docs/idf4-coverage/data-integrity-findings.md`.
 
-**AUTO-ID range:** next free ID is **`AUTO-177`** (NOT AUTO-134 — 134/135/136 are
+**AUTO-ID range:** next free ID is **`AUTO-178`** (NOT AUTO-134 — 134/135/136 are
 Active engine fns). Block **`AUTO-137 → AUTO-175`** granted (2026-06-24) and
 registered Designed; **`AUTO-176`** = the reassigned *Community Opposition &
-Moratorium Tracker* (moved off the AUTO-049 collision).
+Moratorium Tracker* (moved off the AUTO-049 collision); **`AUTO-177`** = the relocated
+*Lexicon-Powered Puzzle Draft Agent* (moved off the AUTO-055 collision so the Daily
+Faraday Todo Digest could take **AUTO-055**, FAR-204). AUTO-050 = PUC & Utility Rate
+Case Monitor (sole owner).
 
 **Data-integrity resolutions (2026-06-24, all applied):**
 - **AUTO-049 collision** — Designed *Community Opposition & Moratorium Tracker*
