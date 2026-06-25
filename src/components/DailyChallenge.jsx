@@ -1323,7 +1323,7 @@ const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 // ══════════════════════════════════════════════════════════════════════════════
 const MAX_ACCOUNT_TEAMS = 5;
 
-function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut, onHandleChange }) {
+function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut, onHandleChange, onSignIn }) {
   const [editHandle, setEditHandle] = useState(handle || "");
   const [handleSaving, setHandleSaving] = useState(false);
   const [handleSaved, setHandleSaved] = useState(false);
@@ -1344,7 +1344,8 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const inFreeAgencyNotice = season?.free_agency_notice_start && today >= season.free_agency_notice_start;
   const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
   const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
-  const canEditTeams = sessionToken && inFreeAgency && !isLocked;
+  // Free Agency: staged changes; no teams yet: allow initial setup any time
+  const canEditTeams = sessionToken && !isLocked && (inFreeAgency || myTeams.length === 0);
 
   useEffect(() => {
     (async () => {
@@ -1481,6 +1482,22 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         {handle ? `@${handle}` : (email ? email.split("@")[0] : "Your Account")}
       </div>
 
+      {/* Sign-in prompt — shown when not authenticated */}
+      {!sessionToken && (
+        <div style={{ ...card, borderColor:"rgba(196,146,42,0.4)", background:"rgba(196,146,42,0.05)", marginBottom:"20px" }}>
+          <div style={labelStyle}>Sign in to unlock</div>
+          <p style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.7)", margin:"0 0 14px" }}>
+            Sign in to save your handle, join teams, and track your score on the leaderboard.
+          </p>
+          <button type="button" onClick={onSignIn}
+            style={{ ...mono, background:C.gold, color:C.forest, border:"none", borderRadius:"6px",
+              padding:"9px 20px", fontSize:"12px", fontWeight:700, cursor:"pointer",
+              letterSpacing:"0.04em" }}>
+            Sign in →
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div style={card}>
         <div style={labelStyle}>Stats</div>
@@ -1589,7 +1606,13 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)" }}>Loading…</div>
         ) : myTeams.length === 0 && !canEditTeams ? (
           <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.45)" }}>
-            {sessionToken ? "No teams selected." : "Sign in to see your teams."}
+            {sessionToken ? "No teams selected." : (
+              <button type="button" onClick={onSignIn}
+                style={{ ...mono, fontSize:"12px", color:C.gold, background:"none", border:"none",
+                  cursor:"pointer", padding:0, textDecoration:"underline" }}>
+                Sign in to join teams →
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginBottom: canEditTeams ? "14px" : "0" }}>
@@ -1642,9 +1665,9 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           </>
         )}
 
-        {!canEditTeams && sessionToken && !inFreeAgency && (
+        {!canEditTeams && sessionToken && !inFreeAgency && myTeams.length > 0 && (
           <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
-            Team membership is locked outside of Free Agency.
+            Team changes are locked until the Free Agency window (final 3 days of the season).
           </div>
         )}
       </div>
@@ -2436,6 +2459,7 @@ export default function DailyChallenge() {
             onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
             onSignOut={handleSignOut}
             onHandleChange={setHandle}
+            onSignIn={() => { setGateReason("default"); setScreen("gate"); }}
           />
         )}
       </main>

@@ -63,8 +63,14 @@ export async function GET(request: Request) {
       `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id,pending,teams(id,name)`,
       { headers: h, cache: 'no-store' }
     );
-    const memberships = memR.ok ? await memR.json().catch(() => []) : [];
-    return Response.json({ memberships, season_id: seasonId });
+    const memberships: Array<{ team_id: string; pending: boolean; teams?: { id: string; name: string } }> =
+      memR.ok ? await memR.json().catch(() => []) : [];
+    const teams = memberships.map(m => ({
+      team_id: m.team_id,
+      team_name: m.teams?.name ?? '',
+      pending: m.pending,
+    }));
+    return Response.json({ teams, season_id: seasonId });
   }
 
   // Search teams by name (default)
@@ -141,5 +147,17 @@ export async function POST(request: Request) {
     }
   }
 
-  return Response.json({ ok: true, pending });
+  // Return normalized team list so the client can update without a re-fetch
+  const afterR = await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id,pending,teams(id,name)`,
+    { headers: h, cache: 'no-store' }
+  );
+  const after: Array<{ team_id: string; pending: boolean; teams?: { id: string; name: string } }> =
+    afterR.ok ? await afterR.json().catch(() => []) : [];
+  const teams = after.map(m => ({
+    team_id: m.team_id,
+    team_name: m.teams?.name ?? '',
+    pending: m.pending,
+  }));
+  return Response.json({ ok: true, pending, teams });
 }

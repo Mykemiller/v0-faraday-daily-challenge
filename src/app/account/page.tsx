@@ -1,69 +1,36 @@
 "use client";
 
-// /account — Account & Settings. Dark theme matching the rest of the app.
-// Team section: join by code, create new, leave. Soft opt-out via Game Status.
+// /account — Account & Settings.
+// Light cream theme matching the Leaderboard. OTPGate embedded for auth.
 
 import { useCallback, useEffect, useState } from "react";
-import SocialGate from "@/components/SocialGate";
+import Link from "next/link";
+import OTPGate from "@/components/OTPGate";
+import BrandMark from "@/components/BrandMark";
 import {
-  EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
   HANDLE_STORAGE_KEY,
   OPTED_OUT_STORAGE_KEY,
 } from "@/lib/supabase";
 
-const C = {
-  forest:  "#1C3424",
-  gold:    "#C4922A",
-  cream:   "#EEE6DA",
-  white:   "#F8F5F0",
-  sage:    "#8CA68A",
-  black:   "#141210",
+// Dark C tokens forwarded to OTPGate (which renders on a forest card)
+const GATE_C = {
   bg:      "#0D110E",
-  surface: "rgba(255,255,255,0.03)",
-  border:  "rgba(255,255,255,0.07)",
-  green:   "#4ADE80",
-  amber:   "#F59E0B",
-  red:     "#F87171",
+  surface: "rgba(255,255,255,0.05)",
+  border:  "rgba(255,255,255,0.12)",
+  inputBg: "rgba(255,255,255,0.08)",
   text:    "#E8E4DE",
   muted:   "#9A938C",
-  dim:     "#2A2520",
+  gold:    "#C4922A",
+  red:     "#F87171",
+  green:   "#4ADE80",
+  amber:   "#F59E0B",
 };
 const mono = { fontFamily: "'IBM Plex Mono',monospace" } as const;
 const sans = { fontFamily: "'Bricolage Grotesque',sans-serif" } as const;
 
-// SL = section label — IBM Plex Mono 10px, #9A938C, 0.14em tracking, uppercase
-const slLabel: React.CSSProperties = {
-  ...mono,
-  fontSize: "10px",
-  letterSpacing: "0.14em",
-  textTransform: "uppercase",
-  color: C.muted,
-  marginBottom: "14px",
-};
-
-const darkCard: React.CSSProperties = {
-  background: C.surface,
-  border: `1px solid ${C.border}`,
-  borderRadius: "12px",
-  padding: "20px 24px",
-  marginTop: "12px",
-};
-
-const darkInput: React.CSSProperties = {
-  ...mono,
-  fontSize: "13px",
-  color: C.text,
-  background: "rgba(255,255,255,0.04)",
-  border: `1px solid ${C.border}`,
-  borderRadius: "6px",
-  padding: "9px 12px",
-  flex: "1 1 160px",
-  minWidth: "120px",
-  outline: "none",
-};
-
-function Btn({
+// Btn for OTPGate — dark-theme gold primary, transparent ghost
+function GateBtn({
   children,
   onClick,
   disabled,
@@ -86,11 +53,12 @@ function Btn({
     letterSpacing: "0.08em",
     transition: "all 0.15s",
     whiteSpace: "nowrap",
+    width: variant === "primary" ? "100%" : undefined,
   };
   const variants: Record<string, React.CSSProperties> = {
-    primary: { background: "rgba(196,146,42,0.12)", border: `1px solid rgba(196,146,42,0.4)`, color: C.gold },
-    ghost:   { background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, color: C.muted },
-    danger:  { background: "rgba(248,113,113,0.1)", border: `1px solid rgba(248,113,113,0.3)`, color: C.red },
+    primary: { background: "rgba(196,146,42,0.18)", border: "1px solid rgba(196,146,42,0.5)", color: "#C4922A" },
+    ghost:   { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", color: "#9A938C" },
+    danger:  { background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" },
   };
   return (
     <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>
@@ -106,34 +74,42 @@ interface SubState {
   joined_at: string | null;
   todayCompletions?: Record<string, { score: number; completedAt: string }>;
 }
-interface Group { team_id?: string; name?: string; code?: string; group_type?: string; }
+interface Team { team_id: string; team_name: string; pending?: boolean; }
+interface AvailableTeam { id: string; name: string; }
+interface Season {
+  id: string;
+  name: string;
+  ends_on: string;
+  free_agency_start: string | null;
+  free_agency_notice_start: string | null;
+  locked_at: string | null;
+}
+
+const MAX_TEAMS = 5;
 
 export default function AccountPage() {
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [acct, setAcct] = useState<Account | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [subState, setSubState] = useState<SubState | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [subState, setSubState] = useState<SubState | null>(null);
 
   // Handle editing
   const [editingHandle, setEditingHandle] = useState(false);
   const [newHandle, setNewHandle] = useState("");
   const [handleWarningShown, setHandleWarningShown] = useState(false);
 
-  // Team section
-  const [joinCode, setJoinCode] = useState("");
-  const [joinError, setJoinError] = useState("");
-  const [joinBusy, setJoinBusy] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createType, setCreateType] = useState<"company" | "team">("company");
-  const [createError, setCreateError] = useState("");
-  const [createBusy, setCreateBusy] = useState(false);
-  const [createdCode, setCreatedCode] = useState<string | null>(null);
+  // Teams
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
+  const [availableTeams, setAvailableTeams] = useState<AvailableTeam[]>([]);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamSaving, setTeamSaving] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [season, setSeason] = useState<Season | null>(null);
 
   useEffect(() => {
     let t: string | null = null;
@@ -174,23 +150,44 @@ export default function AccountPage() {
       .catch(() => {});
   }, []);
 
-  const loadGroups = useCallback((t: string) => {
-    fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?token=${encodeURIComponent(t)}&limit=1`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d) return;
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else if (d.myTeam) setGroups([d.myTeam]);
-      })
-      .catch(() => { /* non-critical */ });
+  const loadSeason = useCallback(() => {
+    fetch("/api/season/active")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.season) setSeason(d.season); })
+      .catch(() => {});
+  }, []);
+
+  const loadMyTeams = useCallback((t: string) => {
+    setTeamsLoading(true);
+    fetch(`/api/teams?scope=my&token=${encodeURIComponent(t)}`)
+      .then((r) => r.ok ? r.json() : { teams: [] })
+      .then((d) => setMyTeams(Array.isArray(d.teams) ? d.teams : []))
+      .catch(() => {})
+      .finally(() => setTeamsLoading(false));
   }, []);
 
   useEffect(() => {
     if (!token) return;
     loadAccount(token);
-    loadGroups(token);
     loadSubState(token);
-  }, [token, loadAccount, loadGroups, loadSubState]);
+    loadSeason();
+    loadMyTeams(token);
+  }, [token, loadAccount, loadSubState, loadSeason, loadMyTeams]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const inFreeAgency = season?.free_agency_start != null && today >= season.free_agency_start;
+  const isLocked = season?.locked_at != null && new Date() > new Date(season.locked_at);
+  // Allow initial setup (no teams yet) any time; gate changes to Free Agency only
+  const canEditTeams = !!token && !isLocked && (inFreeAgency || myTeams.length === 0);
+
+  // Load available teams when editing is open
+  useEffect(() => {
+    if (!canEditTeams) return;
+    fetch(`/api/teams${teamSearch ? `?q=${encodeURIComponent(teamSearch)}` : ""}`)
+      .then((r) => r.ok ? r.json() : { teams: [] })
+      .then((d) => setAvailableTeams(Array.isArray(d.teams) ? d.teams : []))
+      .catch(() => {});
+  }, [canEditTeams, teamSearch]);
 
   function signOut() {
     try {
@@ -199,68 +196,6 @@ export default function AccountPage() {
       localStorage.removeItem(OPTED_OUT_STORAGE_KEY);
     } catch { /* ignore */ }
     window.location.href = "/challenge";
-  }
-
-  function doJoin() {
-    if (!token || !joinCode.trim()) return;
-    setJoinBusy(true);
-    setJoinError("");
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "join", code: joinCode.trim() }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setJoinError(d?.error || "Invalid code — try again."); return; }
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else loadGroups(token);
-        setJoinCode("");
-      })
-      .catch(() => setJoinError("Network error — try again."))
-      .finally(() => setJoinBusy(false));
-  }
-
-  function doCreate() {
-    if (!token || !createName.trim()) return;
-    const nameSnapshot = createName.trim();
-    setCreateBusy(true);
-    setCreateError("");
-    setCreatedCode(null);
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "create", name: nameSnapshot, groupType: createType }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setCreateError(d?.error || "Could not create team."); return; }
-        const myTeams: Group[] = Array.isArray(d.myTeams) ? d.myTeams : [];
-        setGroups(myTeams);
-        const newTeam = myTeams.find((g) => g.name === nameSnapshot);
-        if (newTeam?.code) setCreatedCode(newTeam.code);
-        setCreateName("");
-        setShowCreate(false);
-      })
-      .catch(() => setCreateError("Network error — try again."))
-      .finally(() => setCreateBusy(false));
-  }
-
-  function doLeave(code: string) {
-    if (!token) return;
-    fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: token, action: "leave", code }),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { setErr(d?.error || "Could not leave team."); return; }
-        if (Array.isArray(d.myTeams)) setGroups(d.myTeams);
-        else loadGroups(token);
-        if (createdCode) setCreatedCode(null);
-      })
-      .catch(() => setErr("Network error — try again."));
   }
 
   function updateHandle() {
@@ -276,15 +211,40 @@ export default function AccountPage() {
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
         if (!ok) { setErr(d?.error || "Could not update handle."); return; }
-        try { if (d.handle) localStorage.setItem("dc_handle", d.handle); } catch { /* ignore */ }
+        try { if (d.handle) localStorage.setItem(HANDLE_STORAGE_KEY, d.handle); } catch { /* ignore */ }
         setAcct((a) => (a ? { ...a, handle: d.handle } : a));
         setEditingHandle(false);
         setNewHandle("");
         setHandleWarningShown(false);
-        setMsg("Handle updated. Your leaderboard standings are linked to your new handle.");
+        setMsg("Handle updated.");
       })
       .catch(() => setErr("Network error — try again."))
       .finally(() => setBusy(false));
+  }
+
+  async function toggleTeam(teamId: string, teamName: string) {
+    if (!canEditTeams || !token) return;
+    const alreadyIn = myTeams.some((t) => t.team_id === teamId);
+    let next: Team[];
+    if (alreadyIn) {
+      next = myTeams.filter((t) => t.team_id !== teamId);
+    } else {
+      if (myTeams.length >= MAX_TEAMS) return;
+      next = [...myTeams, { team_id: teamId, team_name: teamName, pending: inFreeAgency }];
+    }
+    setMyTeams(next);
+    setTeamSaving(true); setTeamError("");
+    try {
+      const r = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, team_ids: next.map((t) => t.team_id), season_id: season?.id ?? null }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setTeamError(d?.error || "Could not update teams."); return; }
+      if (Array.isArray(d.teams)) setMyTeams(d.teams);
+    } catch { setTeamError("Network error — try again."); }
+    finally { setTeamSaving(false); }
   }
 
   function setOptOut(leave: boolean) {
@@ -310,289 +270,329 @@ export default function AccountPage() {
       .finally(() => setBusy(false));
   }
 
-  const page: React.CSSProperties = { minHeight: "100vh", background: C.bg, color: C.text, ...sans };
-
+  // ── Loading skeleton ──────────────────────────────────────────────────────────
   if (!ready) {
     return (
-      <div style={page}>
-        <style>{`@keyframes accountPulse{0%,100%{opacity:.25}50%{opacity:.5}}`}</style>
-        <Shell>
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} style={{ ...darkCard, height: "72px", animation: "accountPulse 1.6s ease-in-out infinite" }} />
+      <div className="min-h-screen bg-warm-white">
+        <div className="h-0.5 bg-gold" />
+        <header className="bg-forest">
+          <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
+            <BrandMark size={20} framed />
+            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+          </div>
+        </header>
+        <div className="h-0.5 bg-gold" />
+        <main className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 rounded-lg bg-warm-cream" />
           ))}
-        </Shell>
+        </main>
       </div>
     );
   }
 
+  // ── Unauthenticated — show OTPGate on dark card ───────────────────────────────
   if (!token) {
     return (
-      <div style={page}>
-        <Shell>
-          <h1 style={{ ...sans, fontSize: "28px", fontWeight: 700, color: C.text, margin: "0 0 8px" }}>
-            Account &amp; settings
-          </h1>
-          <p style={{ fontSize: "14px", color: C.muted, marginBottom: "24px" }}>
-            Sign in to manage your handle, team, and game status.
+      <div className="min-h-screen bg-warm-white font-sans text-near-black">
+        <div className="h-0.5 bg-gold" />
+        <header className="bg-forest">
+          <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
+            <Link href="/challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
+              <BrandMark size={20} framed />
+              <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+            </Link>
+            <Link href="/challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
+              ← Daily Challenge
+            </Link>
+          </div>
+        </header>
+        <div className="h-0.5 bg-gold" />
+        <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+          <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
+          <p className="mb-8 mt-1 text-sm text-near-black/60">
+            Sign in to manage your handle, teams, and game status.
           </p>
-          <SocialGate trigger="account" heading="Sign in" subhead="One email, no password — we send a magic link." />
-          <p style={{ marginTop: "24px" }}>
-            <a href="/challenge" style={{ ...mono, fontSize: "13px", color: C.gold }}>← Back to the challenge</a>
-          </p>
-        </Shell>
+          <div className="rounded-lg bg-forest p-7">
+            <OTPGate
+              trigger="account"
+              C={GATE_C}
+              sans={sans}
+              mono={mono}
+              Btn={GateBtn}
+              onComplete={(newToken: string, subscriber: { email: string; handle?: string; id?: string }) => {
+                try {
+                  localStorage.setItem(SESSION_STORAGE_KEY, newToken);
+                  if (subscriber.email) localStorage.setItem("dc_email", subscriber.email);
+                  if (subscriber.handle) localStorage.setItem(HANDLE_STORAGE_KEY, subscriber.handle);
+                  if (subscriber.id) localStorage.setItem("dc_subscriber_id", subscriber.id);
+                } catch { /* ignore */ }
+                setToken(newToken);
+              }}
+              onDismiss={() => { window.location.href = "/challenge"; }}
+            />
+          </div>
+        </main>
       </div>
     );
   }
 
+  // ── Authenticated ─────────────────────────────────────────────────────────────
   const optedOut = acct ? !acct.active : false;
   const recentGames = subState?.todayCompletions ? Object.entries(subState.todayCompletions) : [];
 
   return (
-    <div style={page}>
-      <Shell>
-
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-          <h1 style={{ ...sans, fontSize: "26px", fontWeight: 700, color: C.text, margin: 0 }}>
-            Account &amp; settings
-          </h1>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <a href="/challenge" style={{ ...mono, fontSize: "12px", color: C.muted, textDecoration: "none" }}>← challenge</a>
-            <Btn variant="ghost" small onClick={signOut}>Sign out</Btn>
-          </div>
+    <div className="min-h-screen bg-warm-white font-sans text-near-black">
+      <div className="h-0.5 bg-gold" />
+      <header className="bg-forest">
+        <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
+          <Link href="/challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
+            <BrandMark size={20} framed />
+            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+          </Link>
+          <Link href="/challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
+            ← Daily Challenge
+          </Link>
+          <button
+            onClick={signOut}
+            className="font-mono text-[11px] text-warm-cream/70 hover:text-warm-cream"
+          >
+            Sign out
+          </button>
         </div>
+      </header>
+      <div className="h-0.5 bg-gold" />
+
+      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+        <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
 
         {/* Global feedback */}
         {msg && (
-          <div style={{ ...mono, fontSize: "12px", color: C.green, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: "8px", padding: "10px 14px", marginTop: "16px" }}>
+          <div className="mt-4 rounded-lg border border-green-700/30 bg-green-50 px-4 py-3 font-mono text-[12px] text-green-800">
             {msg}
           </div>
         )}
         {err && (
-          <div style={{ ...mono, fontSize: "12px", color: C.red, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "8px", padding: "10px 14px", marginTop: "16px" }}>
+          <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 font-mono text-[12px] text-red-700">
             {err}
           </div>
         )}
 
-        {/* ── HANDLE ───────────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>Handle</div>
+        {/* ── HANDLE ─────────────────────────────────────────────────────── */}
+        <Card>
+          <SL>Handle</SL>
           {!editingHandle ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <span style={{ ...sans, fontSize: "22px", fontWeight: 700, color: C.text }}>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-serif text-2xl font-bold text-forest">
                 @{acct?.handle || (acct?.email ? acct.email.split("@")[0] : "you")}
               </span>
-              <Btn variant="ghost" small disabled={busy} onClick={() => { setEditingHandle(true); setNewHandle(acct?.handle || ""); setErr(""); setMsg(""); }}>
+              <LightBtn small onClick={() => { setEditingHandle(true); setNewHandle(acct?.handle || ""); setErr(""); setMsg(""); }}>
                 Edit
-              </Btn>
+              </LightBtn>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div className="flex flex-col gap-3">
               {!handleWarningShown ? (
-                <div style={{ ...mono, fontSize: "12px", color: C.amber, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "6px", padding: "10px 14px" }}>
+                <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 font-mono text-[12px] text-amber-800">
                   Changing your handle may affect your standings history. Continue?{" "}
-                  <button onClick={() => setHandleWarningShown(true)} style={{ ...mono, background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: "12px", padding: 0, textDecoration: "underline" }}>Yes</button>
+                  <button onClick={() => setHandleWarningShown(true)} className="underline font-semibold">Yes</button>
                   {" · "}
-                  <button onClick={() => { setEditingHandle(false); setNewHandle(""); }} style={{ ...mono, background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: "12px", padding: 0 }}>Cancel</button>
+                  <button onClick={() => { setEditingHandle(false); setNewHandle(""); }} className="text-near-black/60">Cancel</button>
                 </div>
               ) : (
                 <>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <div className="flex flex-wrap gap-2">
                     <input
                       value={newHandle}
                       onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
                       placeholder="new_handle"
                       maxLength={24}
-                      style={darkInput}
+                      className="flex-1 rounded border border-forest/20 bg-white px-3 py-2 font-mono text-[13px] text-forest outline-none focus:border-gold"
                       onKeyDown={(e) => e.key === "Enter" && !busy && updateHandle()}
                     />
-                    <Btn disabled={busy || newHandle.length < 3} onClick={updateHandle}>{busy ? "Saving…" : "Save"}</Btn>
-                    <Btn variant="ghost" disabled={busy} onClick={() => { setEditingHandle(false); setNewHandle(""); setHandleWarningShown(false); }}>Cancel</Btn>
+                    <LightBtn disabled={busy || newHandle.length < 3} onClick={updateHandle}>{busy ? "Saving…" : "Save"}</LightBtn>
+                    <LightBtn variant="ghost" disabled={busy} onClick={() => { setEditingHandle(false); setNewHandle(""); setHandleWarningShown(false); }}>Cancel</LightBtn>
                   </div>
-                  <div style={{ ...mono, fontSize: "11px", color: C.muted }}>3–24 characters, letters, numbers, _ only.</div>
+                  <p className="font-mono text-[11px] text-near-black/50">3–24 characters · letters, numbers, underscore</p>
                 </>
               )}
             </div>
           )}
           {acct?.email && (
-            <div style={{ ...mono, fontSize: "12px", color: C.muted, marginTop: "10px" }}>{acct.email}</div>
+            <p className="mt-2 font-mono text-[12px] text-near-black/50">{acct.email}</p>
           )}
-        </section>
+        </Card>
 
-        {/* ── STREAK ───────────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>Streak</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
-            <span style={{ ...sans, fontSize: "28px", fontWeight: 700, color: C.text }}>{subState?.playStreak ?? "—"}</span>
-            <span style={{ ...mono, fontSize: "13px", color: C.muted }}>days</span>
+        {/* ── STREAK ─────────────────────────────────────────────────────── */}
+        <Card>
+          <SL>Streak</SL>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-serif text-3xl font-bold text-forest">{subState?.playStreak ?? "—"}</span>
+            <span className="font-mono text-[13px] text-near-black/50">days</span>
           </div>
-        </section>
+        </Card>
 
-        {/* ── SUBSCRIPTION ─────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>Subscription</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-            <span style={{ ...sans, fontSize: "18px", fontWeight: 600, color: C.text, textTransform: "capitalize" }}>
-              {subState?.tier ?? "free"}
-            </span>
-            {subState?.joined_at && (
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>
-                member since {new Date(subState.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-              </span>
-            )}
-          </div>
-        </section>
+        {/* ── TEAMS ──────────────────────────────────────────────────────── */}
+        <Card>
+          <SL>Teams</SL>
 
-        {/* ── TEAM ─────────────────────────────────────────────────────────── */}
-        <section style={darkCard}>
-          <div style={slLabel}>Team</div>
-
-          {/* Current memberships */}
-          {groups.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
-              {groups.map((g, i) => (
-                <div key={g.code || g.team_id || i} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: "8px", padding: "10px 14px" }}>
-                  <span style={{ ...sans, fontSize: "14px", fontWeight: 600, color: C.text }}>{g.name}</span>
-                  {g.group_type && (
-                    <span style={{ ...mono, fontSize: "10px", color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{g.group_type}</span>
-                  )}
-                  {g.code && <span style={{ ...mono, fontSize: "11px", color: C.muted }}>· {g.code}</span>}
-                  <button
-                    disabled={!g.code}
-                    onClick={() => g.code && doLeave(g.code)}
-                    style={{ ...mono, marginLeft: "auto", background: "none", border: "none", color: C.red, cursor: g.code ? "pointer" : "not-allowed", fontSize: "12px", opacity: g.code ? 1 : 0.4 }}
-                  >
-                    Leave
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Newly created code chip */}
-          {createdCode && (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "rgba(196,146,42,0.08)", border: `1px solid rgba(196,146,42,0.3)`, borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", flexWrap: "wrap" }}>
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>Team code:</span>
-              <span style={{ ...mono, fontSize: "14px", fontWeight: 700, color: C.gold, letterSpacing: "0.08em" }}>{createdCode}</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(createdCode)}
-                style={{ ...mono, background: "rgba(196,146,42,0.12)", border: `1px solid rgba(196,146,42,0.3)`, color: C.gold, borderRadius: "4px", padding: "3px 10px", fontSize: "11px", cursor: "pointer" }}
-              >
-                Copy
-              </button>
-              <span style={{ ...mono, fontSize: "11px", color: C.muted }}>Share this code so others can join.</span>
-            </div>
-          )}
-
-          {groups.length === 0 && !createdCode && (
-            <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: "14px" }}>You&apos;re not in any team yet.</p>
-          )}
-
-          {/* Join by code */}
-          <div style={{ marginBottom: "14px" }}>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <input
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="Enter team code"
-                style={darkInput}
-                onKeyDown={(e) => e.key === "Enter" && joinCode.trim() && doJoin()}
-              />
-              <Btn disabled={joinBusy || !joinCode.trim()} onClick={doJoin}>
-                {joinBusy ? "Joining…" : "Join"}
-              </Btn>
-            </div>
-            {joinError && <div style={{ ...mono, fontSize: "11px", color: C.red, marginTop: "6px" }}>{joinError}</div>}
-          </div>
-
-          {/* Create (collapsible) */}
-          {!showCreate ? (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ ...mono, background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: "12px", padding: 0, textDecoration: "underline" }}
-            >
-              Create a new team
-            </button>
-          ) : (
-            <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, borderRadius: "8px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ ...mono, fontSize: "10px", color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>Create team</div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <input
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  placeholder="Team name"
-                  style={darkInput}
-                  onKeyDown={(e) => e.key === "Enter" && !createBusy && createName.trim() && doCreate()}
-                />
-                <select
-                  value={createType}
-                  onChange={(e) => setCreateType(e.target.value as "company" | "team")}
-                  style={{ ...darkInput, flex: "0 0 auto", minWidth: "100px" }}
+          {teamsLoading ? (
+            <p className="font-mono text-[12px] text-near-black/40">Loading…</p>
+          ) : myTeams.length > 0 ? (
+            <div className={`flex flex-wrap gap-2${canEditTeams ? " mb-4" : ""}`}>
+              {myTeams.map((t) => (
+                <span
+                  key={t.team_id}
+                  className="flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px]"
+                  style={{
+                    border: `1px solid ${t.pending ? "rgba(196,146,42,0.5)" : "rgba(28,52,36,0.25)"}`,
+                    background: t.pending ? "rgba(196,146,42,0.06)" : "rgba(28,52,36,0.04)",
+                    color: t.pending ? "#C4922A" : "#1C3424",
+                  }}
                 >
-                  <option value="company">Company</option>
-                  <option value="team">Team</option>
-                </select>
-                <Btn disabled={createBusy || !createName.trim()} onClick={doCreate}>{createBusy ? "Creating…" : "Create"}</Btn>
-                <Btn variant="ghost" onClick={() => { setShowCreate(false); setCreateName(""); setCreateError(""); }}>Cancel</Btn>
-              </div>
-              {createError && <div style={{ ...mono, fontSize: "11px", color: C.red }}>{createError}</div>}
+                  {t.team_name}
+                  {t.pending && <span className="text-[9px] opacity-70">pending</span>}
+                  {canEditTeams && (
+                    <button
+                      onClick={() => toggleTeam(t.team_id, t.team_name)}
+                      disabled={teamSaving}
+                      className="opacity-50 hover:opacity-100 leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              ))}
             </div>
+          ) : (
+            <p className={`font-mono text-[12px] text-near-black/50${canEditTeams ? " mb-4" : ""}`}>
+              No teams yet.
+            </p>
           )}
-        </section>
 
-        {/* ── RECENT GAMES ─────────────────────────────────────────────────── */}
+          {/* Team picker — open for new players or during Free Agency */}
+          {canEditTeams && (
+            <>
+              <input
+                value={teamSearch}
+                onChange={(e) => setTeamSearch(e.target.value)}
+                placeholder="Search teams…"
+                className="w-full rounded border border-forest/20 bg-white px-3 py-2 font-mono text-[13px] text-forest outline-none focus:border-gold mb-3"
+              />
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                {availableTeams
+                  .filter((t) => !myTeams.some((m) => m.team_id === t.id))
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => toggleTeam(t.id, t.name)}
+                      disabled={myTeams.length >= MAX_TEAMS || teamSaving}
+                      className="rounded-full border border-forest/20 px-3 py-1 font-mono text-[11px] text-forest/70 hover:border-forest hover:text-forest disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+              </div>
+              {teamError && <p className="mt-2 font-mono text-[11px] text-red-600">{teamError}</p>}
+              <p className="mt-3 font-mono text-[10px] text-near-black/40">
+                {inFreeAgency
+                  ? `Free Agency — changes take effect next season. Select up to ${MAX_TEAMS}.`
+                  : `First-time setup — your teams are effective immediately. Select up to ${MAX_TEAMS}.`}
+              </p>
+            </>
+          )}
+
+          {!canEditTeams && token && season && !inFreeAgency && myTeams.length > 0 && (
+            <p className="mt-2 font-mono text-[11px] text-near-black/40">
+              Team changes are locked until the Free Agency window (final 3 days of the season).
+            </p>
+          )}
+        </Card>
+
+        {/* ── RECENT GAMES ───────────────────────────────────────────────── */}
         {recentGames.length > 0 && (
-          <section style={darkCard}>
-            <div style={slLabel}>Recent Games</div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {recentGames.map(([type, data], i) => (
-                <div key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < recentGames.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                  <span style={{ ...mono, fontSize: "12px", color: C.text, textTransform: "capitalize" }}>{type.replace(/_/g, " ")}</span>
-                  <span style={{ ...mono, fontSize: "13px", fontWeight: 700, color: C.gold }}>{data.score} pts</span>
+          <Card>
+            <SL>Recent Games</SL>
+            <div className="divide-y divide-forest/8">
+              {recentGames.map(([type, data]) => (
+                <div key={type} className="flex items-center justify-between py-2">
+                  <span className="font-mono text-[12px] capitalize text-near-black">{type.replace(/_/g, " ")}</span>
+                  <span className="font-mono text-[13px] font-bold text-gold">{(data as { score: number }).score} pts</span>
                 </div>
               ))}
             </div>
-          </section>
+          </Card>
         )}
 
-        {/* ── GAME STATUS (soft opt-out) ────────────────────────────────────── */}
-        <section style={{ ...darkCard, borderColor: optedOut ? C.border : "rgba(248,113,113,0.15)", marginTop: "24px" }}>
-          <div style={slLabel}>Game status</div>
+        {/* ── GAME STATUS ────────────────────────────────────────────────── */}
+        <Card className={optedOut ? "" : "border-red-200"}>
+          <SL>Game status</SL>
           {optedOut ? (
             <>
-              <p style={{ fontSize: "14px", color: C.text, margin: "0 0 8px" }}>You&apos;ve left the game.</p>
-              <p style={{ ...mono, fontSize: "12px", color: C.muted, marginBottom: "16px" }}>Your streak and history are all kept. Rejoin whenever you&apos;re ready.</p>
-              <Btn disabled={busy} onClick={() => setOptOut(false)}>Rejoin the game</Btn>
+              <p className="mb-1 text-[14px] text-near-black">You&apos;ve left the game.</p>
+              <p className="mb-4 font-mono text-[12px] text-near-black/50">Your streak and history are kept. Rejoin anytime.</p>
+              <LightBtn disabled={busy} onClick={() => setOptOut(false)}>Rejoin the game</LightBtn>
             </>
           ) : !confirmLeave ? (
             <>
-              <p style={{ ...mono, fontSize: "12px", color: C.muted, margin: "0 0 16px" }}>
-                Leaving stops streak accrual and hides you from leaderboards.{" "}
-                <strong style={{ color: C.text }}>Nothing is deleted.</strong>
+              <p className="mb-4 font-mono text-[12px] text-near-black/50">
+                Leaving stops streak accrual and hides you from leaderboards. <strong className="text-near-black">Nothing is deleted.</strong>
               </p>
-              <Btn variant="danger" disabled={busy} onClick={() => setConfirmLeave(true)}>Leave the game</Btn>
+              <LightBtn variant="danger" disabled={busy} onClick={() => setConfirmLeave(true)}>Leave the game</LightBtn>
             </>
           ) : (
             <>
-              <p style={{ fontSize: "14px", color: C.text, margin: "0 0 16px" }}>Leave the game? Your data is retained and you can rejoin anytime.</p>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <Btn variant="danger" disabled={busy} onClick={() => setOptOut(true)}>Yes, leave the game</Btn>
-                <Btn variant="ghost" disabled={busy} onClick={() => setConfirmLeave(false)}>Cancel</Btn>
+              <p className="mb-4 text-[14px] text-near-black">Leave the game? Your data is retained and you can rejoin anytime.</p>
+              <div className="flex flex-wrap gap-2">
+                <LightBtn variant="danger" disabled={busy} onClick={() => setOptOut(true)}>Yes, leave the game</LightBtn>
+                <LightBtn variant="ghost" disabled={busy} onClick={() => setConfirmLeave(false)}>Cancel</LightBtn>
               </div>
             </>
           )}
-        </section>
-
-      </Shell>
+        </Card>
+      </main>
     </div>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <>
-      <div style={{ height: "2px", background: C.gold }} />
-      <main style={{ maxWidth: "640px", margin: "0 auto", padding: "40px 20px 80px" }}>{children}</main>
-    </>
+    <section className={`mt-4 rounded-lg border border-forest/10 bg-white px-5 py-5 ${className}`}>
+      {children}
+    </section>
+  );
+}
+
+function SL({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-near-black/40">
+      {children}
+    </div>
+  );
+}
+
+function LightBtn({
+  children,
+  onClick,
+  disabled,
+  variant = "primary",
+  small,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "ghost" | "danger";
+  small?: boolean;
+}) {
+  const base = `font-mono rounded transition-colors cursor-pointer whitespace-nowrap ${small ? "px-3 py-1.5 text-[11px]" : "px-4 py-2 text-[12px]"} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`;
+  const variants: Record<string, string> = {
+    primary: "bg-gold/10 border border-gold/50 text-forest hover:bg-gold/20",
+    ghost:   "bg-transparent border border-forest/20 text-near-black/60 hover:border-forest/40",
+    danger:  "bg-red-50 border border-red-300 text-red-700 hover:bg-red-100",
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]}`}>
+      {children}
+    </button>
   );
 }
