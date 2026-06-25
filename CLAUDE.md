@@ -280,3 +280,9 @@ handle edits); no player's total can leak into another's session.
 - Removed: LIVE pulse indicator, Faraday Tip of the Day block, Academy nav button, @handle label (standalone chip replaced by clickable handle chip linking to Account)
 - Account link placed in header top-left (⚙ Account), visible on lobby + all game screens
 - Branch: feature/go-live-ui-polish | PR: https://github.com/Mykemiller/v0-faraday-daily-challenge/pull/38
+
+## [2026-06-24] Fix: Rackl solved-group item mismatch
+- Bug: solved group banners displayed g.items from static PUZZLE_DATA instead of tiles state
+- Fix: derive solvedItems from tiles array filtered by groupIdx
+- File: faraday-daily-challenge.jsx — GameRackl, solved groups render block (~line 409)
+- Branch: fix/rackl-solved-group-items | PR: https://github.com/Mykemiller/v0-faraday-daily-challenge/pull/39
