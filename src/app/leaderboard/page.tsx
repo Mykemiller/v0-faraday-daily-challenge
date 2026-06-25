@@ -3,83 +3,49 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
-import { EDGE_FUNCTIONS_BASE, SESSION_STORAGE_KEY } from "@/lib/supabase";
+import { SESSION_STORAGE_KEY } from "@/lib/supabase";
 
-// Leaderboard V2 — Global + group-scoped board (§3, §7.4). Period-scoped ranking
-// from get-leaderboard (global) and get-team-leaderboard (team/company). Currency
-// is "Signals" everywhere. Bands: A (You) · B (Standings) · C (Group bar). No
-// fabricated zero rows; no raw emails.
+// Leaderboard — Global + per-team tabs backed by /api/leaderboard/season.
+// Currency: total_points from score_events (season-scoped).
+// Authenticated player row always highlighted; pinned below list if outside top N.
 
-type Period = "daily" | "season";
-type MovementValue = number | null;
-
-interface Row {
+interface LeaderboardRow {
   rank: number | null;
-  handle: string;
-  signals: number;
-  playStreak: number;
-  fullSetStreak: number;
-  movement: MovementValue;
-  isYou: boolean;
-  badges?: string[];
-}
-interface You {
-  rank: number | null;
-  percentile: number | null;
-  signals: number;
-  playStreak: number;
-  fullSetStreak: number;
-  movement: MovementValue;
-  handle: string;
-  badges?: string[];
+  subscriber_id: string;
+  handle: string | null;
+  total_points: number;
+  is_you: boolean;
 }
 
-// FAR-70 badge display. Max 2 shown inline in standings rows; all shown on the You card.
-const BADGE_META: Record<string, { icon: string; label: string }> = {
-  week_warrior: { icon: "⚡", label: "Week Warrior · 7-day streak" },
-  fortnight: { icon: "🏆", label: "Fortnight · 14-day streak" },
-  signal_constant: { icon: "🌐", label: "Signal Constant · 30-day streak" },
-  perfect_day: { icon: "🎯", label: "Perfect Day · full Core-4 set" },
-};
-function Badges({ keys, max }: { keys?: string[]; max?: number }) {
-  if (!keys || keys.length === 0) return null;
-  const shown = max ? keys.slice(0, max) : keys;
-  return (
-    <span className="ml-1.5 inline-flex shrink-0 gap-0.5">
-      {shown.map((k) => (
-        <span key={k} title={BADGE_META[k]?.label ?? k} aria-label={BADGE_META[k]?.label ?? k}>
-          {BADGE_META[k]?.icon ?? "🏅"}
-        </span>
-      ))}
-    </span>
-  );
-}
-interface GroupRef { code: string; name: string; groupType: "company" | "team" | "custom"; parentCode: string | null; memberCount: number }
-interface GroupBar extends GroupRef {
-  parentName: string | null;
-  teamVsTeam: { rank: number; of: number } | null;
-  companyVsCompany: { rank: number; of: number; beatsPct: number } | null;
-}
-interface Board {
-  period: Period;
-  seasonName?: string;
-  dayLabel?: string;
-  you: You | null;
-  leaderboard: Row[];
-  totalPlayers: number;
-  count: number;
-  myGroups?: GroupRef[];
-  group?: GroupBar;
-  patterns?: {
-    mostPlayed: { type: string; count: number } | null;
-    hardest: { type: string; avgScore: number } | null;
-    biggestMover: { handle: string; delta: number } | null;
-  };
-  season?: { name: string; dayOf: number; totalDays: number; daysLeft: number };
-  lastChampion?: { handle: string; seasonName: string };
+interface Season {
+  id: string;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  free_agency_start: string | null;
+  free_agency_notice_start: string | null;
+  locked_at: string | null;
 }
 
-const GRID = "grid grid-cols-[2.75rem_1fr_5rem_3.25rem] items-center gap-2";
+interface MyTeam {
+  team_id: string;
+  team_name: string;
+}
+
+interface GlobalData {
+  season: Season;
+  you: LeaderboardRow | null;
+  my_teams: MyTeam[];
+  leaderboard: LeaderboardRow[];
+}
+
+interface TeamData {
+  season: Season;
+  team_id: string;
+  team_total: number;
+  leaderboard: LeaderboardRow[];
+}
+
 const NUM = { fontVariantNumeric: "tabular-nums" } as const;
 
 function medal(rank: number | null): string {
@@ -89,51 +55,38 @@ function medal(rank: number | null): string {
   return rank == null ? "—" : `#${rank}`;
 }
 
-function Movement({ value }: { value: MovementValue }) {
-  if (value == null || value === 0) return <span className="text-near-black/30">—</span>;
-  const up = value > 0;
+function StandingsRow({ row }: { row: LeaderboardRow }) {
+  const display = row.handle || "anonymous";
   return (
-    <span className={up ? "text-green-600" : "text-red-600"} style={NUM}>
-      {up ? "▲" : "▼"}{Math.abs(value)}
-    </span>
-  );
-}
-
-function StreakPip({ days }: { days: number }) {
-  if (!days) return null;
-  return <span className="ml-2 text-[11px] text-near-black/50 whitespace-nowrap" style={NUM}>🔥{days}</span>;
-}
-
-function topPercentLabel(p: number | null): string | null {
-  if (p == null) return null;
-  return `Top ${Math.max(1, 100 - p)}%`;
-}
-
-function StandingsRow({ row }: { row: Row }) {
-  return (
-    <div className={`${GRID} px-3 py-2.5 rounded ${row.isYou ? "bg-gold/15 ring-1 ring-gold" : "odd:bg-warm-cream/50"}`}>
-      <span className="text-sm font-semibold text-forest" style={NUM}>{medal(row.rank)}</span>
-      <span className="min-w-0 flex items-center">
-        <span className="truncate text-sm text-near-black">{row.handle}</span>
-        {row.isYou && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-dark">you</span>}
-        <Badges keys={row.badges} max={2} />
-        <StreakPip days={row.playStreak} />
+    <div
+      className={`grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-2.5 rounded ${
+        row.is_you ? "bg-gold/15 ring-1 ring-gold" : "odd:bg-warm-cream/50"
+      }`}
+    >
+      <span className="text-sm font-semibold text-forest" style={NUM}>
+        {medal(row.rank)}
       </span>
-      <span className="text-right text-sm font-semibold text-near-black" style={NUM}>{row.signals.toLocaleString()}</span>
-      <span className="text-right text-xs"><Movement value={row.movement} /></span>
+      <span className="min-w-0 flex items-center gap-1.5">
+        <span className="truncate text-sm text-near-black">{display}</span>
+        {row.is_you && (
+          <span className="text-[10px] uppercase tracking-wide text-amber-600">you</span>
+        )}
+      </span>
+      <span className="text-right text-sm font-semibold text-near-black" style={NUM}>
+        {row.total_points.toLocaleString()}
+      </span>
     </div>
   );
 }
 
 function SkeletonRows() {
   return (
-    <div aria-hidden className="animate-pulse">
+    <div aria-hidden className="animate-pulse space-y-0.5">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className={`${GRID} px-3 py-2.5`}>
+        <div key={i} className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-2.5">
           <span className="h-4 w-6 rounded bg-warm-gray/50" />
           <span className="h-4 w-32 rounded bg-warm-gray/50" />
           <span className="h-4 w-10 justify-self-end rounded bg-warm-gray/50" />
-          <span className="h-4 w-6 justify-self-end rounded bg-warm-gray/50" />
         </div>
       ))}
     </div>
@@ -141,73 +94,82 @@ function SkeletonRows() {
 }
 
 export default function LeaderboardPage() {
-  const [period, setPeriod] = useState<Period>("daily");
-  const [scope, setScope] = useState<string>("global"); // "global" | group code
-  const [data, setData] = useState<Board | null>(null);
-  const [groups, setGroups] = useState<GroupRef[]>([]);
+  const [activeTab, setActiveTab] = useState<"global" | string>("global");
+  const [globalData, setGlobalData] = useState<GlobalData | null>(null);
+  const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [shareMsg, setShareMsg] = useState("");
 
-  const load = useCallback(async (sc: string, p: Period) => {
+  const getToken = () => {
+    try { return localStorage.getItem(SESSION_STORAGE_KEY); } catch { return null; }
+  };
+
+  const loadGlobal = useCallback(async () => {
     setStatus("loading");
-    let token: string | null = null;
-    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
-    const qs = new URLSearchParams({ period: p, limit: "50" });
-    if (token) qs.set("token", token);
-    const endpoint = sc === "global"
-      ? `${EDGE_FUNCTIONS_BASE}/get-leaderboard?scope=global&${qs.toString()}`
-      : `${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?teamCode=${encodeURIComponent(sc)}&${qs.toString()}`;
+    const token = getToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
     try {
-      const res = await fetch(endpoint);
+      const res = await fetch(`/api/leaderboard/season${qs}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as Board;
-      setData(json);
-      if (json.myGroups) setGroups(json.myGroups); // only the global call carries the group list
+      const json = (await res.json()) as GlobalData;
+      setGlobalData(json);
+      setTeamData(null);
       setStatus("ready");
-    } catch (e) {
-      console.error("Leaderboard load failed:", e);
+    } catch {
       setStatus("error");
     }
   }, []);
 
-  useEffect(() => { load(scope, period); }, [scope, period, load]);
+  const loadTeam = useCallback(async (teamId: string) => {
+    setStatus("loading");
+    const token = getToken();
+    const qs = new URLSearchParams({ team_id: teamId });
+    if (token) qs.set("token", token);
+    try {
+      const res = await fetch(`/api/leaderboard/season?${qs.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as TeamData;
+      setTeamData(json);
+      setStatus("ready");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
 
-  const you = data?.you ?? null;
-  const youInList = !!data?.leaderboard.some((r) => r.isYou);
-  const companies = groups.filter((g) => g.groupType === "company");
-  const teams = groups.filter((g) => g.groupType === "team");
+  useEffect(() => {
+    if (activeTab === "global") {
+      loadGlobal();
+    } else {
+      loadTeam(activeTab);
+    }
+  }, [activeTab, loadGlobal, loadTeam]);
+
+  const myTeams = globalData?.my_teams ?? [];
+  const season = globalData?.season ?? teamData?.season ?? null;
+
+  const leaderboard = activeTab === "global"
+    ? (globalData?.leaderboard ?? [])
+    : (teamData?.leaderboard ?? []);
+
+  const you = activeTab === "global"
+    ? (globalData?.you ?? null)
+    : (leaderboard.find(r => r.is_you) ?? null);
+
+  const youInList = leaderboard.some(r => r.is_you);
 
   async function share() {
     if (!you) return;
-    const tp = topPercentLabel(you.percentile) ?? "Unranked";
-    const groupName = data?.group?.name;
-    const text = `${you.signals.toLocaleString()} Score · #${you.rank} (${tp}) · ${you.playStreak}-day streak${groupName ? ` · ${groupName}` : ""} — faraday-intelligence.ai/leaderboard`;
+    const text = `${you.total_points.toLocaleString()} pts · #${you.rank} on the Faraday season leaderboard — faraday-intelligence.ai/leaderboard`;
     if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share({ text }); } catch { /* user cancelled */ }
+      try { await navigator.share({ text }); } catch { /* cancelled */ }
     } else {
-      try { await navigator.clipboard.writeText(text); setShareMsg("Copied to clipboard ✓"); setTimeout(() => setShareMsg(""), 2500); } catch { /* clipboard blocked */ }
+      try {
+        await navigator.clipboard.writeText(text);
+        setShareMsg("Copied ✓");
+        setTimeout(() => setShareMsg(""), 2500);
+      } catch { /* clipboard blocked */ }
     }
   }
-
-  async function leaveGroup(code: string) {
-    let token: string | null = null;
-    try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* */ }
-    if (!token) return;
-    try {
-      await fetch(`${EDGE_FUNCTIONS_BASE}/team-action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionToken: token, action: "leave", code }),
-      });
-    } catch (e) { console.error("Leave failed:", e); }
-    setScope("global");
-  }
-
-  const subhead = scope !== "global" && data?.group
-    ? `${data.group.name}${data.group.parentName ? ` · ${data.group.parentName}` : ""}`
-    : period === "season"
-      ? data?.seasonName ?? "Season"
-      : "Today · resets midnight Central";
 
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
@@ -227,98 +189,84 @@ export default function LeaderboardPage() {
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Leaderboard</h1>
-        <p className="mb-5 mt-1 text-sm text-near-black/60">{subhead}</p>
+        {season && (
+          <p className="mb-5 mt-1 text-sm text-near-black/60">{season.name}</p>
+        )}
 
-        {/* Scope selector: Global · My Team(s) · My Company */}
-        {groups.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            <ScopeChip label="Global" active={scope === "global"} onClick={() => setScope("global")} />
-            {teams.map((g) => (
-              <ScopeChip key={g.code} label={g.name} active={scope === g.code} onClick={() => setScope(g.code)} />
-            ))}
-            {companies.map((g) => (
-              <ScopeChip key={g.code} label={`🏢 ${g.name}`} active={scope === g.code} onClick={() => setScope(g.code)} />
+        {/* Tab row: Global + team tabs */}
+        {(myTeams.length > 0 || activeTab !== "global") && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            <TabChip
+              label="Global"
+              active={activeTab === "global"}
+              onClick={() => setActiveTab("global")}
+            />
+            {myTeams.map(t => (
+              <TabChip
+                key={t.team_id}
+                label={t.team_name}
+                active={activeTab === t.team_id}
+                onClick={() => setActiveTab(t.team_id)}
+              />
             ))}
           </div>
         )}
 
-        {/* Period selector */}
-        <div className="mb-6 inline-flex rounded-lg border border-warm-gray p-0.5" role="tablist">
-          {(["daily", "season"] as Period[]).map((p) => (
-            <button
-              key={p} role="tab" aria-selected={period === p} onClick={() => setPeriod(p)}
-              className={`rounded-md px-4 py-1.5 text-sm transition-colors ${period === p ? "bg-gold font-semibold text-forest" : "text-near-black/60 hover:text-near-black"}`}
-            >
-              {p === "daily" ? "Today" : "Season"}
-            </button>
-          ))}
-        </div>
-
-        {/* Band C — Group bar */}
-        {status === "ready" && scope !== "global" && data?.group && (
-          <section className="mb-6 rounded-lg border border-forest/20 bg-warm-cream/60 p-4">
+        {/* Team aggregate score */}
+        {status === "ready" && activeTab !== "global" && teamData && (
+          <div className="mb-5 rounded-lg border border-forest/20 bg-warm-cream/60 p-4">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-serif text-lg font-bold text-forest">{data.group.name}</span>
-              <span className="text-xs text-near-black/50">{data.group.memberCount} member{data.group.memberCount === 1 ? "" : "s"}</span>
+              <span className="font-serif text-lg font-bold text-forest">
+                {myTeams.find(t => t.team_id === activeTab)?.team_name ?? "Team"}
+              </span>
+              <div className="text-right">
+                <div className="text-xl font-bold text-forest" style={NUM}>
+                  {teamData.team_total.toLocaleString()}
+                </div>
+                <div className="text-[10px] uppercase tracking-wide text-near-black/40">Team score</div>
+              </div>
             </div>
-            <div className="mt-2 space-y-1 text-sm text-near-black/75">
-              {data.group.teamVsTeam && (
-                <p>#{data.group.teamVsTeam.rank} of {data.group.teamVsTeam.of} {data.group.parentName ?? "company"} teams</p>
-              )}
-              {data.group.companyVsCompany && (
-                <p>{data.group.name} beats {data.group.companyVsCompany.beatsPct}% of companies (#{data.group.companyVsCompany.rank} of {data.group.companyVsCompany.of})</p>
-              )}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => { navigator.clipboard?.writeText(data.group!.code).then(() => { setShareMsg(`Invite code ${data.group!.code} copied ✓`); setTimeout(() => setShareMsg(""), 2500); }); }}
-                className="rounded border border-forest/30 px-3 py-1 text-xs text-forest hover:bg-warm-white"
-              >
-                Invite code: {data.group.code}
-              </button>
-              {you && (
-                <button
-                  onClick={() => leaveGroup(data.group!.code)}
-                  className="rounded border border-warm-gray px-3 py-1 text-xs text-near-black/60 hover:text-red-600"
-                >
-                  Leave
-                </button>
-              )}
-            </div>
-          </section>
+          </div>
         )}
 
-        {/* Band A — You */}
+        {/* You card */}
         <section className="mb-6">
           {status === "ready" && !you && (
             <div className="rounded-lg border border-gold/40 bg-gold/5 p-5 text-center">
-              <p className="mb-3 text-near-black/80">Claim your spot on the leaderboard.</p>
-              <Link href="/daily-challenge" className="inline-block rounded bg-gold px-5 py-2.5 font-semibold text-forest transition-colors hover:bg-gold-light">
+              <p className="mb-3 text-near-black/80">Sign in to track your rank.</p>
+              <Link
+                href="/daily-challenge"
+                className="inline-block rounded bg-gold px-5 py-2.5 font-semibold text-forest transition-colors hover:bg-gold-light"
+              >
                 Play &amp; join →
               </Link>
             </div>
           )}
-          {status === "ready" && you && data && (
+          {status === "ready" && you && (
             <div className="rounded-lg border-2 border-gold bg-gold/10 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold text-forest">{you.handle}</span>
-                    <Movement value={you.movement} />
-                    <Badges keys={you.badges} />
+                    <span className="truncate font-semibold text-forest">
+                      {you.handle || "You"}
+                    </span>
                   </div>
                   <div className="mt-0.5 text-xs text-near-black/60" style={NUM}>
-                    {you.rank == null
-                      ? "Unranked — play to join"
-                      : `${topPercentLabel(you.percentile)} · #${you.rank.toLocaleString()} of ${data.totalPlayers.toLocaleString()}`}
+                    {you.rank == null ? "Unranked — play to earn points" : `#${you.rank.toLocaleString()}`}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <div className="text-right">
-                    <div className="text-xl font-bold text-near-black" style={NUM}>{you.signals.toLocaleString()}</div>
-                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">SCORE</div>
+                    <div className="text-xl font-bold text-near-black" style={NUM}>
+                      {you.total_points.toLocaleString()}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">pts</div>
                   </div>
-                  <button onClick={share} aria-label="Share" className="rounded border border-forest/30 px-3 py-2 text-sm text-forest hover:bg-warm-white">
+                  <button
+                    onClick={share}
+                    aria-label="Share your rank"
+                    className="rounded border border-forest/30 px-3 py-2 text-sm text-forest hover:bg-warm-white"
+                  >
                     Share
                   </button>
                 </div>
@@ -326,53 +274,64 @@ export default function LeaderboardPage() {
               {shareMsg && <p className="mt-2 text-xs text-forest">{shareMsg}</p>}
             </div>
           )}
-          {status === "loading" && <div className="h-[76px] animate-pulse rounded-lg bg-warm-gray/40" />}
+          {status === "loading" && (
+            <div className="h-[76px] animate-pulse rounded-lg bg-warm-gray/40" />
+          )}
         </section>
 
-        {/* Band B — Standings */}
+        {/* Standings */}
         <section>
-          <div className={`${GRID} px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40`}>
-            <span>Rank</span><span>Player</span><span className="text-right">SCORE</span><span className="text-right">Move</span>
+          <div className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40">
+            <span>Rank</span>
+            <span>Player</span>
+            <span className="text-right">Pts</span>
           </div>
 
           {status === "loading" && <SkeletonRows />}
 
           {status === "error" && (
             <div className="py-10 text-center">
-              <p className="mb-3 text-near-black/70">Couldn’t load the leaderboard.</p>
-              <button onClick={() => load(scope, period)} className="rounded border border-warm-gray px-4 py-2 text-sm hover:bg-warm-cream">Retry</button>
+              <p className="mb-3 text-near-black/70">Couldn&apos;t load the leaderboard.</p>
+              <button
+                onClick={() => activeTab === "global" ? loadGlobal() : loadTeam(activeTab)}
+                className="rounded border border-warm-gray px-4 py-2 text-sm hover:bg-warm-cream"
+              >
+                Retry
+              </button>
             </div>
           )}
 
-          {status === "ready" && data && data.leaderboard.length === 0 && (
+          {status === "ready" && leaderboard.length === 0 && (
             <div className="py-10 text-center text-near-black/60">
-              {period === "season" && !data.seasonName ? "No active season right now." : "Be the first to play today."}
+              No scores yet — be the first to play.
             </div>
           )}
 
-          {status === "ready" && data && data.leaderboard.length > 0 && (
+          {status === "ready" && leaderboard.length > 0 && (
             <div className="space-y-0.5">
-              {data.leaderboard.map((r) => (<StandingsRow key={`${r.rank}-${r.handle}`} row={r} />))}
+              {leaderboard.map(r => (
+                <StandingsRow key={r.subscriber_id} row={r} />
+              ))}
               {you && !youInList && (
                 <>
                   <div className="select-none py-1 text-center text-near-black/30">···</div>
-                  <StandingsRow row={{ rank: you.rank, handle: you.handle, signals: you.signals, playStreak: you.playStreak, fullSetStreak: you.fullSetStreak, movement: you.movement, isYou: true }} />
+                  <StandingsRow row={you} />
                 </>
               )}
             </div>
           )}
         </section>
 
-        {/* TODO: REMOVE BEFORE PRODUCTION — temporary admin testing utilities */}
+        {/* Admin testing utilities */}
         <section className="mt-10 border-t border-red-200 pt-6">
           <p className="mb-3 text-[11px] uppercase tracking-wide text-red-400">Admin · Testing Only</p>
           <div className="flex flex-wrap gap-3">
             <button
               onClick={async () => {
-                if (!confirm("Are you sure? This will zero out ALL player scores (Today and Season) for all subscribers. This cannot be undone.")) return;
+                if (!confirm("Reset ALL player scores? Cannot be undone.")) return;
                 const res = await fetch("/api/admin/reset-scores", { method: "POST" });
-                if (res.ok) { alert("All scores reset."); load(scope, period); }
-                else { const d = await res.json().catch(() => ({})); alert(`Reset failed: ${d.error ?? res.status}`); }
+                if (res.ok) { alert("All scores reset."); activeTab === "global" ? loadGlobal() : loadTeam(activeTab); }
+                else { const d = await res.json().catch(() => ({})); alert(`Reset failed: ${(d as {error?: string}).error ?? res.status}`); }
               }}
               style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
               className="rounded px-4 py-2 text-sm font-mono"
@@ -381,10 +340,10 @@ export default function LeaderboardPage() {
             </button>
             <button
               onClick={async () => {
-                if (!confirm("Are you sure? This will permanently delete all subscriber records from Supabase, except for the account with handle 'myke'. This cannot be undone.")) return;
+                if (!confirm("Delete all subscribers except 'myke'? Cannot be undone.")) return;
                 const res = await fetch("/api/admin/clear-subscribers", { method: "POST" });
-                if (res.ok) { alert("Subscribers cleared (myke preserved)."); load(scope, period); }
-                else { const d = await res.json().catch(() => ({})); alert(`Clear failed: ${d.error ?? res.status}`); }
+                if (res.ok) { alert("Subscribers cleared (myke preserved)."); loadGlobal(); }
+                else { const d = await res.json().catch(() => ({})); alert(`Clear failed: ${(d as {error?: string}).error ?? res.status}`); }
               }}
               style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
               className="rounded px-4 py-2 text-sm font-mono"
@@ -393,52 +352,20 @@ export default function LeaderboardPage() {
             </button>
           </div>
         </section>
-
-        {/* Band D — Context (global scope only). Season → hero; Today → patterns. */}
-        {status === "ready" && scope === "global" && (
-          <section className="mt-8">
-            {period === "season" && data?.season && (
-              <div className="rounded-lg border border-forest/20 bg-forest/5 p-4">
-                <div className="font-serif text-lg font-bold text-forest">{data.season.name}</div>
-                <div className="mt-1 text-sm text-near-black/70">
-                  Day {data.season.dayOf} of {data.season.totalDays} · {data.season.daysLeft} day{data.season.daysLeft === 1 ? "" : "s"} left
-                </div>
-                {data.lastChampion && (
-                  <div className="mt-2 text-xs text-near-black/55">
-                    🏆 Last champion: <span className="font-semibold text-forest">{data.lastChampion.handle}</span> ({data.lastChampion.seasonName})
-                  </div>
-                )}
-              </div>
-            )}
-            {period === "daily" && data?.patterns && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <PatternCard label="Most played" value={data.patterns.mostPlayed?.type ?? "—"} sub={data.patterns.mostPlayed ? `${data.patterns.mostPlayed.count} plays` : ""} />
-                <PatternCard label="Hardest puzzle" value={data.patterns.hardest?.type ?? "—"} sub={data.patterns.hardest ? `avg ${data.patterns.hardest.avgScore}` : ""} />
-                <PatternCard label="Biggest mover" value={data.patterns.biggestMover?.handle ?? "—"} sub={data.patterns.biggestMover ? `▲${data.patterns.biggestMover.delta}` : "—"} />
-              </div>
-            )}
-          </section>
-        )}
       </main>
     </div>
   );
 }
 
-function PatternCard({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-lg border border-warm-gray bg-warm-cream/40 p-3">
-      <div className="text-[10px] uppercase tracking-wide text-near-black/40">{label}</div>
-      <div className="mt-1 truncate font-semibold text-forest">{value}</div>
-      <div className="text-xs text-near-black/50" style={NUM}>{sub}</div>
-    </div>
-  );
-}
-
-function ScopeChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs transition-colors ${active ? "border-forest bg-forest text-warm-white" : "border-warm-gray text-near-black/70 hover:border-forest/40"}`}
+      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+        active
+          ? "border-forest bg-forest text-warm-white"
+          : "border-warm-gray text-near-black/70 hover:border-forest/40"
+      }`}
     >
       {label}
     </button>

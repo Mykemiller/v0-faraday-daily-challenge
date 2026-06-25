@@ -10,7 +10,9 @@ import {
   EMAIL_STORAGE_KEY,
   HANDLE_STORAGE_KEY,
   OPTED_OUT_STORAGE_KEY,
+  SUBSCRIBER_ID_KEY,
 } from "@/lib/supabase";
+import OTPGate from "@/components/OTPGate";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -1319,78 +1321,115 @@ const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 // ══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-const TEAMS_LIST = [
-  "Team ER&I",
-  "Team PE",
-  "Team TMT",
-  "Hybrid Cloud Infrastructure",
-  "Deloitte",
-  "AI Infrastructure",
-  "Data Center Real Estate",
-  "Power & Energy",
-  "Network & Connectivity",
-  "Hyperscaler Strategy",
-  "Capital Markets",
-  "Cooling & Thermal",
-  "Regulatory & Policy",
-];
+const MAX_ACCOUNT_TEAMS = 5;
 
-function AccountPage({ email, handle, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut }) {
-  // Load profile from localStorage
-  const [profile, setProfile] = useState(() => {
-    try {
-      const raw = localStorage.getItem("faraday_profile");
-      return raw ? JSON.parse(raw) : { handle: handle || "", name: "", email: email || "", favoriteTeams: [] };
-    } catch {
-      return { handle: handle || "", name: "", email: email || "", favoriteTeams: [] };
-    }
-  });
+function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut, onHandleChange }) {
+  const [editHandle, setEditHandle] = useState(handle || "");
+  const [handleSaving, setHandleSaving] = useState(false);
+  const [handleSaved, setHandleSaved] = useState(false);
   const [handleError, setHandleError] = useState("");
-  const [savedField, setSavedField] = useState(null);
-  const [customTeamInput, setCustomTeamInput] = useState("");
-  const [showCustomTeamInput, setShowCustomTeamInput] = useState(false);
 
-  function saveProfile(updated) {
-    setProfile(updated);
-    try { localStorage.setItem("faraday_profile", JSON.stringify(updated)); } catch {}
+  const [myTeams, setMyTeams] = useState([]); // { team_id, team_name, pending }
+  const [availableTeams, setAvailableTeams] = useState([]);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamSaving, setTeamSaving] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [teamsSaved, setTeamsSaved] = useState(false);
+
+  const [season, setSeason] = useState(null);
+  const [showFreeAgencyInfo, setShowFreeAgencyInfo] = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const inFreeAgencyNotice = season?.free_agency_notice_start && today >= season.free_agency_notice_start;
+  const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
+  const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
+  const canEditTeams = sessionToken && inFreeAgency && !isLocked;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/season/active");
+        const d = await r.json();
+        setSeason(d.season ?? null);
+      } catch {}
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    (async () => {
+      setTeamsLoading(true);
+      try {
+        const r = await fetch(`/api/teams?scope=my&token=${encodeURIComponent(sessionToken)}`);
+        const d = await r.json();
+        setMyTeams(Array.isArray(d.teams) ? d.teams : []);
+      } catch {} finally {
+        setTeamsLoading(false);
+      }
+    })();
+  }, [sessionToken]);
+
+  useEffect(() => {
+    if (!canEditTeams) return;
+    (async () => {
+      try {
+        const q = teamSearch ? `&q=${encodeURIComponent(teamSearch)}` : "";
+        const r = await fetch(`/api/teams?${q}`);
+        const d = await r.json();
+        setAvailableTeams(Array.isArray(d.teams) ? d.teams : []);
+      } catch {}
+    })();
+  }, [canEditTeams, teamSearch]);
+
+  async function saveHandle() {
+    const h = editHandle.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,24}$/.test(h)) { setHandleError("3–24 chars: letters, numbers, underscore"); return; }
+    if (!sessionToken) { setHandleError("Sign in to save"); return; }
+    setHandleSaving(true); setHandleError("");
+    try {
+      const r = await fetch("/api/account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: sessionToken, action: "update-handle", newHandle: h }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setHandleError(d.error || "Could not save handle"); return; }
+      try { localStorage.setItem(HANDLE_STORAGE_KEY, h); } catch {}
+      if (onHandleChange) onHandleChange(h);
+      setHandleSaved(true);
+      setTimeout(() => setHandleSaved(false), 2500);
+    } catch { setHandleError("Network error — try again"); }
+    finally { setHandleSaving(false); }
   }
 
-  function saveField(field, value, validate) {
-    if (validate) {
-      const err = validate(value);
-      if (err) { setHandleError(err); return; }
-    }
-    setHandleError("");
-    saveProfile({ ...profile, [field]: value });
-    setSavedField(field);
-    setTimeout(() => setSavedField(null), 2000);
-  }
-
-  function toggleTeam(team) {
-    const selected = profile.favoriteTeams || [];
-    if (selected.includes(team)) {
-      saveProfile({ ...profile, favoriteTeams: selected.filter(t => t !== team) });
-    } else if (selected.length < 2) {
-      saveProfile({ ...profile, favoriteTeams: [...selected, team] });
+  async function toggleTeam(teamId, teamName) {
+    if (!canEditTeams) return;
+    const alreadyIn = myTeams.some(t => t.team_id === teamId);
+    let next;
+    if (alreadyIn) {
+      next = myTeams.filter(t => t.team_id !== teamId);
     } else {
-      // FIFO: remove oldest, add new
-      saveProfile({ ...profile, favoriteTeams: [selected[1], team] });
+      if (myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+      next = [...myTeams, { team_id: teamId, team_name: teamName, pending: true }];
     }
+    setMyTeams(next);
+    setTeamSaving(true); setTeamError(""); setTeamsSaved(false);
+    try {
+      const activeSeason = season?.id ?? null;
+      const r = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: sessionToken, team_ids: next.map(t => t.team_id), season_id: activeSeason }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setTeamError(d.error || "Could not update teams"); return; }
+      if (Array.isArray(d.teams)) setMyTeams(d.teams);
+      setTeamsSaved(true);
+      setTimeout(() => setTeamsSaved(false), 2500);
+    } catch { setTeamError("Network error — try again"); }
+    finally { setTeamSaving(false); }
   }
-
-  function addCustomTeam() {
-    const t = customTeamInput.trim();
-    if (!t) return;
-    const selected = profile.favoriteTeams || [];
-    if (selected.includes(t)) return;
-    const updated = selected.length < 2 ? [...selected, t] : [selected[1], t];
-    saveProfile({ ...profile, favoriteTeams: updated });
-    setCustomTeamInput("");
-    setShowCustomTeamInput(false);
-  }
-
-  const allTeams = [...new Set([...TEAMS_LIST, ...(profile.favoriteTeams || []).filter(t => !TEAMS_LIST.includes(t))])];
-  const selectedTeams = profile.favoriteTeams || [];
 
   const card = {
     background: C.white,
@@ -1439,7 +1478,7 @@ function AccountPage({ email, handle, streak, todayScore, seasonScore, dailyResu
         Account &amp; Settings
       </div>
       <div style={{ ...sans, fontSize:"24px", fontWeight:700, color:C.forest, marginBottom:"28px" }}>
-        {(profile.handle || handle) ? `@${profile.handle || handle}` : (email ? email.split("@")[0] : "Your Account")}
+        {handle ? `@${handle}` : (email ? email.split("@")[0] : "Your Account")}
       </div>
 
       {/* Stats */}
@@ -1465,110 +1504,149 @@ function AccountPage({ email, handle, streak, todayScore, seasonScore, dailyResu
         <div style={labelStyle}>Handle</div>
         <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
           <input
-            value={profile.handle}
-            onChange={e => setProfile(p => ({ ...p, handle: e.target.value.toLowerCase() }))}
+            value={editHandle}
+            onChange={e => { setEditHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")); setHandleSaved(false); }}
+            onKeyDown={e => e.key === "Enter" && saveHandle()}
             placeholder="your_handle"
-            maxLength={20}
+            maxLength={24}
             autoCapitalize="none" autoCorrect="off" spellCheck={false}
             style={inputStyle}
+            disabled={!sessionToken}
           />
-          <button type="button" style={saveBtn}
-            onClick={() => saveField("handle", profile.handle, v => !/^[a-z0-9_]{3,20}$/i.test(v) ? "3–20 chars: letters, numbers, underscore" : "")}>
-            {savedField === "handle" ? "Saved ✓" : "Save"}
+          <button type="button" style={{ ...saveBtn, opacity: sessionToken ? 1 : 0.4 }}
+            onClick={saveHandle} disabled={handleSaving || !sessionToken}>
+            {handleSaving ? "…" : handleSaved ? "Saved ✓" : "Save"}
           </button>
         </div>
         {handleError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"6px" }}>{handleError}</div>}
         <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"6px" }}>
-          3–20 chars · letters, numbers, underscore
+          3–24 chars · letters, numbers, underscore
         </div>
       </div>
 
-      {/* Name */}
-      <div style={card}>
-        <div style={labelStyle}>Name</div>
-        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-          <input
-            value={profile.name}
-            onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
-            placeholder="Display name"
-            style={inputStyle}
-          />
-          <button type="button" style={saveBtn} onClick={() => saveField("name", profile.name)}>
-            {savedField === "name" ? "Saved ✓" : "Save"}
-          </button>
-        </div>
-      </div>
-
-      {/* Email */}
+      {/* Email — read-only */}
       <div style={card}>
         <div style={labelStyle}>Email</div>
-        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-          <input
-            value={profile.email}
-            onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
-            placeholder="your@email.com"
-            type="email"
-            style={inputStyle}
-          />
-          <button type="button" style={saveBtn} onClick={() => saveField("email", profile.email)}>
-            {savedField === "email" ? "Saved ✓" : "Save"}
-          </button>
+        <div style={{ ...mono, fontSize:"13px", color:C.forest }}>{email || "—"}</div>
+        <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"4px" }}>
+          Email cannot be changed. Sign in with a new email to switch accounts.
         </div>
       </div>
 
-      {/* Favorite Teams */}
+      {/* Teams */}
       <div style={card}>
-        <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"12px" }}>
-          <div style={{ ...labelStyle, marginBottom:0 }}>Favorite Teams</div>
-          {selectedTeams.length > 0 && (
-            <span style={{ ...mono, fontSize:"10px", background: C.forest, color: C.cream,
-              borderRadius:"20px", padding:"2px 8px" }}>{selectedTeams.length} selected</span>
-          )}
-        </div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
-          {allTeams.map(team => {
-            const isSel = selectedTeams.includes(team);
-            return (
-              <button type="button" key={team} onClick={() => toggleTeam(team)} style={{
-                border: isSel ? `1px solid ${C.forest}` : `1px solid rgba(28,52,36,0.2)`,
-                background: isSel ? C.forest : "transparent",
-                color: isSel ? C.cream : C.forest,
-                borderRadius: "20px",
-                padding: "5px 12px",
-                fontSize: "11px",
-                cursor: "pointer",
-                ...mono,
-                transition: "all 0.12s",
-              }}>{team}</button>
-            );
-          })}
-        </div>
-        {showCustomTeamInput ? (
-          <div style={{ display:"flex", gap:"8px", marginTop:"10px" }}>
-            <input
-              value={customTeamInput}
-              onChange={e => setCustomTeamInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addCustomTeam()}
-              placeholder="Team name"
-              style={{ ...inputStyle, flex: "1 1 140px" }}
-              autoFocus
-            />
-            <button type="button" style={saveBtn} onClick={addCustomTeam}>Add</button>
-            <button type="button" onClick={() => { setShowCustomTeamInput(false); setCustomTeamInput(""); }}
-              style={{ ...saveBtn, background: "transparent", border:`1px solid rgba(28,52,36,0.2)`, color: C.forest }}>
-              Cancel
-            </button>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", flexWrap:"wrap", gap:"8px" }}>
+          <div style={{ ...labelStyle, marginBottom:0 }}>Teams</div>
+          <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+            {myTeams.length > 0 && (
+              <span style={{ ...mono, fontSize:"10px", background: C.forest, color: C.cream,
+                borderRadius:"20px", padding:"2px 8px" }}>{myTeams.length}/{MAX_ACCOUNT_TEAMS}</span>
+            )}
+            {teamsSaved && <span style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.6)" }}>Saved ✓</span>}
           </div>
-        ) : (
-          <button type="button" onClick={() => setShowCustomTeamInput(true)}
-            style={{ ...mono, fontSize:"11px", color:C.forest, background:"transparent", border:"none",
-              cursor:"pointer", marginTop:"10px", textDecoration:"underline", padding:0 }}>
-            + Add custom team
+        </div>
+
+        {/* Free Agency notice */}
+        {inFreeAgencyNotice && !showFreeAgencyInfo && (
+          <button type="button" onClick={() => setShowFreeAgencyInfo(true)}
+            style={{ ...mono, fontSize:"11px", color:C.gold, background:"rgba(196,146,42,0.08)",
+              border:`1px solid rgba(196,146,42,0.3)`, borderRadius:"6px", padding:"8px 12px",
+              cursor:"pointer", display:"block", width:"100%", textAlign:"left", marginBottom:"12px" }}>
+            Tell me about Free Agency →
           </button>
         )}
-        <div style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
-          Pick any 2 teams — click a third to swap out the first
-        </div>
+
+        {showFreeAgencyInfo && (
+          <div style={{ background:"rgba(196,146,42,0.06)", border:`1px solid rgba(196,146,42,0.25)`,
+            borderRadius:"8px", padding:"14px 16px", marginBottom:"14px" }}>
+            <div style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.forest, marginBottom:"8px" }}>
+              Free Agency window
+            </div>
+            <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.7)", lineHeight:1.6 }}>
+              For a brief window at the end of each season, you can switch teams for next season.
+              Changes made during Free Agency take effect when the new season begins.
+              Outside of Free Agency, team membership is locked.
+            </div>
+            {inFreeAgency ? (
+              <div style={{ ...mono, fontSize:"11px", color:C.gold, marginTop:"10px" }}>
+                Free Agency is open — you can update your teams below.
+              </div>
+            ) : (
+              <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.55)", marginTop:"10px" }}>
+                Free Agency opens soon. Your current teams are locked until then.
+              </div>
+            )}
+            <button type="button" onClick={() => setShowFreeAgencyInfo(false)}
+              style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.5)", background:"none", border:"none",
+                cursor:"pointer", padding:0, marginTop:"10px" }}>
+              Close ×
+            </button>
+          </div>
+        )}
+
+        {/* Current team memberships */}
+        {teamsLoading ? (
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.4)" }}>Loading…</div>
+        ) : myTeams.length === 0 && !canEditTeams ? (
+          <div style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.45)" }}>
+            {sessionToken ? "No teams selected." : "Sign in to see your teams."}
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginBottom: canEditTeams ? "14px" : "0" }}>
+            {myTeams.map(t => (
+              <span key={t.team_id} style={{ ...mono, fontSize:"11px",
+                border: `1px solid ${t.pending ? "rgba(196,146,42,0.5)" : C.forest}`,
+                background: t.pending ? "rgba(196,146,42,0.08)" : C.forest,
+                color: t.pending ? C.gold : C.cream,
+                borderRadius:"20px", padding:"5px 12px",
+                display:"flex", alignItems:"center", gap:"6px" }}>
+                {t.team_name}
+                {t.pending && <span style={{ fontSize:"9px", opacity:0.8 }}>pending</span>}
+                {canEditTeams && (
+                  <button type="button" onClick={() => toggleTeam(t.team_id, t.team_name)}
+                    style={{ background:"none", border:"none", cursor:"pointer", color:"inherit",
+                      padding:0, lineHeight:1, fontSize:"13px", opacity:0.7 }}>×</button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Team picker — only during Free Agency */}
+        {canEditTeams && (
+          <>
+            <input
+              value={teamSearch}
+              onChange={e => setTeamSearch(e.target.value)}
+              placeholder="Search teams…"
+              style={{ ...inputStyle, flex:"1 1 100%", marginBottom:"10px" }}
+            />
+            <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", maxHeight:"160px", overflowY:"auto" }}>
+              {availableTeams
+                .filter(t => !myTeams.some(m => m.team_id === t.id))
+                .map(t => (
+                  <button key={t.id} type="button" onClick={() => toggleTeam(t.id, t.name)}
+                    disabled={myTeams.length >= MAX_ACCOUNT_TEAMS || teamSaving}
+                    style={{ ...mono, fontSize:"11px", padding:"5px 12px", borderRadius:"20px",
+                      border:`1px solid rgba(28,52,36,0.2)`, background:"transparent", color:C.forest,
+                      cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
+                      opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                    {t.name}
+                  </button>
+                ))}
+            </div>
+            {teamError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"8px" }}>{teamError}</div>}
+            <div style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.45)", marginTop:"10px" }}>
+              Select up to 5 teams. Changes take effect at the start of the next season.
+            </div>
+          </>
+        )}
+
+        {!canEditTeams && sessionToken && !inFreeAgency && (
+          <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
+            Team membership is locked outside of Free Agency.
+          </div>
+        )}
       </div>
 
       {/* Recent Games */}
@@ -1605,115 +1683,20 @@ function AccountPage({ email, handle, streak, todayScore, seasonScore, dailyResu
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SOCIAL GATE — Email capture
+// SOCIAL GATE — OTP auth (FAR-221)
+// Wraps the OTPGate component, passing the in-game brand tokens + Btn.
 // ══════════════════════════════════════════════════════════════════════════════
-function SocialGate({ trigger, onRegister, onDismiss }) {
-  const [email,   setEmail]   = useState("");
-  const [handle,  setHandle]  = useState("");
-  const [newsletter, setNewsletter] = useState(false);
-  const [sent,    setSent]    = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
-
-  const headlines = {
-    leaderboard:   { h:"You just scored. See where you rank.", sub:"Drop your email to join the leaderboard and track your streak." },
-    streak:        { h:"7-day streak — you're on a run.", sub:"Register to keep your streak alive across sessions." },
-    team:          { h:"You've been challenged.", sub:"Add your email to accept and track your score against theirs." },
-    default:       { h:"Want to track your streak?", sub:"One email. No password. We send a magic link." },
-  };
-  const copy = headlines[trigger] || headlines.default;
-
-  async function submit() {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized || !normalized.includes("@")) { setError("Enter a valid email address"); return; }
-    // Leaderboard V2 §6: handle is the claimed leaderboard identity. Validate the
-    // format here; the server re-validates and binds it on verify (it's final).
-    const normalizedHandle = handle.trim().toLowerCase();
-    if (!/^[a-z0-9_]{3,20}$/.test(normalizedHandle)) {
-      setError("Handle must be 3–20 characters: letters, numbers, or underscore");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await fetch(`${EDGE_FUNCTIONS_BASE}/register-with-magic-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Newsletter is strict opt-in: the gate keeps its "No newsletter" promise,
-        // and only an explicitly-ticked box subscribes (FAR-70 / Myke editorial call).
-        body: JSON.stringify({ email: normalized, handle: normalizedHandle, newsletter_opt_in: newsletter, source: `dailychallenge-${trigger || "default"}`, timezone }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Registration failed — please try again");
-      setSent(true);
-      if (onRegister) onRegister(normalized);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong — please try again");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (sent) return (
-    <div style={{ textAlign:"center", padding:"24px" }}>
-      <div style={{ fontSize:"32px", marginBottom:"12px" }}>✦</div>
-      <div style={{ fontSize:"15px", fontWeight:700, color:C.gold, marginBottom:"8px", ...sans }}>Check your inbox</div>
-      <div style={{ fontSize:"11px", color:C.muted, lineHeight:1.6, ...mono }}>
-        We sent a magic link to <span style={{ color:C.text }}>{email}</span>.<br/>
-        Click it to activate your leaderboard profile and streak tracking.
-      </div>
-      <div style={{ marginTop:"16px" }}>
-        <Btn onClick={onDismiss} variant="ghost" small>Continue playing →</Btn>
-      </div>
-    </div>
-  );
-
+function SocialGate({ trigger, onComplete, onDismiss }) {
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
-      <div>
-        <div style={{ fontSize:"16px", fontWeight:700, color:C.text, marginBottom:"6px", ...sans }}>{copy.h}</div>
-        <div style={{ fontSize:"11px", color:C.muted, lineHeight:1.5, ...mono }}>{copy.sub}</div>
-      </div>
-      <div>
-        <input value={handle} onChange={e=>setHandle(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&submit()}
-          placeholder="circuit_breaker" aria-label="Choose your handle"
-          autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={20}
-          style={{ width:"100%", boxSizing:"border-box", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
-            borderRadius:"6px", padding:"10px 14px", color:C.text, fontSize:"12px", ...mono }} />
-        <div style={{ fontSize:"11px", color:C.muted, marginTop:"5px", ...mono }}>
-          3–20 chars · letters, numbers, underscore · your leaderboard name.
-        </div>
-      </div>
-      <div style={{ display:"flex", gap:"8px" }}>
-        <input value={email} onChange={e=>setEmail(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&submit()}
-          placeholder="your@email.com"
-          style={{ flex:1, background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
-            borderRadius:"6px", padding:"10px 14px", color:C.text, fontSize:"12px", ...mono }} />
-        <Btn onClick={submit} disabled={loading || !email || !handle}>
-          {loading ? "…" : "→"}
-        </Btn>
-      </div>
-      {/* Opt-in newsletter — unchecked by default; the "No newsletter" promise below
-          holds unless the player actively ticks this. */}
-      <label style={{ display:"flex", alignItems:"flex-start", gap:"8px", cursor:"pointer", fontSize:"11px", color:C.muted, ...mono }}>
-        <input type="checkbox" checked={newsletter} onChange={e=>setNewsletter(e.target.checked)}
-          style={{ marginTop:"1px", accentColor:C.goldLight }} />
-        <span>Email me the Faraday newsletter — weekly data-center intelligence. Optional.</span>
-      </label>
-      {error && <div style={{ fontSize:"11px", color:C.red, ...mono }}>{error}</div>}
-      <div style={{ display:"flex", gap:"10px", alignItems:"center" }}>
-        <div style={{ flex:1, height:"1px", background:C.border }}/>
-        <span style={{ fontSize:"11px", color:C.muted, ...mono }}>OR</span>
-        <div style={{ flex:1, height:"1px", background:C.border }}/>
-      </div>
-      <Btn onClick={onDismiss} variant="ghost" small>Skip — play without tracking</Btn>
-      <div style={{ fontSize:"11px", color:C.muted, lineHeight:1.5, ...mono }}>
-        No password. No newsletter. One magic link per session. Your email is only used for game notifications and streak persistence.
-      </div>
-    </div>
+    <OTPGate
+      trigger={trigger}
+      C={C}
+      sans={sans}
+      mono={mono}
+      Btn={Btn}
+      onComplete={onComplete}
+      onDismiss={onDismiss}
+    />
   );
 }
 
@@ -2215,10 +2198,15 @@ export default function DailyChallenge() {
     }
   }
 
-  function onRegister() {
-    // Registration only sends the magic link — the player isn't signed in
-    // until /auth verifies it and stores the session. Leave the
-    // "check your inbox" panel up; its Continue button dismisses the gate.
+  function onAuthComplete(token, subscriber) {
+    setSessionToken(token);
+    setEmail(subscriber.email);
+    if (subscriber.handle) setHandle(subscriber.handle);
+    try { localStorage.setItem(SESSION_STORAGE_KEY, token); } catch {}
+    try { localStorage.setItem(EMAIL_STORAGE_KEY, subscriber.email); } catch {}
+    try { if (subscriber.handle) localStorage.setItem(HANDLE_STORAGE_KEY, subscriber.handle); } catch {}
+    try { if (subscriber.id) localStorage.setItem(SUBSCRIBER_ID_KEY, subscriber.id); } catch {}
+    setScreen("lobby");
   }
 
   function onGateDismiss() {
@@ -2430,7 +2418,7 @@ export default function DailyChallenge() {
           <div className="ca" style={{ maxWidth:"420px", margin:"0 auto", paddingTop:"40px" }}>
             <div style={{ background:C.forestMid, border:"1px solid rgba(248,245,240,.12)",
               borderRadius:"12px", padding:"28px" }}>
-              <SocialGate trigger={gateReason} onRegister={onRegister} onDismiss={onGateDismiss} />
+              <SocialGate trigger={gateReason} onComplete={onAuthComplete} onDismiss={onGateDismiss} />
             </div>
           </div>
         )}
@@ -2440,12 +2428,14 @@ export default function DailyChallenge() {
           <AccountPage
             email={email}
             handle={handle}
+            sessionToken={sessionToken}
             streak={streak}
             todayScore={todayScore}
             seasonScore={seasonScore}
             dailyResults={dailyResults}
             onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
             onSignOut={handleSignOut}
+            onHandleChange={setHandle}
           />
         )}
       </main>

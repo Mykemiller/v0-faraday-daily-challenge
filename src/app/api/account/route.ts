@@ -48,7 +48,21 @@ export async function GET(request: Request) {
   const s = svc();
   if (!s) return Response.json({ error: "Account service not configured" }, { status: 500 });
 
-  const token = new URL(request.url).searchParams.get("token");
+  const params = new URL(request.url).searchParams;
+
+  // Handle uniqueness check (no auth required)
+  const handleCheck = params.get("handle_check");
+  if (handleCheck) {
+    const r = await fetch(
+      `${s.base}/dc_subscribers?handle=eq.${encodeURIComponent(handleCheck.trim().toLowerCase())}&select=id`,
+      { headers: s.headers, cache: "no-store" }
+    );
+    const rows = r.ok ? await r.json().catch(() => null) : null;
+    const taken = Array.isArray(rows) && rows.length > 0;
+    return Response.json({ available: !taken });
+  }
+
+  const token = params.get("token");
   if (!token) return Response.json({ error: "Missing session" }, { status: 401 });
 
   const id = await resolveSubscriber(s, token);
