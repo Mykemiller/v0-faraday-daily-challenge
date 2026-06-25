@@ -271,3 +271,12 @@ the change via the single `ScoreCard` component.
 
 **Identity / isolation:** daily totals are keyed to `dc_subscribers.id` (UUID, stable across
 handle edits); no player's total can leak into another's session.
+
+## [2026-06-24] Daily Challenge Go-Live UI Polish
+
+- Added AccountPage screen (screen="account") with handle, streak, MW, tier, game history, sign out
+- Added ComingSoonModal triggered by all 7 product links (lobby bottom section)
+- Added Signal Room and Thought Forge to Coming Soon product list
+- Removed: LIVE pulse indicator, Faraday Tip of the Day block, Academy nav button, @handle label (standalone chip replaced by clickable handle chip linking to Account)
+- Account link placed in header top-left (⚙ Account), visible on lobby + all game screens
+- Branch: feature/go-live-ui-polish | PR: https://github.com/Mykemiller/v0-faraday-daily-challenge/pull/38
