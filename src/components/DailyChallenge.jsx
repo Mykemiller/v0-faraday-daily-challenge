@@ -225,6 +225,28 @@ function ProgressBar({ value, max, color }) {
   );
 }
 
+// Uniform nav pill used in the header for all four nav items + sign-in button.
+function NavPill({ children, onClick, active, style: extraStyle }) {
+  return (
+    <button type="button" onClick={onClick} style={{
+      background: active ? `rgba(196,146,42,0.15)` : `rgba(255,255,255,0.04)`,
+      border: `1px solid ${active ? C.gold : "rgba(196,146,42,0.35)"}`,
+      color: active ? C.gold : C.cream,
+      borderRadius: "6px",
+      padding: "8px 18px",
+      fontSize: "13px",
+      fontWeight: 600,
+      cursor: "pointer",
+      letterSpacing: "0.04em",
+      whiteSpace: "nowrap",
+      lineHeight: 1,
+      transition: "all 0.15s",
+      ...sans,
+      ...extraStyle,
+    }}>{children}</button>
+  );
+}
+
 // ── Viral share — generated score card + device share/copy/download ───────────
 const SITE_URL = "https://faraday-intelligence.ai";
 const DC_URL = `${SITE_URL}/daily-challenge`;
@@ -387,7 +409,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   }
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
     isNew7Day={streak===6} />;
 
   return (
@@ -501,7 +523,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
   if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { guesses, word, won })}
     isNew7Day={streak===6} />;
 
   return (
@@ -629,7 +651,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
         Ranking by: {puzzle.metric}
       </div>
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric })}
         isNew7Day={streak===6} />
     </div>
   );
@@ -723,7 +745,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
   );
@@ -820,7 +842,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
   );
@@ -906,7 +928,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   }, [selectedTerm, selectedDef]);
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs })}
     isNew7Day={streak===6} />;
 
   return (
@@ -1010,7 +1032,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal)}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1058,6 +1080,187 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
       )}
     </div>
   );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REPLAY — Already-played-today banner + read-only states per game
+// ══════════════════════════════════════════════════════════════════════════════
+function ReplayBanner({ gameType, score, onBack }) {
+  return (
+    <div style={{ background:"rgba(196,146,42,0.1)", border:"1px solid rgba(196,146,42,0.4)",
+      borderRadius:"8px", padding:"14px 18px", marginBottom:"20px",
+      display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"10px" }}>
+      <div>
+        <div style={{ fontSize:"13px", fontWeight:700, color:C.gold, ...sans }}>
+          ✓ Already played today
+        </div>
+        <div style={{ fontSize:"11px", color:C.muted, ...mono, marginTop:"2px" }}>
+          You scored {score} pts
+        </div>
+      </div>
+      <button type="button" onClick={onBack} style={{
+        background: `rgba(255,255,255,0.04)`,
+        border: `1px solid rgba(196,146,42,0.35)`,
+        color: C.cream,
+        borderRadius: "6px",
+        padding: "7px 14px",
+        fontSize: "12px",
+        fontWeight: 600,
+        cursor: "pointer",
+        ...sans,
+      }}>← Back to Lobby</button>
+    </div>
+  );
+}
+
+function GameRacklReplay({ snapshot, puzzle, score, onBack }) {
+  const groups = puzzle?.groups || [];
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      <ReplayBanner gameType="Rackl" score={score} onBack={onBack} />
+      {groups.map((g, gi) => (
+        <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
+          display:"flex", alignItems:"center", gap:"12px" }}>
+          <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
+          <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{g.items.join(" · ")}</span>
+        </div>
+      ))}
+      {snapshot?.mistakes !== undefined && (
+        <div style={{ ...mono, fontSize:"11px", color:C.muted }}>
+          Mistakes: {snapshot.mistakes}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameSignalDropReplay({ snapshot, puzzle, score, onBack }) {
+  const word = puzzle?.word?.toUpperCase() || "";
+  const guesses = snapshot?.guesses || [];
+  const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
+  const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
+  function getTileState(guess, colIdx) {
+    const letter = guess[colIdx];
+    if (!letter) return "empty";
+    if (letter === word[colIdx]) return "correct";
+    if (word.includes(letter)) return "present";
+    return "absent";
+  }
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
+      <ReplayBanner gameType="Signal Drop" score={score} onBack={onBack} />
+      <div style={{ display:"flex", flexDirection:"column", gap:"4px" }}>
+        {[...Array(6)].map((_, ri) => {
+          const guess = guesses[ri] || "";
+          return (
+            <div key={ri} style={{ display:"flex", gap:"4px" }}>
+              {[...Array(word.length || 6)].map((_, ci) => {
+                const state = ri < guesses.length ? getTileState(guess, ci) : "empty";
+                return (
+                  <div key={ci} style={{
+                    width:"44px", height:"44px", borderRadius:"4px",
+                    background: tileColors[state] || tileColors.empty,
+                    border:`2px solid ${state === "empty" ? C.dim : "transparent"}`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:"16px", fontWeight:700, color: tileText[state] || C.muted,
+                    ...mono,
+                  }}>{guess[ci] || ""}</div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+      {word && <div style={{ ...mono, fontSize:"13px", color:C.muted }}>The word was {word}</div>}
+    </div>
+  );
+}
+
+function GameStackReplay({ snapshot, puzzle, score, onBack }) {
+  const finalOrder = snapshot?.finalOrder || [];
+  const correctOrder = snapshot?.correctOrder || puzzle?.correctOrder || [];
+  const items = snapshot?.items || puzzle?.items || [];
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      <ReplayBanner gameType="The Stack" score={score} onBack={onBack} />
+      {finalOrder.map((itemIdx, rankIdx) => {
+        const correctRank = correctOrder.indexOf(itemIdx);
+        const isCorrect = correctRank === rankIdx;
+        return (
+          <div key={itemIdx} style={{
+            background: isCorrect ? "rgba(74,222,128,0.08)" : "rgba(248,113,113,0.06)",
+            border:`1px solid ${isCorrect ? "rgba(74,222,128,0.3)" : "rgba(248,113,113,0.2)"}`,
+            borderRadius:"8px", padding:"12px 16px",
+            display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ display:"flex", gap:"12px", alignItems:"center" }}>
+              <span style={{ fontSize:"11px", color:isCorrect?C.green:C.red, ...mono }}>#{rankIdx+1}</span>
+              <span style={{ fontSize:"13px", color:C.text }}>{items[itemIdx]}</span>
+            </div>
+            {!isCorrect && <span style={{ fontSize:"11px", color:C.red, ...mono }}>Correct: #{correctRank+1}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GameQAReplay({ answers, questions, score, gameType, onBack }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+      <ReplayBanner gameType={gameType} score={score} onBack={onBack} />
+      {(answers || []).map((a, i) => {
+        const q = questions?.[i];
+        return (
+          <div key={i} style={{
+            background: a.ok ? "rgba(74,222,128,0.05)" : "rgba(248,113,113,0.05)",
+            border:`1px solid ${a.ok ? "rgba(74,222,128,0.2)" : "rgba(248,113,113,0.2)"}`,
+            borderRadius:"8px", padding:"12px 14px" }}>
+            <div style={{ fontSize:"13px", color:C.text, marginBottom:"4px", ...sans }}>{a.q || q?.q}</div>
+            <div style={{ fontSize:"12px", color:a.ok?C.green:C.red, ...mono }}>
+              {a.ok ? "✓ Correct" : "✗ Incorrect"}
+            </div>
+            {a.explanation && <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GameDarkFiberReplay({ snapshot, puzzle, score, onBack }) {
+  const pairs = snapshot?.pairs || puzzle?.pairs || [];
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      <ReplayBanner gameType="Dark Fiber" score={score} onBack={onBack} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px" }}>
+        {pairs.map(p => (
+          <div key={p.term} style={{ display:"contents" }}>
+            <div style={{ background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.3)",
+              borderRadius:"6px", padding:"10px 12px", fontSize:"13px", fontWeight:600, color:C.green, ...mono }}>
+              {p.term}
+            </div>
+            <div style={{ background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.3)",
+              borderRadius:"6px", padding:"10px 12px", fontSize:"12px", color:C.green, lineHeight:1.4, ...mono }}>
+              {p.def?.length > 80 ? p.def.slice(0,80)+"…" : p.def}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Render the appropriate read-only replay state for a given game type + snapshot
+function GameReplay({ gameType, snapshot, puzzle, onBack }) {
+  const score = snapshot?.score || 0;
+  if (gameType === "Rackl") return <GameRacklReplay snapshot={snapshot?.puzzleSnapshot} puzzle={puzzle} score={score} onBack={onBack} />;
+  if (gameType === "Signal Drop") return <GameSignalDropReplay snapshot={snapshot?.puzzleSnapshot} puzzle={puzzle} score={score} onBack={onBack} />;
+  if (gameType === "The Stack") return <GameStackReplay snapshot={snapshot?.puzzleSnapshot} puzzle={puzzle} score={score} onBack={onBack} />;
+  if (gameType === "Dark Fiber") return <GameDarkFiberReplay snapshot={snapshot?.puzzleSnapshot} puzzle={puzzle} score={score} onBack={onBack} />;
+  // Circuit, The Brief, Frequency — all Q&A style
+  const answers = snapshot?.puzzleSnapshot?.answers || [];
+  const questions = puzzle?.questions || [];
+  return <GameQAReplay answers={answers} questions={questions} score={score} gameType={gameType} onBack={onBack} />;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1110,129 +1313,293 @@ function ComingSoonModal({ onClose }) {
   );
 }
 
+// ── Daily results persistence ────────────────────────────────────────────────
+const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-const MOCK_GAME_HISTORY = [
-  { type:"Rackl",       score:112, date:"2026-06-23" },
-  { type:"Circuit",     score:98,  date:"2026-06-23" },
-  { type:"Dark Fiber",  score:125, date:"2026-06-22" },
-  { type:"Frequency",   score:87,  date:"2026-06-22" },
-  { type:"The Stack",   score:115, date:"2026-06-21" },
+const TEAMS_LIST = [
+  "Team ER&I",
+  "Team PE",
+  "Team TMT",
+  "Hybrid Cloud Infrastructure",
+  "Deloitte",
+  "AI Infrastructure",
+  "Data Center Real Estate",
+  "Power & Energy",
+  "Network & Connectivity",
+  "Hyperscaler Strategy",
+  "Capital Markets",
+  "Cooling & Thermal",
+  "Regulatory & Policy",
 ];
 
-function AccountPage({ email, handle, streak, onBack, onShowComingSoon, onSignOut }) {
-  const [editHandle, setEditHandle] = useState(handle || "");
+function AccountPage({ email, handle, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut }) {
+  // Load profile from localStorage
+  const [profile, setProfile] = useState(() => {
+    try {
+      const raw = localStorage.getItem("faraday_profile");
+      return raw ? JSON.parse(raw) : { handle: handle || "", name: "", email: email || "", favoriteTeams: [] };
+    } catch {
+      return { handle: handle || "", name: "", email: email || "", favoriteTeams: [] };
+    }
+  });
   const [handleError, setHandleError] = useState("");
-  const [handleSaved, setHandleSaved] = useState(false);
+  const [savedField, setSavedField] = useState(null);
+  const [customTeamInput, setCustomTeamInput] = useState("");
+  const [showCustomTeamInput, setShowCustomTeamInput] = useState(false);
 
-  function validateHandle(v) {
-    if (!/^[a-z0-9_]{3,20}$/i.test(v)) return "3–20 characters: letters, numbers, underscore only";
-    return "";
+  function saveProfile(updated) {
+    setProfile(updated);
+    try { localStorage.setItem("faraday_profile", JSON.stringify(updated)); } catch {}
   }
 
-  function saveHandle() {
-    const err = validateHandle(editHandle);
-    if (err) { setHandleError(err); return; }
+  function saveField(field, value, validate) {
+    if (validate) {
+      const err = validate(value);
+      if (err) { setHandleError(err); return; }
+    }
     setHandleError("");
-    setHandleSaved(true);
-    setTimeout(() => setHandleSaved(false), 2000);
+    saveProfile({ ...profile, [field]: value });
+    setSavedField(field);
+    setTimeout(() => setSavedField(null), 2000);
   }
 
-  const card = { background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`,
-    borderRadius:"10px", padding:"20px 22px", marginBottom:"14px" };
+  function toggleTeam(team) {
+    const selected = profile.favoriteTeams || [];
+    if (selected.includes(team)) {
+      saveProfile({ ...profile, favoriteTeams: selected.filter(t => t !== team) });
+    } else if (selected.length < 2) {
+      saveProfile({ ...profile, favoriteTeams: [...selected, team] });
+    } else {
+      // FIFO: remove oldest, add new
+      saveProfile({ ...profile, favoriteTeams: [selected[1], team] });
+    }
+  }
+
+  function addCustomTeam() {
+    const t = customTeamInput.trim();
+    if (!t) return;
+    const selected = profile.favoriteTeams || [];
+    if (selected.includes(t)) return;
+    const updated = selected.length < 2 ? [...selected, t] : [selected[1], t];
+    saveProfile({ ...profile, favoriteTeams: updated });
+    setCustomTeamInput("");
+    setShowCustomTeamInput(false);
+  }
+
+  const allTeams = [...new Set([...TEAMS_LIST, ...(profile.favoriteTeams || []).filter(t => !TEAMS_LIST.includes(t))])];
+  const selectedTeams = profile.favoriteTeams || [];
+
+  const card = {
+    background: C.white,
+    border: `1px solid rgba(28,52,36,0.12)`,
+    borderRadius: "10px",
+    padding: "20px 24px",
+    marginBottom: "16px",
+  };
+  const labelStyle = { fontSize:"10px", letterSpacing:"0.12em", color:"rgba(28,52,36,0.5)", textTransform:"uppercase", ...mono, marginBottom:"12px" };
+  const inputStyle = {
+    flex: "1 1 160px",
+    background: C.white,
+    border: `1px solid rgba(196,146,42,0.35)`,
+    borderRadius: "6px",
+    padding: "9px 12px",
+    color: C.forest,
+    fontSize: "13px",
+    ...mono,
+  };
+  const saveBtn = {
+    background: C.gold,
+    color: C.forest,
+    border: "none",
+    borderRadius: "6px",
+    padding: "9px 18px",
+    fontSize: "12px",
+    fontWeight: 700,
+    cursor: "pointer",
+    letterSpacing: "0.04em",
+    whiteSpace: "nowrap",
+    ...mono,
+  };
+
+  const recentGames = Object.entries(dailyResults || {}).map(([type, r]) => ({ type, score: r.score, date: TODAY }));
 
   return (
-    <div className="ca" style={{ maxWidth:"560px", margin:"0 auto", paddingTop:"32px", paddingBottom:"56px" }}>
-      <button onClick={onBack} style={{ ...mono, fontSize:"11px", color:C.muted,
+    <div className="ca" style={{ maxWidth:"560px", margin:"0 auto", paddingTop:"32px", paddingBottom:"56px",
+      background: C.cream, color: C.forest }}>
+      <button type="button" onClick={onBack} style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.55)",
         background:"transparent", border:"none", cursor:"pointer", padding:0,
         marginBottom:"24px", display:"flex", alignItems:"center", gap:"6px" }}>
         ← Back
       </button>
-      <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
-        textTransform:"uppercase", color:C.muted, marginBottom:"6px" }}>
+      <div style={{ ...mono, fontSize:"10px", letterSpacing:"0.16em",
+        textTransform:"uppercase", color:"rgba(28,52,36,0.5)", marginBottom:"6px" }}>
         Account &amp; Settings
       </div>
-      <div style={{ ...sans, fontSize:"24px", fontWeight:600, color:C.text, marginBottom:"28px" }}>
-        {handle ? `@${handle}` : (email ? email.split("@")[0] : "Your Account")}
+      <div style={{ ...sans, fontSize:"24px", fontWeight:700, color:C.forest, marginBottom:"28px" }}>
+        {(profile.handle || handle) ? `@${profile.handle || handle}` : (email ? email.split("@")[0] : "Your Account")}
       </div>
 
-      {/* Handle */}
+      {/* Stats */}
       <div style={card}>
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:"12px" }}>Handle</div>
-        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-          <input
-            value={editHandle}
-            onChange={e => { setEditHandle(e.target.value.toLowerCase()); setHandleError(""); }}
-            placeholder="your_handle"
-            maxLength={20}
-            autoCapitalize="none" autoCorrect="off" spellCheck={false}
-            style={{ flex:"1 1 160px", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
-              borderRadius:"6px", padding:"8px 12px", color:C.text, fontSize:"12px", ...mono }}
-          />
-          <Btn onClick={saveHandle} small>
-            {handleSaved ? "Saved ✓" : "Save"}
-          </Btn>
-        </div>
-        {handleError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"6px" }}>{handleError}</div>}
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, marginTop:"6px" }}>
-          3–20 chars · letters, numbers, underscore · your leaderboard identity
-        </div>
-      </div>
-
-      {/* Streak summary */}
-      <div style={card}>
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:"12px" }}>Streak</div>
-        <div style={{ display:"flex", alignItems:"center", gap:"14px" }}>
-          <span style={{ ...sans, fontSize:"28px", fontWeight:700, color:C.gold }}>{streak}</span>
-          <span style={{ ...mono, fontSize:"11px", color:C.muted }}>day streak</span>
-        </div>
-        <div style={{ display:"flex", gap:"5px", marginTop:"12px" }}>
-          {[...Array(7)].map((_, i) => (
-            <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
-              background: i < Math.min(streak, 7) ? C.gold : C.dim }} />
-          ))}
-        </div>
-      </div>
-
-      {/* Subscription tier */}
-      <div style={card}>
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:"12px" }}>Subscription</div>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:"12px", flexWrap:"wrap" }}>
-          <span style={{ ...sans, fontSize:"15px", fontWeight:600, color:C.text }}>Signal</span>
-          <button onClick={onShowComingSoon} style={{ ...mono, fontSize:"11px", color:C.gold,
-            background:"rgba(196,146,42,0.08)", border:"1px solid rgba(196,146,42,0.3)",
-            borderRadius:"6px", padding:"6px 14px", cursor:"pointer" }}>
-            Upgrade →
-          </button>
-        </div>
-      </div>
-
-      {/* Game history */}
-      <div style={card}>
-        <div style={{ ...mono, fontSize:"11px", color:C.muted, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:"12px" }}>Recent Games</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
-          {MOCK_GAME_HISTORY.map((g, i) => (
-            <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-              padding:"8px 0", borderBottom: i < MOCK_GAME_HISTORY.length-1 ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ ...mono, fontSize:"12px", color:C.text }}>{g.type}</span>
-              <div style={{ display:"flex", gap:"16px", alignItems:"center" }}>
-                <span style={{ ...mono, fontSize:"11px", color:C.muted }}>{g.date}</span>
-                <span style={{ ...mono, fontSize:"12px", fontWeight:500, color:C.gold }}>{g.score} pts</span>
-              </div>
+        <div style={labelStyle}>Stats</div>
+        <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
+          {[
+            { label:"🔥 Day Streak", value: streak },
+            { label:"Today", value: `${todayScore} pts` },
+            { label:"Season", value: `${seasonScore} pts` },
+          ].map(s => (
+            <div key={s.label} style={{ flex:"1 1 100px", border:`1px solid rgba(196,146,42,0.4)`,
+              borderRadius:"8px", padding:"12px 14px", textAlign:"center" }}>
+              <div style={{ ...sans, fontSize:"20px", fontWeight:700, color:C.gold }}>{s.value}</div>
+              <div style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.55)", marginTop:"3px" }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Sign out */}
-      <div style={{ marginTop:"8px" }}>
-        <Btn onClick={onSignOut} variant="ghost">Sign out</Btn>
+      {/* Handle */}
+      <div style={card}>
+        <div style={labelStyle}>Handle</div>
+        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
+          <input
+            value={profile.handle}
+            onChange={e => setProfile(p => ({ ...p, handle: e.target.value.toLowerCase() }))}
+            placeholder="your_handle"
+            maxLength={20}
+            autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            style={inputStyle}
+          />
+          <button type="button" style={saveBtn}
+            onClick={() => saveField("handle", profile.handle, v => !/^[a-z0-9_]{3,20}$/i.test(v) ? "3–20 chars: letters, numbers, underscore" : "")}>
+            {savedField === "handle" ? "Saved ✓" : "Save"}
+          </button>
+        </div>
+        {handleError && <div style={{ ...mono, fontSize:"11px", color:C.red, marginTop:"6px" }}>{handleError}</div>}
+        <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"6px" }}>
+          3–20 chars · letters, numbers, underscore
+        </div>
       </div>
+
+      {/* Name */}
+      <div style={card}>
+        <div style={labelStyle}>Name</div>
+        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
+          <input
+            value={profile.name}
+            onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+            placeholder="Display name"
+            style={inputStyle}
+          />
+          <button type="button" style={saveBtn} onClick={() => saveField("name", profile.name)}>
+            {savedField === "name" ? "Saved ✓" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Email */}
+      <div style={card}>
+        <div style={labelStyle}>Email</div>
+        <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
+          <input
+            value={profile.email}
+            onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
+            placeholder="your@email.com"
+            type="email"
+            style={inputStyle}
+          />
+          <button type="button" style={saveBtn} onClick={() => saveField("email", profile.email)}>
+            {savedField === "email" ? "Saved ✓" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Favorite Teams */}
+      <div style={card}>
+        <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"12px" }}>
+          <div style={{ ...labelStyle, marginBottom:0 }}>Favorite Teams</div>
+          {selectedTeams.length > 0 && (
+            <span style={{ ...mono, fontSize:"10px", background: C.forest, color: C.cream,
+              borderRadius:"20px", padding:"2px 8px" }}>{selectedTeams.length} selected</span>
+          )}
+        </div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+          {allTeams.map(team => {
+            const isSel = selectedTeams.includes(team);
+            return (
+              <button type="button" key={team} onClick={() => toggleTeam(team)} style={{
+                border: isSel ? `1px solid ${C.forest}` : `1px solid rgba(28,52,36,0.2)`,
+                background: isSel ? C.forest : "transparent",
+                color: isSel ? C.cream : C.forest,
+                borderRadius: "20px",
+                padding: "5px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+                ...mono,
+                transition: "all 0.12s",
+              }}>{team}</button>
+            );
+          })}
+        </div>
+        {showCustomTeamInput ? (
+          <div style={{ display:"flex", gap:"8px", marginTop:"10px" }}>
+            <input
+              value={customTeamInput}
+              onChange={e => setCustomTeamInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addCustomTeam()}
+              placeholder="Team name"
+              style={{ ...inputStyle, flex: "1 1 140px" }}
+              autoFocus
+            />
+            <button type="button" style={saveBtn} onClick={addCustomTeam}>Add</button>
+            <button type="button" onClick={() => { setShowCustomTeamInput(false); setCustomTeamInput(""); }}
+              style={{ ...saveBtn, background: "transparent", border:`1px solid rgba(28,52,36,0.2)`, color: C.forest }}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setShowCustomTeamInput(true)}
+            style={{ ...mono, fontSize:"11px", color:C.forest, background:"transparent", border:"none",
+              cursor:"pointer", marginTop:"10px", textDecoration:"underline", padding:0 }}>
+            + Add custom team
+          </button>
+        )}
+        <div style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.45)", marginTop:"8px" }}>
+          Pick any 2 teams — click a third to swap out the first
+        </div>
+      </div>
+
+      {/* Recent Games */}
+      {recentGames.length > 0 && (
+        <div style={card}>
+          <div style={labelStyle}>Recent Games</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+            {recentGames.map((g, i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                padding:"8px 0", borderBottom: i < recentGames.length-1 ? `1px solid rgba(28,52,36,0.08)` : "none" }}>
+                <span style={{ ...mono, fontSize:"12px", color:C.forest }}>{g.type}</span>
+                <div style={{ display:"flex", gap:"16px", alignItems:"center" }}>
+                  <span style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.5)" }}>{g.date}</span>
+                  <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.gold }}>{g.score} pts</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sign out */}
+      {email && (
+        <div style={{ marginTop:"8px" }}>
+          <button type="button" onClick={onSignOut}
+            style={{ ...mono, fontSize:"12px", color:"rgba(28,52,36,0.55)", background:"transparent",
+              border:`1px solid rgba(28,52,36,0.2)`, borderRadius:"6px", padding:"9px 18px", cursor:"pointer" }}>
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1368,33 +1735,41 @@ const GAME_CONFIGS = [
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
-// the icon is desaturated/dimmed and a "Played" label replaces the format chip.
+// the tile turns forest green with a gold border and a "✓ Played" badge.
 function GameTile({ config, onPlay, played, priorScore }) {
   const glow = GAME_NEON[config.type]?.glow || "rgba(196,146,42,.3)";
   return (
-    <button onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
+    <button type="button" onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
       "--glow": glow,
-      background:C.white, border:`1px solid ${played ? C.gray : C.gray}`, borderRadius:"12px",
-      padding:"16px", cursor: played ? "default" : "pointer", textAlign:"left",
+      position: "relative",
+      background: played ? C.forest : C.white,
+      border: played ? `1px solid rgba(196,146,42,0.5)` : `1px solid ${C.gray}`,
+      borderRadius:"12px",
+      padding:"16px", cursor:"pointer", textAlign:"left",
       display:"flex", gap:"16px", alignItems:"center",
       transition:"transform .12s, border-color .12s",
-      opacity: played ? 0.55 : 1,
-      filter: played ? "grayscale(0.7)" : "none",
     }}>
+      {played && (
+        <span style={{
+          position:"absolute", top:"8px", right:"10px",
+          fontSize:"10px", letterSpacing:"0.08em", color:C.gold,
+          background:"rgba(196,146,42,0.15)", border:`1px solid rgba(196,146,42,0.4)`,
+          borderRadius:"20px", padding:"2px 8px", ...mono,
+        }}>✓ Played</span>
+      )}
       <GameIcon game={config.type} size={64} />
       <span style={{ minWidth:0, flex:1 }}>
-        <span style={{ display:"block", fontSize:"18px", fontWeight:600, color:C.black, ...serif }}>{config.type}</span>
-        <span style={{ display:"block", fontSize:"11.5px", color:"rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
+        <span style={{ display:"block", fontSize:"18px", fontWeight:600, color: played ? C.cream : C.black, ...serif }}>{config.type}</span>
+        <span style={{ display:"block", fontSize:"11.5px", color: played ? "rgba(238,230,218,0.7)" : "rgba(20,18,16,0.62)", marginTop:"3px", ...mono }}>{config.desc}</span>
         {played ? (
-          <span style={{ display:"inline-flex", alignItems:"center", gap:"6px", marginTop:"9px" }}>
-            <span style={{ fontSize:"11px", letterSpacing:"0.1em", color:C.sage, textTransform:"uppercase", border:`1px solid ${C.sage}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>Played</span>
-            {priorScore > 0 && <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{priorScore} pts</span>}
+          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"12px", fontWeight:600, color:C.gold, ...mono }}>
+            {priorScore} pts
           </span>
         ) : (
           <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
         )}
       </span>
-      <span style={{ fontSize:"11px", color:"rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
+      <span style={{ fontSize:"11px", color: played ? "rgba(238,230,218,0.5)" : "rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
     </button>
   );
 }
@@ -1553,6 +1928,28 @@ export default function DailyChallenge() {
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
+
+  // One-play-per-day local results: { [gameType]: { score, completedAt, puzzleSnapshot } }
+  const [dailyResults, setDailyResults] = useState(() => {
+    try {
+      const stored = localStorage.getItem(`faraday_daily_${TODAY}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+
+  function recordResult(gameType, score, puzzleSnapshot) {
+    setDailyResults(prev => {
+      if (prev[gameType]) return prev; // never overwrite an existing entry
+      const updated = { ...prev, [gameType]: { score, completedAt: Date.now(), puzzleSnapshot } };
+      try { localStorage.setItem(`faraday_daily_${TODAY}`, JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }
+
+  // todayScore derived reactively from dailyResults
+  const todayScore = Object.values(dailyResults).reduce((s, r) => s + (r.score || 0), 0);
+  // seasonScore — session local for now (matches todayScore until Supabase integration)
+  const seasonScore = todayScore;
   // Verified subscriber session (set by /auth after a magic link). When
   // present, streak/completions are hydrated from and persisted to
   // Supabase — the masthead chips and stat line show real results.
@@ -1734,7 +2131,7 @@ export default function DailyChallenge() {
     setHandle(null);
     setSessionToken(null);
     setStreak(0);
-    setMwBalance(0);
+    setDailyResults({});
     setOptedOut(false);
     setScreen("lobby");
   }
@@ -1750,9 +2147,11 @@ export default function DailyChallenge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function onGameComplete(score, result) {
+  function onGameComplete(score, puzzleSnapshot, result) {
     const playedGame = activeGame;
     setLastScore(score);
+    // Record locally for one-play enforcement + replay state
+    if (playedGame) recordResult(playedGame, score, puzzleSnapshot);
     // Soft opt-out: no streak accrual, no server persistence.
     if (optedOut) { setScreen("lobby"); return; }
     setGamesPlayed(g => g+1);
@@ -1782,7 +2181,7 @@ export default function DailyChallenge() {
           token: sessionToken,
           gameType: playedGame,
           score,
-          result: result || "win",
+          result: "win",
         }),
       })
         .then(r => r.json())
@@ -1834,7 +2233,7 @@ export default function DailyChallenge() {
   const displayHandle = handle || (email ? email.split("@")[0] : null);
 
   return (
-    <div style={{ minHeight:"100vh", background: screen === "lobby" ? C.cream : C.bg, color:C.black, ...sans }}>
+    <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       <GameIconDefs />
 
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
@@ -1846,57 +2245,16 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Chips — mono treatment */}
-          <div style={{ marginLeft:"auto", display:"flex", gap:"8px", alignItems:"center" }}>
-            <span className="fdc-chip" style={{ ...mono, color:C.cream, border:"1px solid rgba(248,245,240,.22)",
-              borderRadius:"5px", whiteSpace:"nowrap" }}>
-              🔥 <b style={{ color:C.goldLight, fontWeight:500 }}>{streak}</b>
-            </span>
-            <span className="fdc-chip" style={{ ...mono, fontSize:"10px", color:C.gold,
-              background:"rgba(196,146,42,0.12)", border:"1px solid rgba(196,146,42,0.4)",
-              borderRadius:"5px", whiteSpace:"nowrap" }}>
-              Score: <b style={{ fontWeight:600 }}>{lastDailyTotal}</b>
-            </span>
-            <a href="/leaderboard" className="fdc-chip"
-              style={{ ...mono, color:C.goldLight, background:"transparent",
-                border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
-                whiteSpace:"nowrap", textDecoration:"none", fontWeight:500 }}>
-              Leaderboard
-            </a>
-            <button onClick={openAccount} className="fdc-chip"
-              style={{ background:"rgba(196,146,42,0.12)", border:"1px solid rgba(196,146,42,0.4)",
-                color:C.gold, borderRadius:"4px", padding:"5px 12px", fontSize:"9px",
-                cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", ...mono,
-                opacity: screen === "account" ? 0.5 : 1,
-                pointerEvents: screen === "account" ? "none" : "auto" }}>
-              Account
-            </button>
-            {!email && screen === "lobby" && (
-              <button onClick={() => { setGateReason("default"); setScreen("gate"); }}
-                className="fdc-chip"
-                style={{ ...mono, color:C.goldLight, background:"transparent",
-                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
-                  whiteSpace:"nowrap", cursor:"pointer" }}>
+          {/* Nav pills — uniform NavPill component */}
+          <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
+            <NavPill style={{ pointerEvents:"none", cursor:"default" }}>🔥 {streak}</NavPill>
+            <NavPill style={{ pointerEvents:"none", cursor:"default" }}>Score: {todayScore}</NavPill>
+            <NavPill onClick={() => { window.location.href = "/leaderboard"; }}>Leaderboard</NavPill>
+            <NavPill onClick={openAccount} active={screen === "account"}>Account</NavPill>
+            {!email && (
+              <NavPill onClick={() => { setGateReason("default"); setScreen("gate"); }} active={false}>
                 Sign in →
-              </button>
-            )}
-            {email && displayHandle && (
-              <button onClick={openAccount} className="fdc-chip"
-                style={{ ...mono, color:C.goldLight, background:"transparent",
-                  border:"1px solid rgba(196,146,42,.5)", borderRadius:"5px",
-                  whiteSpace:"nowrap", cursor:"pointer",
-                  maxWidth:"150px", overflow:"hidden", textOverflow:"ellipsis" }}>
-                @{displayHandle}
-              </button>
-            )}
-            {screen === "game" && (
-              <button onClick={() => setScreen("lobby")}
-                className="fdc-chip"
-                style={{ ...mono, color:C.cream, background:"transparent",
-                  border:"1px solid rgba(248,245,240,.22)", borderRadius:"5px",
-                  whiteSpace:"nowrap", cursor:"pointer" }}>
-                ← Lobby
-              </button>
+              </NavPill>
             )}
           </div>
         </div>
@@ -1928,12 +2286,12 @@ export default function DailyChallenge() {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
               gap:"14px", padding:"28px 0 8px" }}>
               {GAME_CONFIGS.map(config => {
-                const attempt = todayCompletions[config.type];
+                const attempt = todayCompletions[config.type] || dailyResults[config.type];
                 return (
                   <GameTile key={config.type} config={config}
                     played={!!attempt}
                     priorScore={attempt?.score || 0}
-                    onPlay={() => attempt ? undefined : startGame(config.type)} />
+                    onPlay={() => startGame(config.type)} />
                 );
               })}
             </div>
@@ -1994,6 +2352,7 @@ export default function DailyChallenge() {
           const puzzle = livePuzzles[activeGame] || PUZZLE_DATA[activeGame];
           const config = GAME_CONFIGS.find(c=>c.type===activeGame);
           if (!GameComponent || !puzzle) return <div style={{ color:C.red }}>Puzzle not found</div>;
+          const priorResult = dailyResults[activeGame];
           return (
             <div className="ca" style={{ paddingTop:"28px" }}>
               {/* Game header */}
@@ -2018,23 +2377,18 @@ export default function DailyChallenge() {
                 </div>
                 <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
 
-                {/* Identity — the handle shows on every puzzle (default location),
-                    with a graceful fallback, next to the account/settings link. */}
+                {/* Identity */}
                 <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"10px", flexWrap:"wrap" }}>
                   <span style={{ fontSize:"11px", ...mono, color: displayHandle ? C.goldLight : C.muted }}>
                     {displayHandle ? `@${displayHandle}` : "Playing as guest"}
                   </span>
-                  {email && (
-                    <a href="/account" style={{ fontSize:"11px", ...mono, color:C.sage, textDecoration:"none",
-                      borderBottom:"1px solid rgba(140,166,138,0.4)" }}>Account &amp; settings ›</a>
-                  )}
                 </div>
 
-                {/* Game switcher — jump to any of the other six games */}
-                <GameSwitcher current={activeGame} onSwitch={requestSwitch} />
+                {/* Game switcher — only show in live game, not replay */}
+                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} />}
               </div>
 
-              {/* In-progress switch confirm — discards the current puzzle */}
+              {/* In-progress switch confirm */}
               {pendingSwitch && (
                 <div style={{ marginBottom:"16px", background:"rgba(245,158,11,0.08)",
                   border:"1px solid rgba(245,158,11,0.35)", borderRadius:"8px", padding:"12px 14px",
@@ -2048,7 +2402,18 @@ export default function DailyChallenge() {
                   </div>
                 </div>
               )}
-              <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+
+              {/* Replay or live game */}
+              {priorResult ? (
+                <GameReplay
+                  gameType={activeGame}
+                  snapshot={priorResult}
+                  puzzle={puzzle}
+                  onBack={() => setScreen("lobby")}
+                />
+              ) : (
+                <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+              )}
             </div>
           );
         })()}
@@ -2069,8 +2434,10 @@ export default function DailyChallenge() {
             email={email}
             handle={handle}
             streak={streak}
+            todayScore={todayScore}
+            seasonScore={seasonScore}
+            dailyResults={dailyResults}
             onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
-            onShowComingSoon={() => setShowComingSoon(true)}
             onSignOut={handleSignOut}
           />
         )}
