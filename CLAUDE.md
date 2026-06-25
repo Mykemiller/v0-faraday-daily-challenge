@@ -28,12 +28,11 @@ Invariants:
   domain). Do not build new surfaces there. This supersedes the earlier
   basePath+proxy arrangement (FAR-63) and reverses Decision Log D2.
 
-## Daily Todo Digest — faraday-todo-daily (AUTO-055, CC-13, added 2026-06-24)
+## Daily Todo Digest — faraday-todo-daily (AUTO-050, CC-13, added 2026-06-24)
 
-> **AUTO-ID reassigned 2026-06-24 (FAR-204, Myke-approved):** moved AUTO-050 → **AUTO-055**
-> to resolve the AUTO-050 collision with the *PUC & Utility Rate Case Monitor* (which keeps
-> AUTO-050). The displaced blank *Lexicon-Powered Puzzle Draft Agent* moved to AUTO-177.
-> Redeploy `faraday-todo-daily` to apply the new AUTO_ID label at runtime.
+> **AUTO-050 collision resolved 2026-06-25 (FAR-204, Myke-approved):** the Daily Faraday
+> Todo Digest **keeps AUTO-050**; the duplicate *PUC & Utility Rate Case Monitor* (Designed)
+> was moved off it to **AUTO-177**. No code/redeploy change to this function.
 
 Edge function `supabase/functions/faraday-todo-daily/index.ts` fires daily at **05:00 CT**
 (DST-safe: pg_cron fires at both 10:00 UTC and 11:00 UTC; function guards on
@@ -61,8 +60,8 @@ Failure sends a short "digest failed" notice and writes a health-log row — nev
 (`0 11 * * *`) — both active in `cron.job`. Migration:
 `supabase/migrations/20260624000001_register_daily_snapshot.sql`.
 
-**Airtable:** **AUTO-055** registered in Automation Registry (`appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg`,
-record `recvgnvCL3etK0Vs4`, Status=Active). Reassigned from AUTO-050 (FAR-204 collision fix).
+**Airtable:** **AUTO-050** registered in Automation Registry (`appxfti7VuoHYUeu6 / tbl1ef6FgxUc3Uevg`,
+record `recvgnvCL3etK0Vs4`, Status=Active).
 
 **Tests:** `supabase/functions/faraday-todo-daily/faraday-todo-daily.test.ts`
 
@@ -231,10 +230,10 @@ crawlers AUTO-070–119 are now Active** (FAR-202): query sets authored in
 **AUTO-ID range:** next free ID is **`AUTO-178`** (NOT AUTO-134 — 134/135/136 are
 Active engine fns). Block **`AUTO-137 → AUTO-175`** granted (2026-06-24) and
 registered Designed; **`AUTO-176`** = the reassigned *Community Opposition &
-Moratorium Tracker* (moved off the AUTO-049 collision); **`AUTO-177`** = the relocated
-*Lexicon-Powered Puzzle Draft Agent* (moved off the AUTO-055 collision so the Daily
-Faraday Todo Digest could take **AUTO-055**, FAR-204). AUTO-050 = PUC & Utility Rate
-Case Monitor (sole owner).
+Moratorium Tracker* (moved off the AUTO-049 collision); **`AUTO-177`** = the reassigned
+*PUC & Utility Rate Case Monitor* (Designed; moved off the AUTO-050 collision so the
+Daily Faraday Todo Digest keeps **AUTO-050**, FAR-204). AUTO-055 = Lexicon-Powered Puzzle
+Draft Agent (unchanged).
 
 **Data-integrity resolutions (2026-06-24, all applied):**
 - **AUTO-049 collision** — Designed *Community Opposition & Moratorium Tracker*

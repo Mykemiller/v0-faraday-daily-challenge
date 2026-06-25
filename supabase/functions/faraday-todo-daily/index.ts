@@ -1,5 +1,4 @@
-// Faraday — Daily Todo Digest (AUTO-055; reassigned from AUTO-050 per FAR-204 to
-// resolve the AUTO-050 collision with the PUC & Utility Rate Case Monitor)
+// Faraday — Daily Todo Digest (AUTO-050)
 // Supabase Edge Function — POST /functions/v1/faraday-todo-daily
 //
 // Pulls Jira + GitHub state, snapshots to register_daily_snapshot, diffs vs
@@ -18,7 +17,7 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // ─── Config ───────────────────────────────────────────────────────────────────
 // CRON_SECRET env var holds the same shared token used by all pg_cron jobs
 // (set as a Supabase secret; never committed). Falls back to rejecting if unset.
-const AUTO_ID = "AUTO-055";
+const AUTO_ID = "AUTO-050";
 const CRAWLER_ID = "faraday-todo-daily_v1.0";
 const TO_EMAIL = "mykemiller@gmail.com";
 const FROM_EMAIL = "challenge@faraday-intelligence.ai";
@@ -560,7 +559,7 @@ export function buildFailureEmailHtml(error: string, date: string): string {
   <h1 style="font-size:20px;color:#F8F5F0;margin:0 0 12px;">⚠ Daily Digest Failed — ${esc(date)}</h1>
   <p style="color:#9A938C;margin:0 0 16px;">faraday-todo-daily encountered an error and could not produce the full digest.</p>
   <pre style="background:#141210;padding:16px;border-radius:6px;color:#C4922A;font-size:12px;overflow:auto;white-space:pre-wrap;">${esc(error.slice(0, 1200))}</pre>
-  <p style="font-size:11px;color:#6B6560;margin-top:32px;">AUTO-055 · faraday-todo-daily_v1.0</p>
+  <p style="font-size:11px;color:#6B6560;margin-top:32px;">AUTO-050 · faraday-todo-daily_v1.0</p>
 </body></html>`;
 }
 

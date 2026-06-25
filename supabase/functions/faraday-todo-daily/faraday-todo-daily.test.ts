@@ -1,4 +1,4 @@
-// Unit tests for faraday-todo-daily (AUTO-055; reassigned from AUTO-050, FAR-204).
+// Unit tests for faraday-todo-daily (AUTO-050).
 // Run with: deno test supabase/functions/faraday-todo-daily/faraday-todo-daily.test.ts
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.168.0/testing/asserts.ts";
 import {

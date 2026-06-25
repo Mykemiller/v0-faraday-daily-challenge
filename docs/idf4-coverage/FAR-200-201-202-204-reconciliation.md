@@ -183,12 +183,11 @@ Myke's directives (2026-06-25) executed:
   Registry rows Designed→Active. (Open-action **C: Fix, do NOT retire** — none retired.)
   Runtime "87" confirmation deferred to the next `pg_cron` run → `automation_health_log`
   (a direct invoke is blocked by session egress policy; not routed around).
-- **FAR-204 — AUTO-050 collision: RESOLVED.** Per Myke: Daily Faraday Todo Digest moved
-  **AUTO-050 → AUTO-055** (`recvgnvCL3etK0Vs4`); the blank *Lexicon-Powered Puzzle Draft
-  Agent* relocated **AUTO-055 → AUTO-177** (`recSGrsQQvtaOaDqk`, preserved). **AUTO-050**
-  now sole-owned by the *PUC & Utility Rate Case Monitor*. Code/docs updated
-  (`faraday-todo-daily` `AUTO_ID`, footers, CLAUDE.md, test). **Follow-up:** redeploy
-  `faraday-todo-daily` to apply the AUTO-055 label at runtime.
+- **FAR-204 — AUTO-050 collision: RESOLVED.** Per Myke (final decision): the Daily Faraday
+  Todo Digest **keeps AUTO-050**; the duplicate *PUC & Utility Rate Case Monitor* (Designed)
+  moved **AUTO-050 → AUTO-177** (`recEgsBjnuSiGVzmT`). The *Lexicon-Powered Puzzle Draft
+  Agent* stays at **AUTO-055** (unchanged). No `faraday-todo-daily` code or redeploy change
+  needed (it was always AUTO-050).
 - **FAR-201 — AUTO-137→175 block: APPROVED by Myke** (action A). 39 scaffolds stay
   registered Designed; per-routine build is follow-on. Next free ID now **AUTO-178**.
 - **Taxonomy (action D):** repo is correct (hot threads D4.6/D4.5/D6.3); the prompt's
