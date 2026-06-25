@@ -228,7 +228,7 @@ function ProgressBar({ value, max, color }) {
 // Uniform nav pill used in the header for all four nav items + sign-in button.
 function NavPill({ children, onClick, active, style: extraStyle }) {
   return (
-    <button type="button" onClick={onClick} style={{
+    <button type="button" onClick={onClick} className="nav-pill" style={{
       background: active ? `rgba(196,146,42,0.15)` : `rgba(255,255,255,0.04)`,
       border: `1px solid ${active ? C.gold : "rgba(196,146,42,0.35)"}`,
       color: active ? C.gold : C.cream,
@@ -1267,13 +1267,13 @@ function GameReplay({ gameType, snapshot, puzzle, onBack }) {
 // COMING SOON MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 const COMING_SOON_PRODUCTS = [
-  { name:"Live Agent",         desc:"Your always-on AI analyst — ask anything about the data center economy in real time." },
   { name:"Intelligent Alert",  desc:"Signal-to-noise filtered alerts on the deals, regulations, and moves that matter to you." },
   { name:"Briefing Library",   desc:"A curated archive of deep-dive intelligence briefs across all 23 IDF domains." },
   { name:"Jurisdiction Watch", desc:"Real-time regulatory posture tracking across every data center jurisdiction in the US." },
   { name:"Faraday Academy",    desc:"Structured learning paths for professionals building fluency in the AI infrastructure economy." },
   { name:"Signal Room",        desc:"A collaborative workspace for teams to annotate, debate, and act on Faraday intelligence." },
   { name:"Thought Forge",      desc:"An AI-assisted environment for developing original theses about where the buildout is heading." },
+  { name:"Live Agent",         desc:"Your always-on AI analyst — ask anything about the data center economy in real time." },
 ];
 
 function ComingSoonModal({ onClose }) {
@@ -2086,6 +2086,13 @@ export default function DailyChallenge() {
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
       /* Narrow masthead — drop secondary chips so Sign in stays legible (ref Ch.09b) */
       @media (max-width:560px){ .fdc-mw, .fdc-live { display:none !important; } }
+      /* ── Mobile nav collapse ── */
+      .nav-lbl { display:inline; }
+      .nav-pill { padding:4px 8px; }
+      @media (max-width:480px) {
+        .nav-lbl  { display:none; }
+        .nav-pill { padding:4px 7px !important; gap:0 !important; }
+      }
     `;
     document.head.appendChild(style);
   }, []);
@@ -2247,10 +2254,10 @@ export default function DailyChallenge() {
           </div>
           {/* Nav pills — uniform NavPill component */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
-            <NavPill style={{ pointerEvents:"none", cursor:"default" }}>🔥 {streak}</NavPill>
-            <NavPill style={{ pointerEvents:"none", cursor:"default" }}>Score: {todayScore}</NavPill>
-            <NavPill onClick={() => { window.location.href = "/leaderboard"; }}>Leaderboard</NavPill>
-            <NavPill onClick={openAccount} active={screen === "account"}>Account</NavPill>
+            <NavPill style={{ pointerEvents:"none", cursor:"default" }}><span>🔥</span><span className="nav-lbl"> {streak}</span></NavPill>
+            <NavPill style={{ pointerEvents:"none", cursor:"default" }}><span>◈</span><span className="nav-lbl"> {todayScore}</span></NavPill>
+            <NavPill onClick={() => { window.location.href = "/leaderboard"; }}><span>⬡</span><span className="nav-lbl"> Leaderboard</span></NavPill>
+            <NavPill onClick={openAccount} active={screen === "account"}><span>◎</span><span className="nav-lbl"> Account</span></NavPill>
             {!email && (
               <NavPill onClick={() => { setGateReason("default"); setScreen("gate"); }} active={false}>
                 Sign in →
