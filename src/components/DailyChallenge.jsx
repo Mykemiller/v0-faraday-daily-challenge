@@ -264,9 +264,10 @@ function useWindowWidth() {
 // label that hides on mobile. Three visual states: default (transparent border,
 // muted label) · hover (lighter forest tint + gold border, label→gold) · active
 // (forest-green tint bg + gold border + 2px gold underline tab).
-function NavPill({ icon, label, onClick, active, hideLabel, size = 40, style: extraStyle }) {
+function NavPill({ icon, label, onClick, active, hideLabel, size = 40, badge, style: extraStyle }) {
   const [hover, setHover] = useState(false);
-  const lit = active || hover;
+  const interactive = typeof onClick === "function";
+  const lit = active || (hover && interactive);
   return (
     <button
       type="button"
@@ -275,7 +276,7 @@ function NavPill({ icon, label, onClick, active, hideLabel, size = 40, style: ex
       onMouseLeave={() => setHover(false)}
       className="nav-pill"
       title={label}
-      aria-label={label}
+      aria-label={badge != null ? `${label}: ${badge}` : label}
       style={{
         position: "relative",
         minWidth: "52px",
@@ -285,20 +286,44 @@ function NavPill({ icon, label, onClick, active, hideLabel, size = 40, style: ex
         gap: "3px",
         background: active
           ? "rgba(28,52,36,0.55)"          // forest-green tint
-          : hover
+          : (hover && interactive)
           ? "rgba(28,52,36,0.30)"          // lighter forest tint
           : "transparent",
         border: "1px solid transparent",   // no gold box — active is marked by the underline tab
         WebkitTapHighlightColor: "transparent",
         borderRadius: "8px",
         padding: "5px 6px 6px",
-        cursor: "pointer",
+        cursor: interactive ? "pointer" : "default",
         lineHeight: 1,
-        overflow: "hidden",                // keep the underline tab inside the radius
+        overflow: "visible",               // allow the count badge to sit outside the icon
         transition: "all 0.15s",
         ...extraStyle,
       }}
     >
+      {badge != null && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: "1px",
+            right: "6px",
+            minWidth: "16px",
+            height: "16px",
+            padding: "0 4px",
+            borderRadius: "8px",
+            background: C.gold,
+            color: C.forest,
+            fontSize: "10px",
+            fontWeight: 700,
+            lineHeight: "16px",
+            textAlign: "center",
+            ...mono,
+            boxShadow: "0 0 0 1.5px rgba(28,52,36,0.9)",
+          }}
+        >
+          {badge}
+        </span>
+      )}
       <img
         src={icon}
         alt=""
@@ -707,17 +732,43 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
   const [scoreVal, setScoreVal] = useState(null);
   const startTime = useRef(Date.now());
 
-  function dragStart(idx) { setDragging(idx); }
-  function dragOver(e, idx) {
-    e.preventDefault();
-    if (dragging === null || dragging === idx) return;
-    const newOrder = [...order];
-    const item = newOrder.splice(dragging, 1)[0];
-    newOrder.splice(idx, 0, item);
-    setOrder(newOrder);
+  // Reorder runs through a ref so rapid touchmove events never read a stale
+  // `dragging` between renders. HTML5 draggable/onDragStart does NOT fire on
+  // iOS Safari, so on iPhone/iPad the reorder runs entirely through the touch
+  // handlers below; desktop keeps the native drag path.
+  const dragRef = useRef(null);
+
+  function beginDrag(idx) { dragRef.current = idx; setDragging(idx); }
+  function moveTo(idx) {
+    const from = dragRef.current;
+    if (from === null || from === idx) return;
+    setOrder(prev => {
+      const next = [...prev];
+      const item = next.splice(from, 1)[0];
+      next.splice(idx, 0, item);
+      return next;
+    });
+    dragRef.current = idx;
     setDragging(idx);
   }
-  function dragEnd() { setDragging(null); }
+  function endDrag() { dragRef.current = null; setDragging(null); }
+
+  // Desktop HTML5 drag.
+  function dragOver(e, idx) { e.preventDefault(); moveTo(idx); }
+
+  // Touch drag (mobile/tablet): locate the row under the finger via
+  // elementFromPoint and reorder to it. `touch-action: none` on each row stops
+  // the page from scrolling while a tile is being dragged.
+  function touchMove(e) {
+    if (dragRef.current === null) return;
+    const t = e.touches && e.touches[0];
+    if (!t || typeof document === "undefined") return;
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const row = el && el.closest ? el.closest("[data-stack-rank]") : null;
+    if (!row) return;
+    const idx = Number(row.getAttribute("data-stack-rank"));
+    if (!Number.isNaN(idx)) moveTo(idx);
+  }
 
   function submit() {
     // Score: count how many are in correct relative position
@@ -766,16 +817,24 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
         {puzzle.metric} — drag to reorder
       </div>
       {order.map((itemIdx, rankIdx) => (
-        <div key={itemIdx} draggable
-          onDragStart={() => dragStart(rankIdx)}
+        <div key={itemIdx}
+          data-stack-rank={rankIdx}
+          draggable
+          onDragStart={() => beginDrag(rankIdx)}
           onDragOver={(e) => dragOver(e, rankIdx)}
-          onDragEnd={dragEnd}
+          onDragEnd={endDrag}
+          onTouchStart={() => beginDrag(rankIdx)}
+          onTouchMove={touchMove}
+          onTouchEnd={endDrag}
+          onTouchCancel={endDrag}
           style={{
             background: dragging === rankIdx ? "rgba(196,146,42,0.1)" : C.surface,
             border:`1px solid ${dragging === rankIdx ? C.gold : C.border}`,
             borderRadius:"8px", padding:"14px 16px",
             display:"flex", alignItems:"center", gap:"14px",
             cursor:"grab", transition:"all 0.1s",
+            touchAction:"none", userSelect:"none", WebkitUserSelect:"none",
+            WebkitTouchCallout:"none",
             transform: dragging === rankIdx ? "scale(1.02)" : "none",
           }}>
           <span style={{ fontSize:"16px", color:C.dim, userSelect:"none" }}>⠿</span>
@@ -2528,15 +2587,37 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
+          {/* Signed-in handle — shown in the banner in gold. Tapping it opens the
+              Account screen. Hidden on the narrowest phones (≤430px) where the
+              icon-only nav already fills the strip; the handle still shows on the
+              lobby stat line and Account there. */}
+          {displayHandle && !navIconsLabelHidden && (
+            <button
+              type="button"
+              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+              title="Account"
+              style={{
+                ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
+                color:C.gold, letterSpacing:"0.04em",
+                background:"transparent", border:"none", cursor:"pointer",
+                padding:"4px 6px", whiteSpace:"nowrap",
+                WebkitTapHighlightColor:"transparent",
+              }}
+            >
+              @{displayHandle}
+            </button>
+          )}
           {/* Nav icons (FAR-207) — S · D · L · A, left-to-right. Icon + chrome
               label on desktop; icon only on mobile (≤430px). */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
+            {/* Streak — read-only stat pulled from the subscriber's stats (same
+                value as the Account "Day Streak"). No pop-up; the count rides
+                next to the S icon as a gold badge. */}
             <NavPill
               icon={NAV_ICONS.streak}
               label="Streak"
               hideLabel={navIconsLabelHidden}
-              onClick={() => alert("Coming soon")}
-              active={screen === "streak"}
+              badge={streak > 0 ? streak : undefined}
             />
             <NavPill
               icon={NAV_ICONS.daily}

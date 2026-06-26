@@ -10,6 +10,38 @@ const SUPABASE_URL =
 
 export const dynamic = 'force-dynamic';
 
+// CT calendar date — matches the play_date written by /api/score and the
+// AUTO-128 rotation boundary, so "today" lines up with the daily puzzle reset.
+const DC_TZ = 'America/Chicago';
+function centralDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: DC_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+// subscriber_id → today's running daily score (from leaderboard_daily, CT date).
+async function fetchTodayPoints(
+  headers: Record<string, string>
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const playDate = centralDate(new Date());
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/leaderboard_daily?play_date=eq.${playDate}&select=subscriber_id,score`,
+    { headers, cache: 'no-store' }
+  );
+  if (!r.ok) return map;
+  const rows = await r.json().catch(() => null);
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row && row.subscriber_id != null) {
+      map.set(row.subscriber_id as string, Number(row.score) || 0);
+    }
+  }
+  return map;
+}
+
 function svcHeaders() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) return null;
@@ -65,6 +97,10 @@ export async function GET(request: Request) {
   let sub: { id: string; handle: string | null } | null = null;
   if (token) sub = await resolveSubscriber(token);
 
+  // Today's per-subscriber points (CT date) — annotates every row so the board
+  // can show "Today" alongside the season total.
+  const todayMap = await fetchTodayPoints(h);
+
   if (teamId) {
     // Team leaderboard
     const rpcR = await fetch(
@@ -88,17 +124,26 @@ export async function GET(request: Request) {
     );
     const teamTotal = totR.ok ? ((await totR.json().catch(() => 0)) as number) : 0;
 
+    const teamRows = (Array.isArray(rows) ? rows : []).map((r: Record<string, unknown>) => ({
+      rank: r.rank,
+      subscriber_id: r.subscriber_id,
+      handle: r.handle,
+      total_points: r.total_points,
+      today_points: todayMap.get(r.subscriber_id as string) ?? 0,
+      is_you: sub ? r.subscriber_id === sub.id : false,
+    }));
+    // Team's combined points earned today.
+    const teamTodayTotal = teamRows.reduce(
+      (sum: number, r: { today_points: number }) => sum + (r.today_points || 0),
+      0
+    );
+
     return Response.json({
       season,
       team_id: teamId,
       team_total: teamTotal,
-      leaderboard: (Array.isArray(rows) ? rows : []).map((r: Record<string, unknown>) => ({
-        rank: r.rank,
-        subscriber_id: r.subscriber_id,
-        handle: r.handle,
-        total_points: r.total_points,
-        is_you: sub ? r.subscriber_id === sub.id : false,
-      })),
+      team_today_total: teamTodayTotal,
+      leaderboard: teamRows,
     });
   }
 
@@ -136,6 +181,7 @@ export async function GET(request: Request) {
     subscriber_id: r.subscriber_id,
     handle: r.handle,
     total_points: r.total_points,
+    today_points: todayMap.get(r.subscriber_id as string) ?? 0,
     is_you: sub ? r.subscriber_id === sub.id : false,
     teams: subTeamsMap.get(r.subscriber_id as string) ?? [],
   }));
