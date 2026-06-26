@@ -1432,6 +1432,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [handleError, setHandleError] = useState("");
 
   const [myTeams, setMyTeams] = useState([]); // { team_id, team_name, pending }
+  const [myTeamsLoaded, setMyTeamsLoaded] = useState(false);
   const [availableTeams, setAvailableTeams] = useState([]);
   const [teamSearch, setTeamSearch] = useState("");
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -1474,6 +1475,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         setMyTeams(Array.isArray(d.teams) ? d.teams : []);
       } catch {} finally {
         setTeamsLoading(false);
+        setMyTeamsLoaded(true);
       }
     })();
   }, [sessionToken]);
@@ -1740,8 +1742,8 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           </div>
         )}
 
-        {/* ── Browse & join — only when editable ── */}
-        {canEditTeams && (
+        {/* ── Browse & join — only when editable and myTeams has loaded ── */}
+        {canEditTeams && myTeamsLoaded && (
           <>
             {myTeams.length > 0 && (
               <div style={{ borderTop:"1px solid rgba(28,52,36,0.08)", marginBottom:"14px" }} />

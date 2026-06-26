@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 
   // Fetch season details (needed for both actions)
   const seasonR = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?id=eq.${seasonId}&select=id,ends_on,free_agency_start,locked_at&limit=1`,
+    `${SUPABASE_URL}/rest/v1/seasons?id=eq.${seasonId}&select=id,name,ends_on,free_agency_start,locked_at&limit=1`,
     { headers: h, cache: 'no-store' }
   );
   const seasonRows = await seasonR.json().catch(() => null);
@@ -133,19 +133,52 @@ export async function POST(request: Request) {
     const myMem: { team_id: string }[] = myMemR.ok ? await myMemR.json().catch(() => []) : [];
     if (myMem.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
 
-    // Insert team record
-    const createR = await fetch(`${SUPABASE_URL}/rest/v1/teams`, {
+    // Fetch subscriber email for created_by_email (required field on teams table)
+    const subEmailR = await fetch(
+      `${SUPABASE_URL}/rest/v1/dc_subscribers?id=eq.${subscriberId}&select=email`,
+      { headers: h, cache: 'no-store' }
+    );
+    const subEmailRows = subEmailR.ok ? await subEmailR.json().catch(() => null) : null;
+    const createdByEmail: string = (Array.isArray(subEmailRows) ? subEmailRows[0]?.email : null) ?? '';
+    if (!createdByEmail) return Response.json({ error: 'subscriber_not_found' }, { status: 400 });
+
+    // Generate a unique code slug from the team name
+    const toCode = (name: string, suffix?: string) => {
+      const base = name.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20);
+      return suffix ? `${base}-${suffix}` : base;
+    };
+
+    const teamPayload = (code: string) => ({
+      name: teamName,
+      code,
+      season: (season as Record<string, unknown>).name ?? '',
+      created_by_email: createdByEmail,
+      group_type: 'team',
+    });
+
+    // Try insert; retry once with a suffix if the code slug collides
+    let code = toCode(teamName);
+    let createR = await fetch(`${SUPABASE_URL}/rest/v1/teams`, {
       method: 'POST',
       headers: { ...h, Prefer: 'return=representation' },
-      body: JSON.stringify({ name: teamName }),
+      body: JSON.stringify(teamPayload(code)),
     });
     if (!createR.ok) {
-      const err = await createR.text();
-      if (err.includes('23505') || err.includes('unique')) {
-        return Response.json({ error: 'team_name_taken' }, { status: 409 });
+      const errText = await createR.text();
+      if (errText.includes('23505') || errText.includes('unique')) {
+        // Code collision — retry with a 4-digit suffix
+        code = toCode(teamName, String(Date.now()).slice(-4));
+        createR = await fetch(`${SUPABASE_URL}/rest/v1/teams`, {
+          method: 'POST',
+          headers: { ...h, Prefer: 'return=representation' },
+          body: JSON.stringify(teamPayload(code)),
+        });
       }
-      console.error('team create failed', err);
-      return Response.json({ error: 'create_failed' }, { status: 500 });
+      if (!createR.ok) {
+        const err = await createR.text();
+        console.error('team create failed', err);
+        return Response.json({ error: 'create_failed' }, { status: 500 });
+      }
     }
     const created = await createR.json().catch(() => null);
     const newTeamId: string | null =
