@@ -123,6 +123,25 @@ Root cause of 2026-06-23 crash: single Anthropic call for all automations hit
 
 `extractAndParse` is exported for unit tests. Tests: `faraday-crawl.test.ts`.
 
+### Crawl health-check alert — `faraday-crawl-healthcheck` (AUTO-178, FAR-253 / Stream A, 2026-06-26)
+Post-crawl zero-artifact monitor. pg_cron `faraday-crawl-healthcheck-0800utc`
+(`0 8 * * *`) fires 1h after the 07:00 `faraday-crawl-daily` run. If the
+`artifacts` table got **0 new rows in the trailing 2h** (`CRAWL_HEALTHCHECK_WINDOW_HOURS`,
+default 2), it emails Myke via Resend (`ops@faraday-intelligence.ai`); otherwise a
+silent no-op. The alert body lists the most recent `automation_health_log` failure
+reasons so the cause is visible without log-diving. Auth: `verify_jwt=false` +
+`fcron_…` CRON_TOKEN (a JWT would 401 the cron — the faraday-crawl v2 trap).
+Counts on `artifact_id` (the artifacts PK is `artifact_id`, not `id`).
+Tests: `faraday-crawl-healthcheck.test.ts`. Distinct from `faraday-daily-ops`
+(13:00, 36h digest) and `faraday-watchdog` (6h, 36h auto-recovery actuator).
+
+> **2026-06-26 incident note:** the 06-23 JSON-truncation bug was already fixed
+> (FAR-188) and healthy through 06-24 (296 new artifacts). The stall since 06-25
+> is a **depleted `ANTHROPIC_API_KEY` credit balance** (Anthropic 400 across
+> faraday-crawl + scorer/idf-entities/two-analyst) — a billing issue, not code.
+> Top up credits to restore artifact flow; this health-check would have paged on
+> the morning of 06-25.
+
 ### Email ingestion — `ingest-email` edge function
 Payload contract (POST body):
 ```
