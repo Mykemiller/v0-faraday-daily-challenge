@@ -14,6 +14,7 @@ interface LeaderboardRow {
   subscriber_id: string;
   handle: string | null;
   total_points: number;
+  today_points: number;
   is_you: boolean;
   teams?: Array<{ team_id: string; team_name: string }>;
 }
@@ -22,6 +23,7 @@ interface TeamTotal {
   team_id: string;
   team_name: string;
   total: number;
+  today: number;
 }
 
 interface Season {
@@ -50,6 +52,7 @@ interface TeamData {
   season: Season;
   team_id: string;
   team_total: number;
+  team_today_total: number;
   leaderboard: LeaderboardRow[];
 }
 
@@ -67,7 +70,7 @@ function StandingsRow({ row }: { row: LeaderboardRow }) {
   const teamNames = (row.teams ?? []).map(t => t.team_name);
   return (
     <div
-      className={`grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-2.5 rounded ${
+      className={`grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 py-2.5 rounded ${
         row.is_you ? "bg-gold/15 ring-1 ring-gold" : "odd:bg-warm-cream/50"
       }`}
     >
@@ -88,6 +91,9 @@ function StandingsRow({ row }: { row: LeaderboardRow }) {
           </span>
         )}
       </span>
+      <span className="text-right text-sm text-near-black/70 self-start pt-0.5" style={NUM}>
+        {row.today_points.toLocaleString()}
+      </span>
       <span className="text-right text-sm font-semibold text-near-black self-start pt-0.5" style={NUM}>
         {row.total_points.toLocaleString()}
       </span>
@@ -97,12 +103,15 @@ function StandingsRow({ row }: { row: LeaderboardRow }) {
 
 function TeamTotalRow({ team, rank }: { team: TeamTotal; rank: number }) {
   return (
-    <div className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-3 rounded odd:bg-warm-cream/50">
+    <div className="grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 py-3 rounded odd:bg-warm-cream/50">
       <span className="text-sm font-semibold text-forest" style={NUM}>
         #{rank}
       </span>
       <span className="truncate text-sm font-semibold text-near-black">
         {team.team_name}
+      </span>
+      <span className="text-right text-sm text-near-black/70" style={NUM}>
+        {team.today.toLocaleString()}
       </span>
       <span className="text-right text-sm font-semibold text-near-black" style={NUM}>
         {team.total.toLocaleString()}
@@ -115,9 +124,10 @@ function SkeletonRows() {
   return (
     <div aria-hidden className="animate-pulse space-y-0.5">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-2.5">
+        <div key={i} className="grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 py-2.5">
           <span className="h-4 w-6 rounded bg-warm-gray/50" />
           <span className="h-4 w-32 rounded bg-warm-gray/50" />
+          <span className="h-4 w-8 justify-self-end rounded bg-warm-gray/50" />
           <span className="h-4 w-10 justify-self-end rounded bg-warm-gray/50" />
         </div>
       ))}
@@ -197,8 +207,17 @@ export default function LeaderboardPage() {
     for (const row of globalData.leaderboard) {
       for (const t of row.teams ?? []) {
         const e = map.get(t.team_id);
-        if (e) e.total += row.total_points;
-        else map.set(t.team_id, { team_id: t.team_id, team_name: t.team_name, total: row.total_points });
+        if (e) {
+          e.total += row.total_points;
+          e.today += row.today_points;
+        } else {
+          map.set(t.team_id, {
+            team_id: t.team_id,
+            team_name: t.team_name,
+            total: row.total_points,
+            today: row.today_points,
+          });
+        }
       }
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
@@ -269,11 +288,19 @@ export default function LeaderboardPage() {
               <span className="font-serif text-lg font-bold text-forest">
                 {myTeams.find(t => t.team_id === activeTab)?.team_name ?? "Team"}
               </span>
-              <div className="text-right">
-                <div className="text-xl font-bold text-forest" style={NUM}>
-                  {teamData.team_total.toLocaleString()}
+              <div className="flex items-start gap-5">
+                <div className="text-right">
+                  <div className="text-xl font-bold text-forest" style={NUM}>
+                    {(teamData.team_today_total ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-near-black/40">Today</div>
                 </div>
-                <div className="text-[10px] uppercase tracking-wide text-near-black/40">Team score</div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-forest" style={NUM}>
+                    {teamData.team_total.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-near-black/40">Season</div>
+                </div>
               </div>
             </div>
           </div>
@@ -307,10 +334,16 @@ export default function LeaderboardPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <div className="text-right">
+                    <div className="text-xl font-bold text-forest" style={NUM}>
+                      {you.today_points.toLocaleString()}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">today</div>
+                  </div>
+                  <div className="text-right">
                     <div className="text-xl font-bold text-near-black" style={NUM}>
                       {you.total_points.toLocaleString()}
                     </div>
-                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">pts</div>
+                    <div className="text-[11px] uppercase tracking-wide text-near-black/50">season</div>
                   </div>
                   <button
                     onClick={share}
@@ -331,10 +364,11 @@ export default function LeaderboardPage() {
 
         {/* Standings */}
         <section>
-          <div className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40">
+          <div className="grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40">
             <span>Rank</span>
             <span>{teamsView ? "Team" : "Player"}</span>
-            <span className="text-right">Pts</span>
+            <span className="text-right">Today</span>
+            <span className="text-right">Season</span>
           </div>
 
           {status === "loading" && <SkeletonRows />}
