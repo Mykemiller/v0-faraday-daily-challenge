@@ -113,12 +113,31 @@ export async function GET(request: Request) {
   );
   const rows = rpcR.ok ? await rpcR.json().catch(() => []) : [];
 
+  // Fetch all team memberships for this season to annotate each player row
+  const allMemR = await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?season_id=eq.${season.id}&pending=eq.false&select=subscriber_id,team_id,teams(id,name)`,
+    { headers: h, cache: 'no-store' }
+  );
+  const allMems = allMemR.ok ? await allMemR.json().catch(() => []) : [];
+
+  // Build subscriber_id → teams map
+  const subTeamsMap = new Map<string, Array<{ team_id: string; team_name: string }>>();
+  for (const m of (Array.isArray(allMems) ? allMems : [])) {
+    const team = m.teams as Record<string, unknown> | null;
+    if (!subTeamsMap.has(m.subscriber_id as string)) subTeamsMap.set(m.subscriber_id as string, []);
+    subTeamsMap.get(m.subscriber_id as string)!.push({
+      team_id: m.team_id as string,
+      team_name: (team?.name as string) ?? '',
+    });
+  }
+
   const leaderboard = (Array.isArray(rows) ? rows : []).map((r: Record<string, unknown>) => ({
     rank: r.rank,
     subscriber_id: r.subscriber_id,
     handle: r.handle,
     total_points: r.total_points,
     is_you: sub ? r.subscriber_id === sub.id : false,
+    teams: subTeamsMap.get(r.subscriber_id as string) ?? [],
   }));
 
   const youRow = leaderboard.find((r: { is_you: boolean }) => r.is_you) ?? null;

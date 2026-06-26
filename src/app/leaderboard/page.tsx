@@ -15,6 +15,13 @@ interface LeaderboardRow {
   handle: string | null;
   total_points: number;
   is_you: boolean;
+  teams?: Array<{ team_id: string; team_name: string }>;
+}
+
+interface TeamTotal {
+  team_id: string;
+  team_name: string;
+  total: number;
 }
 
 interface Season {
@@ -57,23 +64,48 @@ function medal(rank: number | null): string {
 
 function StandingsRow({ row }: { row: LeaderboardRow }) {
   const display = row.handle || "anonymous";
+  const teamNames = (row.teams ?? []).map(t => t.team_name);
   return (
     <div
       className={`grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-2.5 rounded ${
         row.is_you ? "bg-gold/15 ring-1 ring-gold" : "odd:bg-warm-cream/50"
       }`}
     >
-      <span className="text-sm font-semibold text-forest" style={NUM}>
+      <span className="text-sm font-semibold text-forest self-start pt-0.5" style={NUM}>
         {medal(row.rank)}
       </span>
-      <span className="min-w-0 flex items-center gap-1.5">
-        <span className="truncate text-sm text-near-black">{display}</span>
-        {row.is_you && (
-          <span className="text-[10px] uppercase tracking-wide text-amber-600">you</span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-sm text-near-black">{display}</span>
+          {row.is_you && (
+            <span className="text-[10px] uppercase tracking-wide text-amber-600">you</span>
+          )}
+        </span>
+        {teamNames.length > 0 && (
+          <span className="block truncate font-mono text-[10px] text-near-black/45 mt-0.5">
+            {teamNames.slice(0, 2).join(" · ")}
+            {teamNames.length > 2 ? ` +${teamNames.length - 2}` : ""}
+          </span>
         )}
       </span>
-      <span className="text-right text-sm font-semibold text-near-black" style={NUM}>
+      <span className="text-right text-sm font-semibold text-near-black self-start pt-0.5" style={NUM}>
         {row.total_points.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+function TeamTotalRow({ team, rank }: { team: TeamTotal; rank: number }) {
+  return (
+    <div className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 py-3 rounded odd:bg-warm-cream/50">
+      <span className="text-sm font-semibold text-forest" style={NUM}>
+        #{rank}
+      </span>
+      <span className="truncate text-sm font-semibold text-near-black">
+        {team.team_name}
+      </span>
+      <span className="text-right text-sm font-semibold text-near-black" style={NUM}>
+        {team.total.toLocaleString()}
       </span>
     </div>
   );
@@ -95,6 +127,7 @@ function SkeletonRows() {
 
 export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<"global" | string>("global");
+  const [teamsView, setTeamsView] = useState(false);
   const [globalData, setGlobalData] = useState<GlobalData | null>(null);
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -157,6 +190,20 @@ export default function LeaderboardPage() {
 
   const youInList = leaderboard.some(r => r.is_you);
 
+  // Team aggregate totals — computed from global leaderboard rows (each row now carries teams[])
+  const teamTotals: TeamTotal[] = (() => {
+    if (!globalData) return [];
+    const map = new Map<string, TeamTotal>();
+    for (const row of globalData.leaderboard) {
+      for (const t of row.teams ?? []) {
+        const e = map.get(t.team_id);
+        if (e) e.total += row.total_points;
+        else map.set(t.team_id, { team_id: t.team_id, team_name: t.team_name, total: row.total_points });
+      }
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  })();
+
   async function share() {
     if (!you) return;
     const text = `${you.total_points.toLocaleString()} pts · #${you.rank} on the Faraday season leaderboard — faraday-intelligence.ai/leaderboard`;
@@ -193,24 +240,27 @@ export default function LeaderboardPage() {
           <p className="mb-5 mt-1 text-sm text-near-black/60">{season.name}</p>
         )}
 
-        {/* Tab row: Global + team tabs */}
-        {(myTeams.length > 0 || activeTab !== "global") && (
-          <div className="mb-4 flex flex-wrap gap-1.5">
+        {/* Tab row: Global · Teams · per-team tabs */}
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <TabChip
+            label="Global"
+            active={activeTab === "global" && !teamsView}
+            onClick={() => { setActiveTab("global"); setTeamsView(false); }}
+          />
+          <TabChip
+            label="Teams"
+            active={teamsView}
+            onClick={() => { setActiveTab("global"); setTeamsView(true); }}
+          />
+          {myTeams.map(t => (
             <TabChip
-              label="Global"
-              active={activeTab === "global"}
-              onClick={() => setActiveTab("global")}
+              key={t.team_id}
+              label={t.team_name}
+              active={activeTab === t.team_id && !teamsView}
+              onClick={() => { setActiveTab(t.team_id); setTeamsView(false); }}
             />
-            {myTeams.map(t => (
-              <TabChip
-                key={t.team_id}
-                label={t.team_name}
-                active={activeTab === t.team_id}
-                onClick={() => setActiveTab(t.team_id)}
-              />
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
 
         {/* Team aggregate score */}
         {status === "ready" && activeTab !== "global" && teamData && (
@@ -283,7 +333,7 @@ export default function LeaderboardPage() {
         <section>
           <div className="grid grid-cols-[2.75rem_1fr_6rem] items-center gap-2 px-3 pb-2 text-[11px] uppercase tracking-wide text-near-black/40">
             <span>Rank</span>
-            <span>Player</span>
+            <span>{teamsView ? "Team" : "Player"}</span>
             <span className="text-right">Pts</span>
           </div>
 
@@ -301,13 +351,29 @@ export default function LeaderboardPage() {
             </div>
           )}
 
-          {status === "ready" && leaderboard.length === 0 && (
+          {/* Teams aggregate view */}
+          {status === "ready" && teamsView && (
+            teamTotals.length === 0 ? (
+              <div className="py-10 text-center text-near-black/60">
+                No team scores yet.
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {teamTotals.map((t, i) => (
+                  <TeamTotalRow key={t.team_id} team={t} rank={i + 1} />
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Player standings view */}
+          {status === "ready" && !teamsView && leaderboard.length === 0 && (
             <div className="py-10 text-center text-near-black/60">
               No scores yet — be the first to play.
             </div>
           )}
 
-          {status === "ready" && leaderboard.length > 0 && (
+          {status === "ready" && !teamsView && leaderboard.length > 0 && (
             <div className="space-y-0.5">
               {leaderboard.map(r => (
                 <StandingsRow key={r.subscriber_id} row={r} />

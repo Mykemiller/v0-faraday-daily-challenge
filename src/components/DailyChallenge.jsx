@@ -1354,7 +1354,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
   const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
   // Free Agency: staged changes; no teams yet: allow initial setup any time
-  const canEditTeams = sessionToken && !isLocked && (inFreeAgency || myTeams.length === 0);
+  const canEditTeams = sessionToken && !isLocked && (inFreeAgency || myTeams.length < MAX_ACCOUNT_TEAMS);
 
   useEffect(() => {
     (async () => {
