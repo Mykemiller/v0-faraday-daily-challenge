@@ -1,6 +1,7 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs } from "@/components/GameIcon";
+import { JwHomeTile } from "@/components/JwHomeTile";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -101,23 +102,27 @@ export default function Home() {
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {STOREFRONTS.map((s) => (
             <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
-              <Link
-                href={s.href}
-                className={`group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
-                  s.primary
-                    ? "border-gold bg-warm-cream hover:border-gold"
-                    : "border-warm-gray bg-warm-white hover:border-gold"
-                }`}
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className={`font-serif font-semibold text-near-black ${s.primary ? "text-[20px]" : "text-[17px]"}`}>{s.name}</span>
-                  {s.tag && (
-                    <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
-                  )}
-                </div>
-                <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
-                <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Open →</span>
-              </Link>
+              {s.href === "/jurisdiction-watch" ? (
+                <JwHomeTile />
+              ) : (
+                <Link
+                  href={s.href}
+                  className={`group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
+                    s.primary
+                      ? "border-gold bg-warm-cream hover:border-gold"
+                      : "border-warm-gray bg-warm-white hover:border-gold"
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={`font-serif font-semibold text-near-black ${s.primary ? "text-[20px]" : "text-[17px]"}`}>{s.name}</span>
+                    {s.tag && (
+                      <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
+                    )}
+                  </div>
+                  <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
+                  <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Open →</span>
+                </Link>
+              )}
             </li>
           ))}
         </ul>
