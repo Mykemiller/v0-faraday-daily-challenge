@@ -40,6 +40,25 @@ const mono  = { fontFamily:"'IBM Plex Mono',monospace" };
 const serif = { fontFamily:"'IBM Plex Serif',serif" };
 const sans  = { fontFamily:"'Bricolage Grotesque',sans-serif" };
 
+// ── Nav icon assets (FAR-207) ───────────────────────────────────────────────
+// One processed emblem per nav destination, on the dark forest canvas (#0D1810).
+// NOTE: these are PLACEHOLDER emblems (D/L/S/A glyphs on the forest disc) — the
+// real processed 3D emblem PNGs were not available at build time. To ship the
+// final art, replace each value below with the base64 data URI of the processed
+// PNG (account → "account", leaderboard → "leaderboard", daily → "daily",
+// streak → "streak"). No other code change is needed: NavPill already renders
+// them at 40×40 with objectFit:"cover" and the color-unification filter.
+const NAV_ICONS = {
+  daily:       "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMwRDE4MTAiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9Ijc0IiBmaWxsPSIjMUMzNDI0Ii8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzQ5MjJBIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIxMDAiIHk9IjEwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9ImNlbnRyYWwiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSI5NiIgZmlsbD0iI0VFRTZEQSI+RDwvdGV4dD48L3N2Zz4=",
+  leaderboard: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMwRDE4MTAiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9Ijc0IiBmaWxsPSIjMUMzNDI0Ii8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzQ5MjJBIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIxMDAiIHk9IjEwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9ImNlbnRyYWwiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSI5NiIgZmlsbD0iI0VFRTZEQSI+TDwvdGV4dD48L3N2Zz4=",
+  streak:      "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMwRDE4MTAiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9Ijc0IiBmaWxsPSIjMUMzNDI0Ii8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzQ5MjJBIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIxMDAiIHk9IjEwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9ImNlbnRyYWwiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSI5NiIgZmlsbD0iI0VFRTZEQSI+UzwvdGV4dD48L3N2Zz4=",
+  account:     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMwRDE4MTAiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9Ijc0IiBmaWxsPSIjMUMzNDI0Ii8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzQ5MjJBIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIxMDAiIHk9IjEwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9ImNlbnRyYWwiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSI5NiIgZmlsbD0iI0VFRTZEQSI+QTwvdGV4dD48L3N2Zz4=",
+};
+// Color-unification filter (FAR-207 spec) — applied uniformly to ALL four icons
+// so the S icon's blue neon and the D icon's grey tones shift toward the A/L
+// chrome-green palette and the set reads as one family.
+const NAV_ICON_FILTER = "saturate(0.85) hue-rotate(195deg) brightness(1.05) contrast(1.05)";
+
 // ── Scoring constants ────────────────────────────────────────────────────────
 const BASE_SCORE = 100;
 const STREAK_MULTIPLIERS = [
@@ -228,24 +247,103 @@ function ProgressBar({ value, max, color }) {
 }
 
 // Uniform nav pill used in the header for all four nav items + sign-in button.
-function NavPill({ children, onClick, active, style: extraStyle }) {
+// Track viewport width so labels can be hidden on mobile (≤430px) without a
+// layout shift. SSR-safe: starts desktop-first (1024) and syncs on mount.
+function useWindowWidth() {
+  const [w, setW] = useState(1024);
+  useEffect(() => {
+    const onResize = () => setW(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return w;
+}
+
+// Icon-first nav button (FAR-207). Renders a processed emblem image (40×40 in
+// the header, 80×80 expanded) on the #0D1810 canvas plus an optional chrome
+// label that hides on mobile. Three visual states: default (transparent border,
+// muted label) · hover (lighter forest tint + gold border, label→gold) · active
+// (forest-green tint bg + gold border + 2px gold underline tab).
+function NavPill({ icon, label, onClick, active, hideLabel, size = 40, style: extraStyle }) {
+  const [hover, setHover] = useState(false);
+  const lit = active || hover;
   return (
-    <button type="button" onClick={onClick} className="nav-pill" style={{
-      background: active ? `rgba(196,146,42,0.15)` : `rgba(255,255,255,0.04)`,
-      border: `1px solid ${active ? C.gold : "rgba(196,146,42,0.35)"}`,
-      color: active ? C.gold : C.cream,
-      borderRadius: "6px",
-      padding: "8px 18px",
-      fontSize: "13px",
-      fontWeight: 600,
-      cursor: "pointer",
-      letterSpacing: "0.04em",
-      whiteSpace: "nowrap",
-      lineHeight: 1,
-      transition: "all 0.15s",
-      ...sans,
-      ...extraStyle,
-    }}>{children}</button>
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="nav-pill"
+      title={label}
+      aria-label={label}
+      style={{
+        position: "relative",
+        minWidth: "52px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "3px",
+        background: active
+          ? "rgba(28,52,36,0.55)"          // forest-green tint
+          : hover
+          ? "rgba(28,52,36,0.30)"          // lighter forest tint
+          : "transparent",
+        border: `1px solid ${lit ? C.gold : "transparent"}`,
+        borderRadius: "8px",
+        padding: "5px 6px 6px",
+        cursor: "pointer",
+        lineHeight: 1,
+        overflow: "hidden",                // keep the underline tab inside the radius
+        transition: "all 0.15s",
+        ...extraStyle,
+      }}
+    >
+      <img
+        src={icon}
+        alt=""
+        width={size}
+        height={size}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          objectFit: "cover",
+          objectPosition: "center",
+          borderRadius: "6px",
+          display: "block",
+          filter: NAV_ICON_FILTER,
+        }}
+      />
+      {!hideLabel && (
+        <span
+          className="nav-lbl"
+          style={{
+            ...mono,
+            fontSize: "8px",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: lit ? C.gold : C.muted,
+            transition: "color 0.15s",
+          }}
+        >
+          {label}
+        </span>
+      )}
+      {active && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "12%",
+            right: "12%",
+            bottom: 0,
+            height: "2px",
+            background: C.gold,
+            borderRadius: "1px",
+          }}
+        />
+      )}
+    </button>
   );
 }
 
@@ -2069,6 +2167,7 @@ function SplashScreen({ onEnter }) {
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
 export default function DailyChallenge() {
+  const navIconsLabelHidden = useWindowWidth() <= 430;  // FAR-207: icon-only on mobile
   const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | account
   const [activeGame, setActiveGame] = useState(null);
   const [email,      setEmail]      = useState(null);     // registered email
@@ -2260,13 +2359,8 @@ export default function DailyChallenge() {
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
       /* Narrow masthead — drop secondary chips so Sign in stays legible (ref Ch.09b) */
       @media (max-width:560px){ .fdc-mw, .fdc-live { display:none !important; } }
-      /* ── Mobile nav collapse ── */
-      .nav-lbl { display:inline; }
-      .nav-pill { padding:4px 8px; }
-      @media (max-width:480px) {
-        .nav-lbl  { display:none; }
-        .nav-pill { padding:4px 7px !important; gap:0 !important; }
-      }
+      /* Mobile nav collapse (FAR-207): label visibility is controlled in JS via
+         useWindowWidth (≤430px → icon only), so no CSS override is needed here. */
     `;
     document.head.appendChild(style);
   }, []);
@@ -2432,17 +2526,37 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Nav pills — uniform NavPill component */}
+          {/* Nav icons (FAR-207) — D · L · S · A, left-to-right. Icon + chrome
+              label on desktop; icon only on mobile (≤430px). */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
-            <NavPill style={{ pointerEvents:"none", cursor:"default" }}><span>🔥</span><span className="nav-lbl"> {streak}</span></NavPill>
-            <NavPill style={{ pointerEvents:"none", cursor:"default" }}><span>◈</span><span className="nav-lbl"> {todayScore}</span></NavPill>
-            <NavPill onClick={() => { window.location.href = "/leaderboard"; }}><span>⬡</span><span className="nav-lbl"> Leaderboard</span></NavPill>
-            <NavPill onClick={openAccount} active={screen === "account"}><span>◎</span><span className="nav-lbl"> Account</span></NavPill>
-            {!email && (
-              <NavPill onClick={() => { setGateReason("default"); setScreen("gate"); }} active={false}>
-                Sign in →
-              </NavPill>
-            )}
+            <NavPill
+              icon={NAV_ICONS.daily}
+              label="Challenge"
+              hideLabel={navIconsLabelHidden}
+              onClick={() => setScreen("lobby")}
+              active={screen === "lobby"}
+            />
+            <NavPill
+              icon={NAV_ICONS.leaderboard}
+              label="Leaderboard"
+              hideLabel={navIconsLabelHidden}
+              onClick={() => { window.location.href = "/leaderboard"; }}
+              active={screen === "leaderboard"}
+            />
+            <NavPill
+              icon={NAV_ICONS.streak}
+              label="Streak"
+              hideLabel={navIconsLabelHidden}
+              onClick={() => alert("Coming soon")}
+              active={screen === "streak"}
+            />
+            <NavPill
+              icon={NAV_ICONS.account}
+              label="Account"
+              hideLabel={navIconsLabelHidden}
+              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+              active={screen === "gate" || screen === "account"}
+            />
           </div>
         </div>
       </header>
