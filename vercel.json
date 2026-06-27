@@ -1,7 +1,15 @@
 {
   "crons": [
-    { "path": "/api/cron/rotate", "schedule": "0 5 * * *" },
-    { "path": "/api/cron/rotate", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/rotate",                         "schedule": "0 5 * * *" },
+    { "path": "/api/cron/rotate",                         "schedule": "0 6 * * *" },
+    { "path": "/api/pipelines/agenda-watch/crawl",        "schedule": "0 6 * * 6" },
+    { "path": "/api/pipelines/puc/crawl",                 "schedule": "0 12 * * 6" },
+    { "path": "/api/pipelines/data365/fetch",             "schedule": "0 18 * * 6" },
+    { "path": "/api/pipelines/agenda-watch/extract",      "schedule": "0 1 * * 0" },
+    { "path": "/api/pipelines/data365/aggregate",         "schedule": "0 8 * * *" },
+    { "path": "/api/pipelines/eia/refresh",               "schedule": "0 6 * * 1" },
+    { "path": "/api/pipelines/idf/ingest",                "schedule": "0 5 * * 0" },
+    { "path": "/api/pipelines/health",                    "schedule": "0 6 * * 0" }
   ],
   "redirects": [
     {
