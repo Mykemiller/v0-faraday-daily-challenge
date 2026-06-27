@@ -45,32 +45,11 @@ export async function extractDocumentText(
   }
 }
 
-async function extractPdfText(buf: Buffer): Promise<string | null> {
-  try {
-    // Dynamic import — pdfjs-dist is a dev-time only dep; falls through gracefully.
-    const pdfParse = await import('pdf-parse').then(m => m.default ?? m).catch(() => null);
-    if (!pdfParse) return extractPdfTextViaTextract(buf);
-    const data = await pdfParse(buf, { max: 0 });
-    return data.text?.trim() ?? null;
-  } catch {
-    return extractPdfTextViaTextract(buf);
-  }
-}
-
-async function extractPdfTextViaTextract(buf: Buffer): Promise<string | null> {
-  if (!process.env.AWS_ACCESS_KEY_ID) return null;
-  try {
-    const { TextractClient, DetectDocumentTextCommand } = await import('@aws-sdk/client-textract');
-    const client  = new TextractClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-    const cmd     = new DetectDocumentTextCommand({ Document: { Bytes: buf } });
-    const result  = await client.send(cmd);
-    const lines   = (result.Blocks ?? [])
-      .filter(b => b.BlockType === 'LINE' && b.Text)
-      .map(b => b.Text!);
-    return lines.join('\n').trim() || null;
-  } catch {
-    return null;
-  }
+async function extractPdfText(_buf: Buffer): Promise<string | null> {
+  // PDF text extraction requires pdf-parse or @aws-sdk/client-textract to be installed.
+  // Neither is bundled — this path returns null until those packages are added as deps.
+  // HTML and plain-text documents are extracted above without any extra packages.
+  return null;
 }
 
 function stripHtml(html: string): string {
