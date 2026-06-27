@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { SESSION_STORAGE_KEY } from '@/lib/supabase';
 import { JoISet } from '@/lib/jurisdiction-watch/types';
 
 // JW tier colors — used as set color swatches
@@ -12,23 +13,34 @@ const SWATCH_COLORS = [
   { hex: '#2B4C7E', label: 'Custom' },
 ];
 
+function getToken(): string | null {
+  try { return localStorage.getItem(SESSION_STORAGE_KEY); } catch { return null; }
+}
+
 export function JoIManager() {
-  const [sets, setSets] = useState<JoISet[]>([]);
+  const [sets, setSets]           = useState<JoISet[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newName,    setNewName]    = useState('');
   const [newDesc,    setNewDesc]    = useState('');
   const [newColor,   setNewColor]   = useState('#1C1C1C');
 
   useEffect(() => {
-    fetch('/api/joi').then(r => r.json()).then(setSets);
+    const token = getToken();
+    if (!token) return;
+    fetch(`/api/joi?token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(setSets)
+      .catch(() => {});
   }, []);
 
   const createSet = async () => {
     if (!newName.trim()) return;
+    const token = getToken();
+    if (!token) return;
     const res = await fetch('/api/joi', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, description: newDesc, color: newColor }),
+      body: JSON.stringify({ token, name: newName, description: newDesc || undefined, color: newColor }),
     });
     if (res.ok) {
       const set = await res.json();
