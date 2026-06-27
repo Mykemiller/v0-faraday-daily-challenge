@@ -1,7 +1,9 @@
 {
   "crons": [
-    { "path": "/api/cron/rotate", "schedule": "0 5 * * *" },
-    { "path": "/api/cron/rotate", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/rotate",               "schedule": "0 5 * * *" },
+    { "path": "/api/cron/rotate",               "schedule": "0 6 * * *" },
+    { "path": "/api/cron/jw-dc-registry-ingest","schedule": "0 0 * * 6" },
+    { "path": "/api/cron/jw-airtable-sync",     "schedule": "0 3 * * 1" }
   ],
   "redirects": [
     {
