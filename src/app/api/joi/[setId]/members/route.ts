@@ -51,23 +51,24 @@ async function verifySetOwner(s: Svc, setId: string, subscriberId: string): Prom
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { setId: string } },
+  { params }: { params: Promise<{ setId: string }> },
 ) {
   const s = svc();
   if (!s) return NextResponse.json({ error: 'Service not configured' }, { status: 500 });
 
+  const { setId } = await params;
   const { token, jurisdictionId } = await req.json().catch(() => ({}));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const subscriberId = await resolveSubscriber(s, token);
   if (!subscriberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!(await verifySetOwner(s, params.setId, subscriberId)))
+  if (!(await verifySetOwner(s, setId, subscriberId)))
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   // Enforce 1,000-member cap
   const countR = await fetch(
-    `${s.base}/subscriber_joi_members?set_id=eq.${params.setId}&select=id`,
+    `${s.base}/subscriber_joi_members?set_id=eq.${setId}&select=id`,
     { headers: { ...s.headers, Prefer: 'count=exact', 'Content-Type': 'application/json' }, cache: 'no-store' },
   );
   const total = parseInt(countR.headers.get('content-range')?.split('/')[1] ?? '0', 10);
@@ -77,7 +78,7 @@ export async function POST(
   const r = await fetch(`${s.base}/subscriber_joi_members`, {
     method: 'POST',
     headers: s.headers,
-    body: JSON.stringify({ set_id: params.setId, jurisdiction_id: jurisdictionId }),
+    body: JSON.stringify({ set_id: setId, jurisdiction_id: jurisdictionId }),
   });
   if (!r.ok) return NextResponse.json({ error: 'Failed to add member' }, { status: 500 });
   return NextResponse.json(await r.json(), { status: 201 });
@@ -85,22 +86,23 @@ export async function POST(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { setId: string } },
+  { params }: { params: Promise<{ setId: string }> },
 ) {
   const s = svc();
   if (!s) return NextResponse.json({ error: 'Service not configured' }, { status: 500 });
 
+  const { setId } = await params;
   const { token, jurisdictionId } = await req.json().catch(() => ({}));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const subscriberId = await resolveSubscriber(s, token);
   if (!subscriberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!(await verifySetOwner(s, params.setId, subscriberId)))
+  if (!(await verifySetOwner(s, setId, subscriberId)))
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await fetch(
-    `${s.base}/subscriber_joi_members?set_id=eq.${params.setId}&jurisdiction_id=eq.${jurisdictionId}`,
+    `${s.base}/subscriber_joi_members?set_id=eq.${setId}&jurisdiction_id=eq.${jurisdictionId}`,
     { method: 'DELETE', headers: s.headers },
   );
   return NextResponse.json({ success: true });
