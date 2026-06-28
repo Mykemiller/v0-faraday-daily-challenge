@@ -245,6 +245,117 @@ function ProgressBar({ value, max, color }) {
   );
 }
 
+// ── Hints ─────────────────────────────────────────────────────────────────────
+// Every game gets a "Hint?" button. A subscriber may reveal up to HINT_MAX hints
+// per game per day; the count is persisted (localStorage, CT-day-scoped) so it
+// survives reloads and can't be farmed by refreshing. Hint copy is drawn from the
+// puzzle's own content — it never affects scoring.
+const HINT_MAX = 3;
+
+function clipText(s, n) {
+  s = String(s == null ? "" : s).trim();
+  return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "…" : s;
+}
+
+// Stable, puzzle-level hints (Rackl · Signal Drop · The Stack · Dark Fiber),
+// revealed in order and capped at HINT_MAX.
+function hintsForPuzzle(gameType, puzzle) {
+  if (!puzzle) return [];
+  const out = [];
+  if (gameType === "Rackl") {
+    (puzzle.groups || []).forEach(g => { if (g && g.label) out.push(`One of the groups is “${g.label}”.`); });
+  } else if (gameType === "Signal Drop") {
+    if (puzzle.hint1) out.push(String(puzzle.hint1));
+    if (puzzle.hint2) out.push(String(puzzle.hint2));
+    const w = puzzle.word ? String(puzzle.word).toUpperCase() : "";
+    if (w) out.push(`It starts with “${w[0]}” and is ${w.length} letters long.`);
+  } else if (gameType === "The Stack") {
+    if (puzzle.metric) out.push(`Rank by ${puzzle.metric}.`);
+    const co = Array.isArray(puzzle.correctOrder) ? puzzle.correctOrder : null;
+    const items = Array.isArray(puzzle.items) ? puzzle.items : null;
+    if (co && items) {
+      if (items[co[0]] != null) out.push(`“${items[co[0]]}” belongs at the top (#1).`);
+      const last = co[co.length - 1];
+      if (items[last] != null && last !== co[0]) out.push(`“${items[last]}” belongs at the bottom.`);
+    }
+  } else if (gameType === "Dark Fiber") {
+    (puzzle.pairs || []).forEach(p => { if (p && p.term && p.def) out.push(`${p.term} → ${clipText(p.def, 64)}`); });
+  }
+  return out.filter(Boolean).slice(0, HINT_MAX);
+}
+
+// Per-question hints (Circuit · The Brief · Frequency) for the CURRENT question.
+// Multiple-choice → eliminate wrong options, then the explanation; True/False →
+// the explanation. The caller remounts via key={qIdx} so each question gets its
+// own reveals, all drawing from the shared per-game daily budget.
+function hintsForQuestion(q) {
+  if (!q) return [];
+  const out = [];
+  if (Array.isArray(q.options) && q.options.length > 2 && typeof q.correct === "number") {
+    const wrong = q.options.filter((_, i) => i !== q.correct);
+    if (wrong[0]) out.push(`It isn’t “${clipText(wrong[0], 60)}”.`);
+    if (wrong[1]) out.push(`It also isn’t “${clipText(wrong[1], 60)}”.`);
+  }
+  if (q.explanation) out.push(clipText(q.explanation, 150));
+  return out.filter(Boolean).slice(0, HINT_MAX);
+}
+
+// Shared Hint control. Reveals `hints` one at a time, spending from a per-game
+// daily budget of HINT_MAX shared across every press (persisted). Renders nothing
+// when there are no hints to give.
+function HintControl({ gameType, hints }) {
+  const list = Array.isArray(hints) ? hints.filter(Boolean) : [];
+  const storageKey = `faraday_hints_${TODAY}_${gameType}`;
+  const [usedTotal, setUsedTotal] = useState(0);   // budget spent across the game today
+  const [localShown, setLocalShown] = useState(0); // revealed within this instance
+
+  useEffect(() => {
+    try {
+      const v = parseInt(localStorage.getItem(storageKey) || "0", 10);
+      if (!Number.isNaN(v)) setUsedTotal(v);
+    } catch { /* storage disabled */ }
+  }, [storageKey]);
+
+  if (list.length === 0) return null;
+
+  const remaining = Math.max(0, HINT_MAX - usedTotal);
+  const canReveal = remaining > 0 && localShown < list.length;
+
+  function reveal() {
+    if (!canReveal) return;
+    setLocalShown(n => n + 1);
+    setUsedTotal(prev => {
+      const next = prev + 1;
+      try { localStorage.setItem(storageKey, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const label =
+    remaining === 0 ? "No hints left" :
+    localShown >= list.length ? "Hint shown ✓" :
+    `Hint? (${remaining} left)`;
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"8px", alignItems:"center", width:"100%" }}>
+      {localShown > 0 && (
+        <div style={{ width:"100%", maxWidth:"420px", display:"flex", flexDirection:"column", gap:"6px" }}>
+          {list.slice(0, localShown).map((h, i) => (
+            <div key={i} style={{
+              fontSize:"12px", color:C.amber, lineHeight:1.5, ...mono,
+              background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)",
+              borderRadius:"6px", padding:"8px 12px",
+            }}>
+              <span style={{ color:C.muted }}>Hint {i + 1}:</span> {h}
+            </div>
+          ))}
+        </div>
+      )}
+      <Btn onClick={reveal} variant="ghost" small disabled={!canReveal}>{label}</Btn>
+    </div>
+  );
+}
+
 // Uniform nav pill used in the header for all four nav items + sign-in button.
 // Track viewport width so labels can be hidden on mobile (≤430px) without a
 // layout shift. SSR-safe: starts desktop-first (1024) and syncs on mount.
@@ -585,6 +696,8 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       )}
 
+      <HintControl gameType="Rackl" hints={hintsForPuzzle("Rackl", puzzle)} />
+
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div style={{ display:"flex", gap:"6px" }}>
           {[...Array(4)].map((_, i) => (
@@ -612,7 +725,6 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const [lost,    setLost]      = useState(false);
   const [shake,   setShake]     = useState(false);
   const [scoreVal,setScoreVal]  = useState(null);
-  const [hint,    setHint]      = useState(0);
   const maxGuesses = 6;
   const startTime  = useRef(Date.now());
 
@@ -659,8 +771,6 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
     <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
       <div style={{ fontSize:"14px", color:C.text, textAlign:"center", lineHeight:1.6, ...mono, maxWidth:"380px" }}>
         {puzzle.clue}
-        {hint > 0 && <div style={{ color:C.amber, marginTop:"4px" }}>Hint: {puzzle.hint1}</div>}
-        {hint > 1 && <div style={{ color:C.amber }}>Hint 2: {puzzle.hint2}</div>}
       </div>
 
       {/* Grid */}
@@ -715,9 +825,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
         ))}
       </div>
 
-      <div style={{ display:"flex", gap:"8px" }}>
-        {hint < 2 && <Btn onClick={() => setHint(h=>h+1)} variant="ghost" small>Hint ({2-hint} left)</Btn>}
-      </div>
+      <HintControl gameType="Signal Drop" hints={hintsForPuzzle("Signal Drop", puzzle)} />
     </div>
   );
 }
@@ -842,6 +950,8 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
           <span style={{ fontSize:"11px", color:C.muted, ...mono }}>#{rankIdx+1}</span>
         </div>
       ))}
+      <HintControl gameType="The Stack" hints={hintsForPuzzle("The Stack", puzzle)} />
+
       <div style={{ marginTop:"8px" }}>
         <Btn onClick={submit}>Lock In Ranking →</Btn>
       </div>
@@ -947,6 +1057,8 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
           transition:"all 0.1s",
         }}>FALSE ✗</button>
       </div>
+
+      <HintControl key={qIdx} gameType="Circuit" hints={hintsForQuestion(q)} />
     </div>
   );
 }
@@ -1048,6 +1160,8 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
           </button>
         ))}
       </div>
+      <HintControl key={qIdx} gameType="The Brief" hints={hintsForQuestion(q)} />
+
       <Btn onClick={nextQuestion} disabled={selected === null}>
         {qIdx + 1 < puzzle.questions.length ? "Next Question →" : "Submit Answers →"}
       </Btn>
@@ -1140,6 +1254,9 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
           ✗ Incorrect match — try again ({mistakes} mistakes)
         </div>
       )}
+      <div style={{ gridColumn:"1/-1", marginTop:"4px" }}>
+        <HintControl gameType="Dark Fiber" hints={hintsForPuzzle("Dark Fiber", puzzle)} />
+      </div>
     </div>
   );
 }
@@ -1231,6 +1348,9 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
           );
         })}
       </div>
+      {!revealed && (
+        <HintControl key={qIdx} gameType="Frequency" hints={hintsForQuestion(q)} />
+      )}
       {revealed && (
         <div>
           <div style={{ fontSize:"12px", color:C.muted, lineHeight:1.6, ...mono,
