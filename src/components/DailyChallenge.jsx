@@ -654,8 +654,12 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
-      {/* Solved groups */}
-      {puzzle.groups.filter((_, gi) => solved.some(id => tiles.find(t=>t.id===id)?.groupIdx===gi)).map((g, gi) => {
+      {/* Solved groups — iterate over ALL groups by their ORIGINAL index so the
+          label and items stay aligned. (A prior filter().map() reindexed gi to
+          the filtered position, mislabelling any solved group after the first.) */}
+      {puzzle.groups.map((g, gi) => {
+        const groupSolved = solved.some(id => tiles.find(t=>t.id===id)?.groupIdx === gi);
+        if (!groupSolved) return null;
         const solvedItems = tiles.filter(t => t.groupIdx === gi).map(t => t.item);
         return (
           <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
@@ -2916,7 +2920,13 @@ export default function DailyChallenge() {
                   onBack={() => setScreen("lobby")}
                 />
               ) : (
-                <GameComponent puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                // Key on the puzzle identity so the game remounts when the live
+                // Airtable puzzle replaces the mock fallback (the fetch resolves
+                // after mount). Without this, useState initializers that build
+                // tiles/order/shuffled-defs from the mock puzzle never re-run,
+                // leaving stale tiles while the title/hints/scoring use the live
+                // puzzle. Falls back to a per-game key when there is no publicId.
+                <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
               )}
             </div>
           );
