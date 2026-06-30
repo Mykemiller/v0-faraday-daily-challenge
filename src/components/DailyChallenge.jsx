@@ -608,6 +608,10 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME: RACKL — Connections-style tile grouping
 // ══════════════════════════════════════════════════════════════════════════════
+// Connections-style mistake budget: 4 wrong groupings ends the round (matches the
+// four mistake dots shown in the footer).
+const RACKL_MAX_MISTAKES = 4;
+
 function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const allItems = puzzle.groups.flatMap((g, gi) => g.items.map((item, i) => ({ item, groupIdx:gi, id:`${gi}-${i}` })));
   const [tiles,    setTiles]    = useState(() => [...allItems].sort(() => Math.random()-0.5));
@@ -616,6 +620,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const [mistakes, setMistakes] = useState(0);
   const [feedback, setFeedback] = useState(null);
   const [done,     setDone]     = useState(false);
+  const [lost,     setLost]     = useState(false);
   const [scoreVal, setScoreVal] = useState(null);
   const startTime = useRef(Date.now());
 
@@ -641,16 +646,46 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         setDone(true);
       }
     } else {
-      setMistakes(m => m+1);
-      setFeedback({ type:"wrong" });
+      const newMistakes = mistakes + 1;
+      setMistakes(newMistakes);
       setSelected([]);
-      setTimeout(() => setFeedback(null), 800);
+      if (newMistakes >= RACKL_MAX_MISTAKES) {
+        // Out of guesses — end the round and score partial credit for any groups
+        // already solved (no perfect bonus on a loss).
+        const elapsed = (Date.now() - startTime.current) / 1000;
+        const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak });
+        setFeedback(null);
+        setScoreVal(s);
+        setLost(true);
+        setDone(true);
+      } else {
+        setFeedback({ type:"wrong" });
+        setTimeout(() => setFeedback(null), 800);
+      }
     }
   }
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
-    isNew7Day={streak===6} />;
+  if (done) return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+      {lost && (
+        <>
+          <div style={{ ...mono, fontSize:"12px", color:C.red, textAlign:"center" }}>
+            Out of guesses ({RACKL_MAX_MISTAKES} mistakes) — here&rsquo;s the full board:
+          </div>
+          {puzzle.groups.map((g, gi) => (
+            <div key={gi} style={{ background:g.color, borderRadius:"8px", padding:"12px 16px",
+              display:"flex", alignItems:"center", gap:"12px" }}>
+              <span style={{ fontSize:"11px", fontWeight:700, color:g.textColor, letterSpacing:"0.06em", ...mono }}>{g.label}</span>
+              <span style={{ fontSize:"11px", color:g.textColor, opacity:0.85, ...mono }}>{g.items.join(" · ")}</span>
+            </div>
+          ))}
+        </>
+      )}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
+        isNew7Day={streak===6} />
+    </div>
+  );
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
@@ -704,11 +739,11 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div style={{ display:"flex", gap:"6px" }}>
-          {[...Array(4)].map((_, i) => (
+          {[...Array(RACKL_MAX_MISTAKES)].map((_, i) => (
             <div key={i} style={{ width:"10px", height:"10px", borderRadius:"50%",
               background: i < mistakes ? C.red : C.dim }} />
           ))}
-          <span style={{ fontSize:"11px", color:C.muted, marginLeft:"6px", ...mono }}>{mistakes} mistakes</span>
+          <span style={{ fontSize:"11px", color:C.muted, marginLeft:"6px", ...mono }}>{mistakes}/{RACKL_MAX_MISTAKES} mistakes</span>
         </div>
         <Btn onClick={submit} disabled={selected.length !== 4}>
           Submit {selected.length}/4
