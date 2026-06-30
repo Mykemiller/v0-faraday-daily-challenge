@@ -200,18 +200,49 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, team_id: newTeamId, team_name: teamName, pending });
   }
 
-  // ── Upsert: replace membership set ──────────────────────────────────────────
-  const teamIds = Array.isArray(body.team_ids) ? (body.team_ids as string[]).slice(0, 5) : [];
+  // ── Upsert: reconcile the player's membership set for this season ────────────
+  // `team_ids` is the FULL desired set. We diff it against ALL current memberships
+  // (regardless of `pending`), because the unique key is
+  // (subscriber_id, team_id, season_id, pending) — a team can have one row per
+  // pending value. The previous implementation deleted/re-inserted only rows
+  // matching the *current* pending flag, which had two bugs:
+  //   1. a confirmed (pending=false) membership could never be removed during
+  //      Free Agency (current pending=true) — "Leave team" silently did nothing;
+  //   2. kept teams were blindly re-inserted under the current pending value,
+  //      creating a second row and duplicate entries in the UI.
+  // Diffing fixes both: drop teams that left (every row, any pending), add only
+  // genuinely new teams, and never touch the rows of kept teams.
+  const desired = Array.from(
+    new Set(
+      (Array.isArray(body.team_ids) ? body.team_ids : []).filter(
+        (x): x is string => typeof x === 'string' && x.length > 0
+      )
+    )
+  ).slice(0, 5);
 
-  // Delete existing memberships of same pending type to replace them
-  await fetch(
-    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&pending=eq.${pending}`,
-    { method: 'DELETE', headers: h }
-  ).catch(() => {});
+  const curR = await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id`,
+    { headers: h, cache: 'no-store' }
+  );
+  const curRows: Array<{ team_id: string }> = curR.ok ? await curR.json().catch(() => []) : [];
+  const currentTeamIds = Array.from(new Set(curRows.map(r => r.team_id)));
 
-  // Insert new memberships
-  if (teamIds.length > 0) {
-    const rows = teamIds.map((tid: string) => ({
+  const toRemove = currentTeamIds.filter(tid => !desired.includes(tid));
+  const toAdd = desired.filter(tid => !currentTeamIds.includes(tid));
+
+  // Remove dropped teams — every row for that team, regardless of pending.
+  if (toRemove.length > 0) {
+    const inList = toRemove.map(encodeURIComponent).join(',');
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&team_id=in.(${inList})`,
+      { method: 'DELETE', headers: h }
+    ).catch(() => {});
+  }
+
+  // Add newly-desired teams with the current pending flag (skips teams already
+  // present under either pending value, so no duplicate row is created).
+  if (toAdd.length > 0) {
+    const rows = toAdd.map((tid: string) => ({
       subscriber_id: subscriberId,
       team_id: tid,
       season_id: seasonId,
