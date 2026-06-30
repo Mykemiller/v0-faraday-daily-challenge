@@ -2251,7 +2251,8 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
                 <span style={{ ...sans, fontSize:"13px", fontWeight:600, color:C.black, flex:1, minWidth:0,
                   overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</span>
                 <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)" }}>{t.members} member{t.members === 1 ? "" : "s"}</span>
-                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{t.mw}</span>
+                <span style={{ ...mono, fontSize:"11px", color:"rgba(20,18,16,0.62)", width:"54px", textAlign:"right" }}>{(t.today || 0).toLocaleString()} today</span>
+                <span style={{ ...mono, fontSize:"12px", fontWeight:600, color:C.forest, width:"66px", textAlign:"right" }}>{(t.season || 0).toLocaleString()}</span>
               </div>
             );
           })}
@@ -2267,8 +2268,6 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
           <div style={{ display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
             <span style={{ ...mono, fontSize:"11px", color:C.forest }}>
               On <b>{myTeam.name}</b> · code <b>{myTeam.code}</b>
-              {typeof myTeam.rank === "number" ? ` · rank #${myTeam.rank}` : ""} · {myTeam.mw_total}
-              {typeof myTeam.my_mw === "number" ? ` (you: ${myTeam.my_mw})` : ""}
             </span>
             <button onClick={handleInvite} disabled={busy} style={ghostBtn}>{inviteLabel}</button>
             <button onClick={onLeave} disabled={busy} style={ghostBtn}>Leave team</button>
@@ -2523,16 +2522,45 @@ export default function DailyChallenge() {
   const refreshLeaderboard = useCallback(() => {
     let token = null;
     try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
-    const qs = new URLSearchParams({ limit: "10" });
-    if (token) qs.set("token", token);
-    return fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?${qs.toString()}`)
+
+    // Standings come from the SAME season-scoring source as /leaderboard
+    // (score_events, non-pending members) so the team totals actually reflect the
+    // sum of each team's members' scores. The legacy get-team-leaderboard RPC
+    // ranked by a stale lifetime `mw_total` and counted a different table
+    // (team_members), so its numbers and member counts were wrong.
+    const tq = token ? `?token=${encodeURIComponent(token)}` : "";
+    const standingsP = fetch(`/api/leaderboard/season${tq}`)
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
-        if (!data) return;
-        if (Array.isArray(data.leaderboard)) setLeaderboard(data.leaderboard);
-        setMyTeam(data.myTeam || null);
+        if (!data || !Array.isArray(data.leaderboard)) return;
+        const byTeam = new Map();
+        for (const row of data.leaderboard) {
+          for (const tm of (row.teams || [])) {
+            let e = byTeam.get(tm.team_id);
+            if (!e) { e = { team_id: tm.team_id, name: tm.team_name, season: 0, today: 0, members: new Set() }; byTeam.set(tm.team_id, e); }
+            e.season += row.total_points || 0;
+            e.today  += row.today_points || 0;
+            e.members.add(row.subscriber_id);
+          }
+        }
+        const standings = [...byTeam.values()]
+          .map(e => ({ team_id: e.team_id, name: e.name, season: e.season, today: e.today, members: e.members.size }))
+          .sort((a, b) => b.season - a.season || b.members - a.members || a.name.localeCompare(b.name))
+          .map((e, i) => ({ ...e, rank: i + 1 }));
+        setLeaderboard(standings);
       })
       .catch(() => { /* leaderboard is non-critical */ });
+
+    // The caller's own membership (team name + code for Invite/Leave) still comes
+    // from the membership edge function — display numbers are sourced above.
+    const qs = new URLSearchParams({ limit: "10" });
+    if (token) qs.set("token", token);
+    const myP = fetch(`${EDGE_FUNCTIONS_BASE}/get-team-leaderboard?${qs.toString()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (data) setMyTeam(data.myTeam || null); })
+      .catch(() => { /* non-critical */ });
+
+    return Promise.all([standingsP, myP]);
   }, []);
 
   useEffect(() => { refreshLeaderboard(); }, [refreshLeaderboard]);
