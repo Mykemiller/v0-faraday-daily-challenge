@@ -375,7 +375,7 @@ function useWindowWidth() {
 // label that hides on mobile. Three visual states: default (transparent border,
 // muted label) · hover (lighter forest tint + gold border, label→gold) · active
 // (forest-green tint bg + gold border + 2px gold underline tab).
-function NavPill({ icon, label, onClick, active, hideLabel, size = 40, badge, style: extraStyle }) {
+function NavPill({ icon, letter, label, onClick, active, hideLabel, size = 40, badge, style: extraStyle }) {
   const [hover, setHover] = useState(false);
   const interactive = typeof onClick === "function";
   const lit = active || (hover && interactive);
@@ -435,21 +435,42 @@ function NavPill({ icon, label, onClick, active, hideLabel, size = 40, badge, st
           {badge}
         </span>
       )}
-      <img
-        src={icon}
-        alt=""
-        width={size}
-        height={size}
-        style={{
-          width: `${size}px`,
-          height: `${size}px`,
-          objectFit: "cover",
-          objectPosition: "center",
-          borderRadius: "6px",
-          display: "block",
-          filter: NAV_ICON_FILTER,
-        }}
-      />
+      {letter ? (
+        // Simplified nav mark: a white capital letter (D · L · A) instead of the
+        // 3D emblem. Active/hover is still shown by the underline tab + tint.
+        <span
+          aria-hidden="true"
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            display: "grid",
+            placeItems: "center",
+            color: C.white,
+            fontWeight: 800,
+            fontSize: `${Math.round(size * 0.62)}px`,
+            lineHeight: 1,
+            ...serif,
+          }}
+        >
+          {letter}
+        </span>
+      ) : (
+        <img
+          src={icon}
+          alt=""
+          width={size}
+          height={size}
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            objectFit: "cover",
+            objectPosition: "center",
+            borderRadius: "6px",
+            display: "block",
+            filter: NAV_ICON_FILTER,
+          }}
+        />
+      )}
       {!hideLabel && (
         <span
           className="nav-lbl"
@@ -2425,10 +2446,14 @@ export default function DailyChallenge() {
     });
   }
 
-  // todayScore derived reactively from dailyResults
+  // todayScore derived reactively from dailyResults (local fallback for guests)
   const todayScore = Object.values(dailyResults).reduce((s, r) => s + (r.score || 0), 0);
-  // seasonScore — session local for now (matches todayScore until Supabase integration)
-  const seasonScore = todayScore;
+  // Authoritative Today + Season totals for signed-in players, sourced from
+  // /api/leaderboard/season (`you.today_points` / `you.total_points`) — the same
+  // score_events source the /leaderboard page uses. Previously `seasonScore` was
+  // just a copy of todayScore, so the header/Account showed Season == Today.
+  const [serverToday,  setServerToday]  = useState(null);
+  const [serverSeason, setServerSeason] = useState(null);
   // Verified subscriber session (set by /auth after a magic link). When
   // present, streak/completions are hydrated from and persisted to
   // Supabase — the masthead chips and stat line show real results.
@@ -2533,6 +2558,11 @@ export default function DailyChallenge() {
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (!data || !Array.isArray(data.leaderboard)) return;
+        // Authoritative Today + Season totals for the signed-in player.
+        if (data.you) {
+          setServerToday(typeof data.you.today_points === "number" ? data.you.today_points : null);
+          setServerSeason(typeof data.you.total_points === "number" ? data.you.total_points : null);
+        }
         const byTeam = new Map();
         for (const row of data.leaderboard) {
           for (const tm of (row.teams || [])) {
@@ -2641,6 +2671,7 @@ export default function DailyChallenge() {
   function openAccount() {
     setPrevScreen(screen);
     setScreen("account");
+    refreshLeaderboard();  // refresh authoritative Today/Season totals for the STATS card
   }
 
   function handleSignOut() {
@@ -2760,6 +2791,11 @@ export default function DailyChallenge() {
   // graceful fallback (no fabricated identity — Precision brand value).
   const displayHandle = handle || (email ? email.split("@")[0] : null);
 
+  // Display totals: prefer the authoritative server figures; fall back to the
+  // running daily total, then the local per-day sum (for guests / offline).
+  const todayTotal  = serverToday  != null ? serverToday  : (lastDailyTotal || todayScore);
+  const seasonTotal = serverSeason != null ? serverSeason : (lastDailyTotal || todayScore);
+
   return (
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       {showSplash && <SplashScreen onEnter={dismissSplash} />}
@@ -2774,54 +2810,55 @@ export default function DailyChallenge() {
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Signed-in handle — shown in the banner in gold. Tapping it opens the
-              Account screen. Hidden on the narrowest phones (≤430px) where the
-              icon-only nav already fills the strip; the handle still shows on the
-              lobby stat line and Account there. */}
+          {/* Signed-in handle (gold) + running Today / Season totals. Hidden on
+              the narrowest phones (≤430px) where the nav already fills the strip;
+              the totals still show on the Account page there. */}
           {displayHandle && !navIconsLabelHidden && (
-            <button
-              type="button"
-              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
-              title="Account"
-              style={{
-                ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
-                color:C.gold, letterSpacing:"0.04em",
-                background:"transparent", border:"none", cursor:"pointer",
-                padding:"4px 6px", whiteSpace:"nowrap",
-                WebkitTapHighlightColor:"transparent",
-              }}
-            >
-              @{displayHandle}
-            </button>
+            <div style={{ display:"flex", alignItems:"center", gap:"14px", minWidth:0 }}>
+              <button
+                type="button"
+                onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+                title="Account"
+                style={{
+                  ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
+                  color:C.gold, letterSpacing:"0.04em",
+                  background:"transparent", border:"none", cursor:"pointer",
+                  padding:"4px 6px", whiteSpace:"nowrap",
+                  WebkitTapHighlightColor:"transparent",
+                }}
+              >
+                @{displayHandle}
+              </button>
+              <div style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
+                <div style={{ textAlign:"center", lineHeight:1.1 }}>
+                  <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</div>
+                  <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</div>
+                </div>
+                <div style={{ textAlign:"center", lineHeight:1.1 }}>
+                  <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</div>
+                  <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</div>
+                </div>
+              </div>
+            </div>
           )}
-          {/* Nav icons (FAR-207) — S · D · L · A, left-to-right. Icon + chrome
-              label on desktop; icon only on mobile (≤430px). */}
+          {/* Nav — simplified white capital letters: D · L · A (Streak removed). */}
           <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
-            {/* Streak — read-only stat pulled from the subscriber's stats (same
-                value as the Account "Day Streak"). No pop-up; the count rides
-                next to the S icon as a gold badge. */}
             <NavPill
-              icon={NAV_ICONS.streak}
-              label="Streak"
-              hideLabel={navIconsLabelHidden}
-              badge={streak > 0 ? streak : undefined}
-            />
-            <NavPill
-              icon={NAV_ICONS.daily}
+              letter="D"
               label="Challenge"
               hideLabel={navIconsLabelHidden}
               onClick={() => setScreen("lobby")}
               active={screen === "lobby"}
             />
             <NavPill
-              icon={NAV_ICONS.leaderboard}
+              letter="L"
               label="Leaderboard"
               hideLabel={navIconsLabelHidden}
               onClick={() => { window.location.href = "/leaderboard"; }}
               active={screen === "leaderboard"}
             />
             <NavPill
-              icon={NAV_ICONS.account}
+              letter="A"
               label="Account"
               hideLabel={navIconsLabelHidden}
               onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
@@ -3012,8 +3049,8 @@ export default function DailyChallenge() {
             handle={handle}
             sessionToken={sessionToken}
             streak={streak}
-            todayScore={todayScore}
-            seasonScore={seasonScore}
+            todayScore={todayTotal}
+            seasonScore={seasonTotal}
             dailyResults={dailyResults}
             onBack={() => setScreen(prevScreen === "account" ? "lobby" : prevScreen)}
             onSignOut={handleSignOut}
