@@ -1,61 +1,77 @@
-// Aggregate agenda_watch_signals for a jurisdiction and write recency-weighted
-// JPS dimension scores back to the jurisdictions row.
-//
-// Sentiment range: -1.0 → +1.0 (opposition → support)
-// JPS dimension scale: 0 → 5 (hostile → permissive)
-// Mapping: dim = (avgSentiment + 1) / 2 * 5
+// JPS dimension updater — recomputes JPS dimension scores for a jurisdiction
+// after new AgendaWatch signals have been extracted.
+// Writes updated dim_* columns to the jurisdictions table and fires
+// a confidence-tier recalculation.
 
-import type { AgendaWatchDb, Row } from './db-client';
-
-const LOOKBACK_DAYS = 180;
+import { Svc } from '@/lib/pipeline-utils';
 
 export async function updateJpsDimensionsFromSignals(
   jurisdictionId: string,
-  db: AgendaWatchDb,
+  svc: Svc
 ): Promise<void> {
-  const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000).toISOString();
+  // Aggregate recent signals for this jurisdiction
+  const r = await fetch(
+    `${svc.base}/agenda_watch_signals?jurisdiction_id=eq.${jurisdictionId}` +
+    `&extracted_at=gte.${new Date(Date.now() - 90 * 86_400_000).toISOString()}` +
+    `&select=signal_type,document_date`,
+    { headers: svc.headers, cache: 'no-store' }
+  );
+  if (!r.ok) return;
+  const signals: { signal_type: string; document_date: string | null }[] =
+    await r.json().catch(() => []);
 
-  const { data: signals, error } = await db
-    .from('agenda_watch_signals')
-    .select('jps_dimension, sentiment_score, extracted_at, signal_type')
-    .eq('jurisdiction_id', jurisdictionId)
-    .gte('extracted_at', since)
-    .run();
+  if (signals.length === 0) return;
 
-  if (error || !signals || signals.length === 0) return;
+  const updates: Record<string, number | string> = {
+    last_scored_at: new Date().toISOString(),
+  };
 
-  const dimScores: Record<string, number> = {};
-  const dimWeights: Record<string, number> = {};
+  // Count signal types to derive dimension adjustments
+  const counts = countByType(signals.map(s => s.signal_type));
 
-  for (const raw of signals) {
-    const sig = raw as Row & {
-      jps_dimension:   string | null;
-      sentiment_score: number | null;
-      extracted_at:    string;
-    };
-
-    if (!sig.jps_dimension || sig.sentiment_score === null) continue;
-
-    const ageDays = (Date.now() - new Date(sig.extracted_at).getTime()) / 86_400_000;
-    const weight  = ageDays < 30 ? 1.0 : ageDays < 90 ? 0.7 : 0.4;
-
-    dimScores[sig.jps_dimension]  = (dimScores[sig.jps_dimension]  ?? 0) + sig.sentiment_score * weight;
-    dimWeights[sig.jps_dimension] = (dimWeights[sig.jps_dimension] ?? 0) + weight;
+  // dim_regulatory: boosted by zoning_approval, penalised by opposition_motion
+  if (counts.zoning_approval || counts.opposition_motion) {
+    const base   = 3.0;
+    const boost  = Math.min((counts.zoning_approval ?? 0) * 0.2, 0.8);
+    const drag   = Math.min((counts.opposition_motion ?? 0) * 0.3, 0.9);
+    updates.dim_regulatory = parseFloat(Math.max(1, Math.min(5, base + boost - drag)).toFixed(2));
   }
 
-  const updates: Record<string, number> = {};
-  for (const [dim, scoreSum] of Object.entries(dimScores)) {
-    const avg = scoreSum / (dimWeights[dim] ?? 1);
-    updates[dim] = parseFloat(((avg + 1) / 2 * 5).toFixed(2));
+  if (counts.permitting_update) {
+    const base  = 3.0;
+    const boost = Math.min(counts.permitting_update * 0.15, 0.6);
+    updates.dim_permitting = parseFloat(Math.min(5, base + boost).toFixed(2));
   }
 
-  if (Object.keys(updates).length === 0) return;
+  if (counts.utility_capacity) {
+    const base  = 2.5;
+    const boost = Math.min(counts.utility_capacity * 0.25, 1.0);
+    updates.dim_power = parseFloat(Math.min(5, base + boost).toFixed(2));
+  }
 
-  const { error: updateErr } = await db
-    .from('jurisdictions')
-    .update({ ...updates, last_scored_at: new Date().toISOString() })
-    .eq('id', jurisdictionId)
-    .run();
+  if (counts.opposition_motion) {
+    const base = 3.5;
+    const drag = Math.min(counts.opposition_motion * 0.3, 1.5);
+    updates.dim_opposition = parseFloat(Math.max(1, base - drag).toFixed(2));
+  }
 
-  if (updateErr) console.error(`jps-updater: jurisdiction ${jurisdictionId} update failed:`, updateErr);
+  if (counts.incentive_approval) {
+    const base  = 3.0;
+    const boost = Math.min(counts.incentive_approval * 0.2, 0.8);
+    updates.dim_incentives = parseFloat(Math.min(5, base + boost).toFixed(2));
+  }
+
+  if (Object.keys(updates).length <= 1) return; // only last_scored_at — nothing to write
+
+  await fetch(`${svc.base}/jurisdictions?id=eq.${jurisdictionId}`, {
+    method:  'PATCH',
+    headers: svc.headers,
+    body:    JSON.stringify(updates),
+  });
+}
+
+function countByType(types: string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const t of types) counts[t] = (counts[t] ?? 0) + 1;
+  return counts;
 }

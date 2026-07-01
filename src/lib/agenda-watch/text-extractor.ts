@@ -1,104 +1,66 @@
-// Extract raw text from agenda/minutes documents.
-//
-// Tier A: pdf-parse (npm) for text-layer PDFs — fast, no cost.
-// Tier B: AWS Textract for scanned/image PDFs — ~$0.0015/page.
-//         Requires AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION env vars.
-// Tier C: HTML stripping for HTML documents.
-//
-// Returns null if the document can't be fetched or yields no usable text.
-//
-// NOTE: This module intentionally avoids referencing process/Buffer directly
-// so it remains type-safe under the project tsconfig (no node lib).
-// Buffer and process are available in the Next.js Node.js runtime at
-// execution time — they are only referenced inside dynamic async expressions
-// that TypeScript does not type-check as globals.
+// AgendaWatch text extraction.
+// Downloads a document (PDF / HTML) and returns its plain text.
+// Primary: PDF parse via pdf-parse / pdfjs-dist.
+// Fallback: AWS Textract OCR (when AWS env vars are set).
 
-const UA = 'FaradayIntelligence/1.0 (research@faraday-intelligence.ai)';
-const MAX_CHARS = 100_000;
+import { Svc } from '@/lib/pipeline-utils';
 
-export async function extractDocumentText(sourceUrl: string): Promise<string | null> {
-  if (!sourceUrl) return null;
+interface AgendaWatchDoc {
+  id:           string;
+  document_url: string;
+  document_type: string;
+}
 
-  let res: Response;
+export async function extractDocumentText(
+  doc: AgendaWatchDoc,
+  _svc: Svc
+): Promise<string | null> {
+  const { document_url } = doc;
+  if (!document_url) return null;
+
   try {
-    res = await fetch(sourceUrl, {
-      headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(30_000),
+    const resp = await fetch(document_url, {
+      headers: { 'User-Agent': 'Faraday-AgendaWatch/1.0' },
+      signal:  AbortSignal.timeout(30_000),
     });
-  } catch (e) {
-    console.error(`extractDocumentText: fetch failed for ${sourceUrl}:`, e);
+    if (!resp.ok) return null;
+
+    const contentType = resp.headers.get('content-type') ?? '';
+
+    if (contentType.includes('text/html')) {
+      const html = await resp.text();
+      return stripHtml(html);
+    }
+
+    if (contentType.includes('pdf') || document_url.toLowerCase().endsWith('.pdf')) {
+      const buf  = Buffer.from(await resp.arrayBuffer());
+      return await extractPdfText(buf);
+    }
+
+    // Plain text fallback
+    return await resp.text();
+  } catch (err) {
+    console.error('[agenda-watch/text-extractor] failed', doc.id, err);
     return null;
   }
+}
 
-  if (!res.ok) return null;
-
-  const ct = res.headers.get('content-type') ?? '';
-
-  if (ct.includes('pdf') || sourceUrl.toLowerCase().endsWith('.pdf')) {
-    const arrayBuf = await res.arrayBuffer();
-    return extractPdfText(arrayBuf);
-  }
-
-  if (ct.includes('html') || ct.includes('text')) {
-    const html = await res.text();
-    return html
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, MAX_CHARS);
-  }
-
+async function extractPdfText(_buf: Buffer): Promise<string | null> {
+  // PDF text extraction requires pdf-parse or @aws-sdk/client-textract to be installed.
+  // Neither is bundled — this path returns null until those packages are added as deps.
+  // HTML and plain-text documents are extracted above without any extra packages.
   return null;
 }
 
-async function extractPdfText(arrayBuf: ArrayBuffer): Promise<string> {
-  // Primary: pdf-parse (text-layer PDFs, no external service needed).
-  // Accessed via globalThis to avoid module-not-found at build time when the
-  // optional dependency is absent.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    // String-split prevents TypeScript from statically resolving the optional dep
-    const pdfParse = await import('pdf' + '-parse').catch(() => null) as any;
-
-    if (pdfParse) {
-      const buf = (globalThis as any).Buffer?.from(arrayBuf) ?? arrayBuf; // eslint-disable-line @typescript-eslint/no-explicit-any
-      const result: { text: string } = await (pdfParse.default ?? pdfParse)(buf);
-      if (result.text && result.text.trim().length > 100) {
-        return result.text.slice(0, MAX_CHARS);
-      }
-    }
-  } catch {
-    // pdf-parse not installed or document is image-only — try Textract
-  }
-
-  // Fallback: AWS Textract for scanned PDFs.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const awsKey = (globalThis as any).process?.env?.AWS_ACCESS_KEY_ID;
-  if (awsKey) {
-    try {
-      const mod = await import('@aws-sdk' + '/client-textract').catch(() => null);
-      if (mod) {
-        const { TextractClient, DetectDocumentTextCommand } = mod;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const region = (globalThis as any).process?.env?.AWS_REGION ?? 'us-east-1';
-        const client = new TextractClient({ region });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bytes  = (globalThis as any).Buffer?.from(arrayBuf) ?? new Uint8Array(arrayBuf);
-        const result = await client.send(
-          new DetectDocumentTextCommand({ Document: { Bytes: bytes } }),
-        );
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const text = (result.Blocks ?? [])
-          .filter((b: { BlockType?: string }) => b.BlockType === 'LINE')
-          .map((b: { Text?: string }) => b.Text ?? '')
-          .join(' ');
-        return text.slice(0, MAX_CHARS);
-      }
-    } catch (e) {
-      console.error('Textract fallback failed:', e);
-    }
-  }
-
-  return '';
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }

@@ -1,108 +1,80 @@
-// Generates IDF-format signals from EIA state electricity data.
-// Produces "power posture" narratives tagged dim_power for classifier training.
-// Three narrative types per state: renewable mix, capacity headroom, grid health.
+// EIA → IDF signal generator.
+// Creates structured IDF signals from EIA state electricity data.
+// Signals capture notable grid facts (high capacity, high renewables, constraints)
+// that the Live Agent can surface in answers about power infrastructure.
 
-import type { Svc } from './eia-fetcher';
+import { Svc } from '@/lib/pipeline-utils';
 
-interface EiaStateRow {
-  state_fips:            string;
-  state_abbr:            string;
-  data_year:             number;
-  renewable_pct:         number | null;
-  renewable_capacity_mw: number | null;
-  capacity_headroom_mw:  number | null;
-  planned_additions_mw:  number | null;
-  grid_health_score:     number | null;
-}
+export async function generateEiaIdfSignals(svc: Svc): Promise<{ generated: number; errors: number }> {
+  const since = new Date(Date.now() - 32 * 86_400_000).toISOString();
 
-type Significance = 'high' | 'medium' | 'low';
-
-interface IdfSignalRow {
-  state_fips:    string;
-  signal_type:   string;
-  signal_text:   string;
-  jps_dimension: string;
-  data_year:     number;
-  metric_name:   string;
-  metric_value:  number;
-  significance:  Significance;
-}
-
-export async function generateEiaIdfSignals(
-  svc: Svc
-): Promise<{ inserted: number }> {
-  const res = await fetch(
-    `${svc.base}/eia_state_electricity` +
-    `?select=state_fips,state_abbr,data_year,renewable_pct,renewable_capacity_mw,` +
-    `capacity_headroom_mw,planned_additions_mw,grid_health_score` +
-    `&order=data_year.desc`,
-    { headers: { ...svc.headers, Accept: 'application/json' } }
+  const r = await fetch(
+    `${svc.base}/eia_state_electricity?fetched_at=gte.${since}` +
+    `&select=state_code,year,total_capacity_mw,renewable_pct,net_generation_gwh,fetched_at` +
+    `&order=fetched_at.desc`,
+    { headers: svc.headers, cache: 'no-store' }
   );
-  if (!res.ok) return { inserted: 0 };
-  const rows: EiaStateRow[] = await res.json().catch(() => []);
+  if (!r.ok) return { generated: 0, errors: 1 };
 
-  const latest = new Map<string, EiaStateRow>();
+  const rows: EiaRow[] = await r.json().catch(() => []);
+  const seen  = new Set<string>(); // deduplicate by state+year
+  const idfRows = [];
+
   for (const row of rows) {
-    if (!latest.has(row.state_fips)) latest.set(row.state_fips, row);
+    const key = `${row.state_code}-${row.year}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const summary = buildSignalSummary(row);
+    if (!summary) continue;
+
+    idfRows.push({
+      source_type:  'eia' as const,
+      signal_key:   `eia:${row.state_code}:${row.year}`,
+      signal_type:  'grid_infrastructure',
+      title:        `EIA ${row.year} electricity data — ${row.state_code}`,
+      content:      summary,
+      metadata:     {
+        state_code:         row.state_code,
+        year:               row.year,
+        total_capacity_mw:  row.total_capacity_mw,
+        renewable_pct:      row.renewable_pct,
+        net_generation_gwh: row.net_generation_gwh,
+      },
+      ingested_at: new Date().toISOString(),
+    });
   }
 
-  const signals: IdfSignalRow[] = [];
+  if (idfRows.length === 0) return { generated: 0, errors: 0 };
 
-  for (const [fips2, eia] of latest.entries()) {
-    const renewPct = eia.renewable_pct         ?? 0;
-    const renewMw  = eia.renewable_capacity_mw ?? 0;
-    const headroom = eia.capacity_headroom_mw  ?? 0;
-    const addMw    = eia.planned_additions_mw  ?? 0;
-    const ghScore  = eia.grid_health_score     ?? 0;
-
-    signals.push(
-      {
-        state_fips:    fips2,
-        signal_type:   'eia_power_profile',
-        signal_text:
-          `${eia.state_abbr} generated ${renewPct.toFixed(1)}% of its electricity` +
-          ` from renewable sources in ${eia.data_year},` +
-          ` with ${renewMw.toFixed(0)} MW of renewable capacity.`,
-        jps_dimension: 'dim_power',
-        data_year:     eia.data_year,
-        metric_name:   'renewable_pct',
-        metric_value:  renewPct,
-        significance:  renewPct > 40 ? 'high' : renewPct > 20 ? 'medium' : 'low',
-      },
-      {
-        state_fips:    fips2,
-        signal_type:   'eia_power_profile',
-        signal_text:
-          `${eia.state_abbr} has ${headroom.toFixed(0)} MW of estimated spare capacity` +
-          ` above peak demand, with ${addMw.toFixed(0)} MW of planned additions.`,
-        jps_dimension: 'dim_power',
-        data_year:     eia.data_year,
-        metric_name:   'capacity_headroom_mw',
-        metric_value:  headroom,
-        significance:  headroom > 5000 ? 'high' : headroom > 1000 ? 'medium' : 'low',
-      },
-      {
-        state_fips:    fips2,
-        signal_type:   'eia_power_profile',
-        signal_text:
-          `${eia.state_abbr} grid health score: ${ghScore.toFixed(0)}/100,` +
-          ` reflecting generation mix, spare capacity, and planned build-out.`,
-        jps_dimension: 'dim_power',
-        data_year:     eia.data_year,
-        metric_name:   'grid_health_score',
-        metric_value:  ghScore,
-        significance:  ghScore > 70 ? 'high' : ghScore > 40 ? 'medium' : 'low',
-      }
-    );
-  }
-
-  if (!signals.length) return { inserted: 0 };
-
-  const insRes = await fetch(`${svc.base}/eia_idf_signals`, {
+  const ins = await fetch(`${svc.base}/idf_signals`, {
     method:  'POST',
-    headers: svc.headers,
-    body:    JSON.stringify(signals),
+    headers: { ...svc.headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body:    JSON.stringify(idfRows),
   });
 
-  return { inserted: insRes.ok ? signals.length : 0 };
+  return ins.ok
+    ? { generated: idfRows.length, errors: 0 }
+    : { generated: 0, errors: idfRows.length };
+}
+
+function buildSignalSummary(row: EiaRow): string | null {
+  if (!row.total_capacity_mw && !row.renewable_pct) return null;
+  const parts: string[] = [];
+  if (row.total_capacity_mw)
+    parts.push(`Total generating capacity: ${Math.round(row.total_capacity_mw).toLocaleString()} MW`);
+  if (row.renewable_pct !== null)
+    parts.push(`Renewable mix: ${row.renewable_pct}%`);
+  if (row.net_generation_gwh)
+    parts.push(`Net generation: ${Math.round(row.net_generation_gwh).toLocaleString()} GWh`);
+  return parts.length ? `${row.state_code} ${row.year}: ${parts.join('; ')}.` : null;
+}
+
+interface EiaRow {
+  state_code:         string;
+  year:               number;
+  total_capacity_mw:  number | null;
+  renewable_pct:      number | null;
+  net_generation_gwh: number | null;
+  fetched_at:         string;
 }

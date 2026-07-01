@@ -6,7 +6,8 @@
 // Required env: EIA_API_KEY, SUPABASE_SERVICE_ROLE_KEY.
 // Optional env: CRON_SECRET (if unset, open access — dev only).
 
-import { fetchAllStateEiaData, type Svc } from '@/lib/eia/eia-fetcher';
+import { fetchAllStateEiaData }  from '@/lib/eia/eia-fetcher';
+import type { Svc }              from '@/lib/pipeline-utils';
 import { applyEiaToJurisdictions }        from '@/lib/eia/eia-jw-updater';
 import { enrichJdsWithEia }               from '@/lib/eia/eia-jds-updater';
 import { generateEiaIdfSignals }          from '@/lib/eia/eia-idf';

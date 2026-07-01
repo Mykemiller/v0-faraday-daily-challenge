@@ -1,203 +1,131 @@
-import {
-  PucDirectory,
-  PUC_DIRECTORIES,
-  PUC_DC_KEYWORDS,
-  PRIORITY_STATE_FIPS,
-} from './puc-directory';
+// PUC docket crawler.
+// Scrapes state Public Utility Commission dockets for data-center-relevant filings.
+// Priority states: TX, VA, GA, NC, FL, AZ, CO, IL, OH, PA.
+// Writes new filings to puc_filings.
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
+import { Svc } from '@/lib/pipeline-utils';
 
-type Svc = { base: string; headers: Record<string, string> };
+const PRIORITY_STATES = ['TX', 'VA', 'GA', 'NC', 'FL', 'AZ', 'CO', 'IL', 'OH', 'PA'];
 
-function getSvc(): Svc | null {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) return null;
-  return {
-    base: `${SUPABASE_URL}/rest/v1`,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-  };
-}
+// Known PUC docket endpoints by state
+const PUC_ENDPOINTS: Record<string, { name: string; url: string; type: 'rss' | 'json' | 'html' }> = {
+  TX: { name: 'PUCT',  url: 'https://interchange.puc.texas.gov/Documents/search.ashx', type: 'json' },
+  VA: { name: 'SCC',   url: 'https://www.scc.virginia.gov/cgi-bin/review.cgi',         type: 'html' },
+  GA: { name: 'PSC',   url: 'https://psc.ga.gov/search/results/',                      type: 'html' },
+  NC: { name: 'NCUC',  url: 'https://www.dockets.ncruc.gov/ViewCase.aspx',             type: 'html' },
+  FL: { name: 'FPSC',  url: 'https://www.floridapsc.com/FilingCenter/Search',          type: 'html' },
+  AZ: { name: 'ACC',   url: 'https://edocket.azcc.gov/api/docket/search',              type: 'json' },
+  CO: { name: 'COPUC', url: 'https://www.dora.state.co.us/pls/efi/efidocs.results_pkg', type: 'html' },
+  IL: { name: 'ICC',   url: 'https://www.icc.illinois.gov/docket',                     type: 'html' },
+  OH: { name: 'PUCO',  url: 'https://dis.puc.state.oh.us/TacixSearch.aspx',            type: 'html' },
+  PA: { name: 'PaPUC', url: 'https://www.puc.pa.gov/filing-resources/issuing-search',  type: 'html' },
+};
 
-const UA = 'FaradayIntelligence/1.0 (research@faraday-intelligence.ai)';
-const FETCH_TIMEOUT_MS = 15_000;
-
-export async function crawlAllPucDockets(priorityOnly = false): Promise<void> {
-  const svc = getSvc();
-  if (!svc) throw new Error('SUPABASE_SERVICE_ROLE_KEY not set');
-
-  const targets = priorityOnly
-    ? PUC_DIRECTORIES.filter(d => PRIORITY_STATE_FIPS.has(d.state_fips))
-    : PUC_DIRECTORIES;
-
-  for (const puc of targets) {
-    console.log(`PUC crawl: ${puc.state_abbr} — ${puc.agency_name}`);
-    try {
-      if (puc.api_available) {
-        await crawlPucApi(puc, svc);
-      } else {
-        await crawlPucHtml(puc, svc);
-      }
-    } catch (e) {
-      console.error(`PUC crawl failed for ${puc.state_abbr}:`, e);
-    }
-    await sleep(PRIORITY_STATE_FIPS.has(puc.state_fips) ? 1000 : 2000);
-  }
-}
-
-// ── API-based crawl (AZ, TX) ──────────────────────────────────────────────────
-
-async function crawlPucApi(puc: PucDirectory, svc: Svc): Promise<void> {
-  const searchUrl = puc.search_url ?? puc.docket_url;
-  for (const keyword of PUC_DC_KEYWORDS.slice(0, 5)) {
-    const url = `${searchUrl}?keyword=${encodeURIComponent(keyword)}&limit=50`;
-    try {
-      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
-      if (!res.ok) continue;
-      const data: unknown = await res.json();
-      const dockets: unknown[] = (data as Record<string, unknown>)?.items as unknown[] ??
-                                 (data as Record<string, unknown>)?.dockets as unknown[] ??
-                                 (Array.isArray(data) ? data : []);
-      for (const docket of dockets) {
-        await upsertDocket(puc, docket as Record<string, unknown>, svc);
-      }
-      await sleep(500);
-    } catch (e) {
-      console.error(`PUC API error ${puc.state_abbr} keyword="${keyword}":`, e);
-    }
-  }
-}
-
-// ── HTML / search-form crawl ──────────────────────────────────────────────────
-
-async function crawlPucHtml(puc: PucDirectory, svc: Svc): Promise<void> {
-  const searchUrl = puc.search_url ?? puc.docket_url;
-  for (const keyword of PUC_DC_KEYWORDS.slice(0, 3)) {
-    try {
-      let html: string | null = null;
-
-      try {
-        const res = await fetchWithTimeout(searchUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': UA,
-          },
-          body: `keyword=${encodeURIComponent(keyword)}&dateFrom=&dateTo=`,
-        });
-        if (res.ok) html = await res.text();
-      } catch { /* fall through to GET */ }
-
-      if (!html) {
-        const res = await fetchWithTimeout(
-          `${searchUrl}?q=${encodeURIComponent(keyword)}`,
-          { headers: { 'User-Agent': UA } },
-        );
-        if (res.ok) html = await res.text();
-      }
-
-      if (html) await parseHtmlDockets(puc, html, svc);
-      await sleep(1500);
-    } catch (e) {
-      console.error(`PUC HTML error ${puc.state_abbr}:`, e);
-    }
-  }
-}
-
-// ── HTML docket extraction ────────────────────────────────────────────────────
-
-const DOCKET_PATTERNS = [
-  /(?:Docket|Case|No\.?)\s+([A-Z]?\d{4,8}[-A-Z0-9]*)/gi,
-  /[A-Z]{1,3}-\d{4,6}/g,
+// Keywords that indicate data-center relevance in PUC filings
+const DC_KEYWORDS = [
+  'data center', 'data centre', 'hyperscale', 'co-location', 'colocation',
+  'large load', 'transmission', 'interconnection', 'substation expansion',
+  'generation interconnection',
 ];
 
-async function parseHtmlDockets(
-  puc: PucDirectory,
-  html: string,
-  svc: Svc,
-): Promise<void> {
-  const found = new Set<string>();
-  for (const pattern of DOCKET_PATTERNS) {
-    for (const m of html.matchAll(pattern)) {
-      found.add(m[1]?.trim() ?? m[0].trim());
+export interface PucCrawlResult {
+  states:   number;
+  filings:  number;
+  inserted: number;
+  errors:   number;
+}
+
+export async function crawlAllPucDockets(
+  priorityOnly: boolean,
+  svc: Svc
+): Promise<PucCrawlResult> {
+  const states = priorityOnly ? PRIORITY_STATES : Object.keys(PUC_ENDPOINTS);
+  const result: PucCrawlResult = { states: states.length, filings: 0, inserted: 0, errors: 0 };
+
+  for (const stateCode of states) {
+    const endpoint = PUC_ENDPOINTS[stateCode];
+    if (!endpoint) continue;
+
+    try {
+      const filings = await fetchStateFilings(stateCode, endpoint);
+      result.filings += filings.length;
+
+      for (const filing of filings) {
+        const r = await fetch(`${svc.base}/puc_filings`, {
+          method:  'POST',
+          headers: { ...svc.headers, Prefer: 'resolution=ignore-duplicates,return=minimal' },
+          body:    JSON.stringify({
+            state_code:    stateCode,
+            puc_name:      endpoint.name,
+            docket_number: filing.docketNumber,
+            title:         filing.title,
+            filing_date:   filing.date,
+            filing_url:    filing.url,
+            keywords_found: filing.keywords,
+            crawled_at:    new Date().toISOString(),
+          }),
+        });
+        if (r.ok) result.inserted++;
+      }
+    } catch (err) {
+      console.error(`[puc/crawl] state ${stateCode} error`, err);
+      result.errors++;
     }
   }
 
-  const dcRelevantHtml = PUC_DC_KEYWORDS.some(kw =>
-    new RegExp(kw, 'i').test(html),
-  );
+  return result;
+}
 
-  for (const docketNumber of [...found].slice(0, 20)) {
-    const res = await fetch(`${svc.base}/puc_dockets`, {
-      method: 'POST',
-      headers: {
-        ...svc.headers,
-        Prefer: 'resolution=merge-duplicates,return=minimal',
-      },
-      body: JSON.stringify({
-        state_fips:    puc.state_fips,
-        docket_number: docketNumber,
-        dc_relevant:   dcRelevantHtml,
-        source_url:    puc.docket_url,
-        status:        'open',
-      }),
+interface PucFiling {
+  docketNumber: string;
+  title:        string;
+  date:         string | null;
+  url:          string;
+  keywords:     string[];
+}
+
+async function fetchStateFilings(
+  stateCode: string,
+  endpoint: { url: string; type: string }
+): Promise<PucFiling[]> {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+
+  try {
+    const r = await fetch(endpoint.url, {
+      headers: { 'User-Agent': 'Faraday-PUCCrawler/1.0' },
+      signal:  AbortSignal.timeout(15_000),
     });
-    if (!res.ok) {
-      console.error(`upsert docket ${puc.state_abbr}/${docketNumber}: ${res.status}`);
-    }
+    if (!r.ok) return [];
+
+    const text = await r.text();
+    return parseFilingsText(stateCode, text, since);
+  } catch {
+    return [];
   }
 }
 
-// ── Structured upsert (API path) ──────────────────────────────────────────────
+function parseFilingsText(stateCode: string, text: string, _since: string): PucFiling[] {
+  const results: PucFiling[] = [];
+  const lines = text.split('\n');
 
-async function upsertDocket(
-  puc: PucDirectory,
-  docket: Record<string, unknown>,
-  svc: Svc,
-): Promise<void> {
-  const title = String(docket.title ?? docket.name ?? '');
-  const desc  = String(docket.description ?? '');
-  const dcRelevant = PUC_DC_KEYWORDS.some(kw =>
-    new RegExp(kw, 'i').test(title) || new RegExp(kw, 'i').test(desc),
-  );
+  for (const line of lines) {
+    const lc = line.toLowerCase();
+    const matched = DC_KEYWORDS.filter(kw => lc.includes(kw));
+    if (matched.length === 0) continue;
 
-  const docketNumber = String(
-    docket.id ?? docket.docketNumber ?? docket.case_number ?? '',
-  );
-  if (!docketNumber) return;
+    // Best-effort docket number extraction (format varies by state)
+    const docketMatch = line.match(/\b(?:case|docket|no\.?)\s*[\w-]+\d+/i) ??
+                        line.match(/\b\d{2}[-–]\d{4,6}\b/);
+    if (!docketMatch) continue;
 
-  const res = await fetch(`${svc.base}/puc_dockets`, {
-    method: 'POST',
-    headers: {
-      ...svc.headers,
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify({
-      state_fips:    puc.state_fips,
-      docket_number: docketNumber,
-      docket_title:  title || null,
-      utility_name:  (docket.utility ?? docket.filer) as string | null ?? null,
-      filed_date:    (docket.date ?? docket.filed_date) as string | null ?? null,
-      status:        docket.status === 'closed' ? 'closed' : 'open',
-      dc_relevant:   dcRelevant,
-      source_url:    (docket.url as string | null) ?? puc.docket_url,
-    }),
-  });
-  if (!res.ok) {
-    console.error(`upsert API docket ${puc.state_abbr}/${docketNumber}: ${res.status}`);
+    results.push({
+      docketNumber: docketMatch[0].trim(),
+      title:        line.trim().slice(0, 300),
+      date:         null,
+      url:          '',
+      keywords:     matched,
+    });
   }
-}
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  return results;
 }

@@ -1,99 +1,100 @@
-// Opposition signal aggregation — rolls up DC-relevant Facebook posts into
-// per-jurisdiction daily signals and updates jurisdictions.dim_opposition.
-//
-// dim_opposition mapping: weighted_sentiment (-1→+1) → JPS scale (0→5)
-//   strong support  (+1.0) → 0.0   (no opposition)
-//   neutral          (0.0) → 2.5
-//   strong opposition(-1.0) → 5.0  (maximum opposition)
+// Data365 opposition aggregator.
+// Reads recent data365_posts (last 7 days) and writes aggregated
+// sentiment / opposition signals to dim_opposition on jurisdictions.
 
-import { svc, dbSelect, dbUpsert, dbPatch } from './svc';
+import { Svc } from '@/lib/pipeline-utils';
 
-interface PostRow {
-  jurisdiction_id:  string;
-  sentiment_score:  number | null;
-  engagement_score: number | null;
-  post_url:         string | null;
-  posted_at:        string | null;
-}
+const OPPOSITION_KEYWORDS = [
+  'oppose', 'opposition', 'against', 'stop', 'halt', 'ban',
+  'moratorium', 'reject', 'no data center', 'too much power',
+  'noise', 'traffic', 'water usage', 'environmental', 'concerned',
+];
+const SUPPORT_KEYWORDS = [
+  'support', 'jobs', 'economic', 'welcome', 'approve', 'benefit',
+  'tax revenue', 'infrastructure', 'growth',
+];
 
-export async function aggregateOppositionSignals(lookbackDays = 90): Promise<void> {
-  const s     = svc();
-  const since = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
+export async function aggregateOppositionSignals(svc: Svc): Promise<{ updated: number }> {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
 
-  const posts = await dbSelect<PostRow>(
-    s,
-    'data365_posts',
-    `is_dc_relevant=eq.true` +
-    `&posted_at=gte.${since}` +
-    `&select=jurisdiction_id,sentiment_score,engagement_score,post_url,posted_at`,
+  // Fetch recent posts that have a jurisdiction_id set
+  const r = await fetch(
+    `${svc.base}/data365_posts?fetched_at=gte.${since}&jurisdiction_id=not.is.null` +
+    `&select=jurisdiction_id,post_text,reaction_count,comment_count&limit=5000`,
+    { headers: svc.headers, cache: 'no-store' }
   );
+  if (!r.ok) return { updated: 0 };
 
-  if (posts.length === 0) {
-    console.log('Opposition aggregation: no DC-relevant posts in lookback window');
-    return;
-  }
+  const posts: Post[] = await r.json().catch(() => []);
 
   // Group by jurisdiction
-  const byJurisdiction = new Map<string, PostRow[]>();
+  const byJurisdiction: Record<string, Post[]> = {};
   for (const post of posts) {
     if (!post.jurisdiction_id) continue;
-    const existing = byJurisdiction.get(post.jurisdiction_id) ?? [];
-    existing.push(post);
-    byJurisdiction.set(post.jurisdiction_id, existing);
+    byJurisdiction[post.jurisdiction_id] ??= [];
+    byJurisdiction[post.jurisdiction_id].push(post);
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  let updated = 0;
+  for (const [jurisdictionId, jPosts] of Object.entries(byJurisdiction)) {
+    const { oppositionScore, sentimentLabel } = computeOppositionScore(jPosts);
 
-  for (const [jurisdictionId, jPosts] of byJurisdiction) {
-    const totalEngagement = jPosts.reduce(
-      (s, p) => s + (p.engagement_score ?? 0), 0,
-    );
-
-    const weightedSentiment = totalEngagement > 0
-      ? jPosts.reduce(
-          (s, p) => s + (p.sentiment_score ?? 0) * (p.engagement_score ?? 1), 0,
-        ) / totalEngagement
-      : jPosts.reduce((s, p) => s + (p.sentiment_score ?? 0), 0) / jPosts.length;
-
-    const avgSentiment =
-      jPosts.reduce((s, p) => s + (p.sentiment_score ?? 0), 0) / jPosts.length;
-
-    const topPost = [...jPosts].sort(
-      (a, b) => (b.engagement_score ?? 0) - (a.engagement_score ?? 0),
-    )[0];
-
-    await dbUpsert(s, 'data365_opposition_signals', {
-      jurisdiction_id:    jurisdictionId,
-      signal_date:        today,
-      post_count:         jPosts.length,
-      avg_sentiment:      parseFloat(avgSentiment.toFixed(3)),
-      weighted_sentiment: parseFloat(weightedSentiment.toFixed(3)),
-      opposition_posts:   jPosts.filter(p => (p.sentiment_score ?? 0) < -0.2).length,
-      support_posts:      jPosts.filter(p => (p.sentiment_score ?? 0) > 0.2).length,
-      neutral_posts:      jPosts.filter(
-        p => Math.abs(p.sentiment_score ?? 0) <= 0.2,
-      ).length,
-      top_post_url:         topPost?.post_url ?? null,
-      top_post_engagement:  topPost ? Math.round(topPost.engagement_score ?? 0) : null,
-      idf_ingested:         false,
-      computed_at:          new Date().toISOString(),
+    const patch = await fetch(`${svc.base}/jurisdictions?id=eq.${jurisdictionId}`, {
+      method:  'PATCH',
+      headers: svc.headers,
+      body:    JSON.stringify({
+        dim_opposition:       oppositionScore,
+        last_scored_at:       new Date().toISOString(),
+        opposition_sentiment: sentimentLabel,
+      }),
     });
-
-    // Map weighted_sentiment (-1→+1) to JPS dim_opposition scale (0→5).
-    // High opposition (sentiment = -1) → score 5; strong support (+1) → score 0.
-    const dimOpposition = parseFloat(
-      (((weightedSentiment * -1) + 1) / 2 * 5).toFixed(2),
-    );
-
-    await dbPatch(
-      s,
-      'jurisdictions',
-      `id=eq.${jurisdictionId}`,
-      { dim_opposition: dimOpposition },
-    );
+    if (patch.ok) updated++;
   }
 
-  console.log(
-    `Opposition aggregation complete: ${byJurisdiction.size} jurisdictions updated`,
-  );
+  return { updated };
+}
+
+function computeOppositionScore(posts: Post[]): {
+  oppositionScore: number;
+  sentimentLabel:  'supportive' | 'neutral' | 'cautious' | 'opposed';
+} {
+  let oppCount  = 0;
+  let supCount  = 0;
+  let totalWeight = 0;
+
+  for (const post of posts) {
+    const text   = (post.post_text ?? '').toLowerCase();
+    const weight = 1 + Math.log1p(post.reaction_count + post.comment_count);
+
+    const opp = OPPOSITION_KEYWORDS.filter(k => text.includes(k)).length;
+    const sup = SUPPORT_KEYWORDS.filter(k => text.includes(k)).length;
+
+    oppCount  += opp  * weight;
+    supCount  += sup  * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight === 0) return { oppositionScore: 3.0, sentimentLabel: 'neutral' };
+
+  const oppRatio = oppCount / totalWeight;
+  const supRatio = supCount / totalWeight;
+
+  // Scale: 1 (strong opposition) → 5 (strong support), neutral = 3
+  const raw    = 3 + (supRatio - oppRatio) * 4;
+  const clamped = Math.max(1, Math.min(5, raw));
+  const score  = parseFloat(clamped.toFixed(2));
+
+  const label: 'supportive' | 'neutral' | 'cautious' | 'opposed' =
+    score >= 4.0 ? 'supportive' :
+    score >= 3.0 ? 'neutral'    :
+    score >= 2.0 ? 'cautious'   : 'opposed';
+
+  return { oppositionScore: score, sentimentLabel: label };
+}
+
+interface Post {
+  jurisdiction_id: string;
+  post_text:       string | null;
+  reaction_count:  number;
+  comment_count:   number;
 }

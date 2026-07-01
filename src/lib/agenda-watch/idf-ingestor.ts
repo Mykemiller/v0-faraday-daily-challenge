@@ -1,92 +1,69 @@
-// Write un-ingested agenda_watch_signals to the idf_signals table for
-// classifier training / continuous learning. Marks rows idf_ingested=true
-// after a successful batch write so reruns are safe.
+// AgendaWatch → IDF signal ingestor.
+// Reads un-ingested agenda_watch_signals rows and upserts them into idf_signals.
+// Marks each signal idf_ingested=true after a successful write.
 
-import type { AgendaWatchDb, Row } from './db-client';
+import { Svc } from '@/lib/pipeline-utils';
 
-// PostgREST embedded-resource select — pulls through the FK chain:
-//   agenda_watch_signals → agenda_watch_documents → agenda_watch_entities
-const SIGNAL_SELECT = [
-  'id',
-  'signal_text',
-  'signal_type',
-  'sentiment_score',
-  'jps_dimension',
-  'confidence',
-  'agenda_watch_documents!inner(',
-  '  meeting_date,',
-  '  meeting_body,',
-  '  entity_id,',
-  '  agenda_watch_entities!inner(entity_name,state_fips,county_fips5)',
-  ')',
-].join('');
+const BATCH_SIZE = 200;
 
-export async function ingestSignalsToIdf(
-  db: AgendaWatchDb,
-  batchSize = 500,
-): Promise<void> {
-  const { data: signals, error } = await db
-    .from('agenda_watch_signals')
-    .select(SIGNAL_SELECT)
-    .eq('idf_ingested', false)
-    .limit(batchSize)
-    .run();
+export async function ingestSignalsToIdf(svc: Svc): Promise<{ ingested: number; errors: number }> {
+  let ingested = 0;
+  let errors   = 0;
+  let offset   = 0;
 
-  if (error || !signals || signals.length === 0) {
-    if (error) console.error('ingestSignalsToIdf: fetch failed:', error);
-    return;
+  while (true) {
+    const r = await fetch(
+      `${svc.base}/agenda_watch_signals?idf_ingested=eq.false` +
+      `&select=id,jurisdiction_id,signal_type,signal_text,document_date,document_id` +
+      `&limit=${BATCH_SIZE}&offset=${offset}`,
+      { headers: svc.headers, cache: 'no-store' }
+    );
+    if (!r.ok) break;
+
+    const signals: AgendaSignalRow[] = await r.json().catch(() => []);
+    if (signals.length === 0) break;
+
+    const idfRows = signals.map(s => ({
+      source_type:     'agenda_watch' as const,
+      jurisdiction_id: s.jurisdiction_id ?? null,
+      signal_key:      `aw:${s.id}`,
+      signal_type:     s.signal_type,
+      title:           `AgendaWatch signal — ${s.signal_type}`,
+      content:         s.signal_text ?? null,
+      metadata:        { document_id: s.document_id, document_date: s.document_date },
+      ingested_at:     new Date().toISOString(),
+    }));
+
+    const ins = await fetch(`${svc.base}/idf_signals`, {
+      method:  'POST',
+      headers: { ...svc.headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body:    JSON.stringify(idfRows),
+    });
+
+    if (ins.ok) {
+      // Mark source rows as ingested
+      const ids = signals.map(s => s.id);
+      await fetch(
+        `${svc.base}/agenda_watch_signals?id=in.(${ids.map(encodeURIComponent).join(',')})`,
+        { method: 'PATCH', headers: svc.headers, body: JSON.stringify({ idf_ingested: true }) }
+      );
+      ingested += signals.length;
+    } else {
+      errors += signals.length;
+    }
+
+    if (signals.length < BATCH_SIZE) break;
+    offset += BATCH_SIZE;
   }
 
-  const idfRecords = signals.map(raw => {
-    const sig = raw as Row & {
-      id:              string;
-      signal_text:     string;
-      signal_type:     string | null;
-      sentiment_score: number | null;
-      jps_dimension:   string | null;
-      confidence:      number | null;
-      agenda_watch_documents?: Row & {
-        meeting_date:  string | null;
-        meeting_body:  string | null;
-        agenda_watch_entities?: Row & {
-          entity_name: string | null;
-          state_fips:  string | null;
-          county_fips5: string | null;
-        };
-      };
-    };
+  return { ingested, errors };
+}
 
-    const doc    = sig.agenda_watch_documents;
-    const entity = doc?.agenda_watch_entities;
-
-    return {
-      source_type:            'agenda_watch_replication',
-      source_id:              sig.id,
-      raw_text:               sig.signal_text,
-      signal_type:            sig.signal_type     ?? null,
-      jps_dimension:          sig.jps_dimension   ?? null,
-      sentiment_score:        sig.sentiment_score ?? null,
-      classifier_confidence:  sig.confidence      ?? null,
-      state_fips:             entity?.state_fips  ?? null,
-      county_fips5:           entity?.county_fips5 ?? null,
-      meeting_date:           doc?.meeting_date    ?? null,
-      entity_name:            entity?.entity_name  ?? null,
-      ingested_at:            new Date().toISOString(),
-    };
-  });
-
-  const { error: insertErr } = await db.from('idf_signals').insert(idfRecords).run();
-  if (insertErr) {
-    console.error('ingestSignalsToIdf: idf_signals insert failed:', insertErr);
-    return;
-  }
-
-  const { error: markErr } = await db
-    .from('agenda_watch_signals')
-    .update({ idf_ingested: true, idf_ingested_at: new Date().toISOString() })
-    .in('id', signals.map(s => (s as Row & { id: string }).id))
-    .run();
-
-  if (markErr) console.error('ingestSignalsToIdf: mark-ingested failed:', markErr);
-  else console.log(`IDF ingestion: ${idfRecords.length} signals written`);
+interface AgendaSignalRow {
+  id:              string;
+  jurisdiction_id: string | null;
+  signal_type:     string;
+  signal_text:     string | null;
+  document_date:   string | null;
+  document_id:     string | null;
 }

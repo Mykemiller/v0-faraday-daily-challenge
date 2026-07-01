@@ -2,7 +2,7 @@
 // States with >1,000 MW renewable capacity are flagged — renewable capacity
 // signals hyperscaler data center developer interest (sustainability commitments).
 
-import type { Svc } from './eia-fetcher';
+import type { Svc } from '@/lib/pipeline-utils';
 
 interface EiaRenewableRow {
   state_fips:            string;

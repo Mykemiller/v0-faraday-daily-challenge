@@ -18,6 +18,7 @@ import { discoverAllCountyGroups }    from '@/lib/data365/group-discovery';
 import { fetchGroupPostsBatch }        from '@/lib/data365/post-fetcher';
 import { aggregateOppositionSignals }  from '@/lib/data365/opposition-aggregator';
 import { ingestData365ToIdf }          from '@/lib/data365/idf';
+import { getServiceClient }            from '@/lib/pipeline-utils';
 
 const VALID_ACTIONS = ['discover', 'fetch-posts', 'aggregate', 'ingest-idf', 'run-all'] as const;
 type Action = typeof VALID_ACTIONS[number];
@@ -60,6 +61,11 @@ export async function POST(request: Request) {
   const batchSize    = typeof body.batchSize    === 'number' ? body.batchSize    : undefined;
   const lookbackDays = typeof body.lookbackDays === 'number' ? body.lookbackDays : undefined;
 
+  const svc = getServiceClient();
+  if (!svc) {
+    return Response.json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured' }, { status: 500 });
+  }
+
   try {
     switch (action as Action) {
       case 'discover':
@@ -67,11 +73,11 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, action });
 
       case 'fetch-posts':
-        await fetchGroupPostsBatch(batchSize);
+        await fetchGroupPostsBatch(batchSize ?? 100, svc);
         return Response.json({ ok: true, action });
 
       case 'aggregate':
-        await aggregateOppositionSignals(lookbackDays);
+        await aggregateOppositionSignals(svc);
         return Response.json({ ok: true, action });
 
       case 'ingest-idf':
@@ -79,8 +85,8 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, action });
 
       case 'run-all':
-        await fetchGroupPostsBatch(batchSize);
-        await aggregateOppositionSignals(lookbackDays);
+        await fetchGroupPostsBatch(batchSize ?? 100, svc);
+        await aggregateOppositionSignals(svc);
         await ingestData365ToIdf(batchSize);
         return Response.json({ ok: true, action });
     }
