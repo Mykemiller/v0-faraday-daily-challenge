@@ -3,16 +3,33 @@
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
-wordmark ("Faraday" / "DAILY CHALLENGE") flush left (no BrandMark tile), the
-ambient status (handle + Today's/Season Total Score, hidden ≤430px) and **four
-right-aligned icon triggers** — **Daily Challenge (grid) · Leaderboard (trophy) ·
-Account (gear) · More Faraday (hamburger)** — each opening a click-toggle dropdown.
+wordmark ("Faraday" / "DAILY CHALLENGE") flush left (no BrandMark tile; clickable
+→ lobby), the ambient status (handle + Today's/Season Total Score, hidden ≤430px)
+and **five right-aligned icon triggers** — **All Games (grid) · Help & Feedback (?)
+· Compete (trophy) · Account (gear) · More Faraday (hamburger)** — each opening a
+click-toggle dropdown (design-review menu structure, 2026-07-02):
+
+- **All Games** = the 7 games in lobby-grid order (`GAME_CONFIGS` in-app;
+  `DC_GAMES` in SiteHeaderNav → `/challenge?game=<type>` deep-links; keep in sync).
+- **Help & Feedback** = Hints / Tips and Tricks / Questions / Glossary / Report a
+  Bug / Feedback — all stubs served by the single dynamic route `/help/[topic]`.
+- **Compete** = Leaderboard — Today / Leaderboard — Season (both `/leaderboard`;
+  no today-only view yet) / Teams (`/leaderboard?view=teams` deep-link) / Free
+  Agency (`/free-agency` stub, "Trade window: TBD").
+- **More Faraday** = About (`/about` stub) / Who is Faraday (`/who-is-faraday`
+  stub) / Share / Invite (`/share` stub) / Notifications (`/notifications` stub) /
+  Faraday Merchandise (`/merch` stub) / **Faraday Academy — disabled/grayed, no
+  link (reserved for a later phase, do NOT wire)** / Terms-Privacy (`/legal` stub).
+  Other Faraday products (Jurisdiction Watch, Signal Room, …) deliberately NOT in
+  this menu. No "Sign Up" in the gear menu by design.
+- Stub pages share `src/components/DcStubPage.tsx` (DC masthead + "Coming soon"
+  chip). Repoint menu items in the two build*Menus helpers when real pages exist.
 
 - **Edit the dropdown text/links in ONE place:** the `buildHeaderMenus()` helper
   (just above the `DailyChallenge` component). Each item is `{label, onClick}` /
-  `{label, href}` / `{label, current}` / `{divider:true}`. The Account menu is
-  auth-conditional (`email` present → Streak & Stats / Settings / Sign Out;
-  else → Sign In).
+  `{label, href}` / `{label, current}` / `{label, disabled:true}` / `{divider:true}`.
+  The Account menu is auth-conditional (`email` present → Account / Settings /
+  Sign Out; else → Sign In; Settings opens the same Account screen today).
 - **Behavior** lives in `HeaderIconNav` (single-open `open` state, click-outside +
   `Escape` close, caret flip). Icons are inline SVG (`NavGlyph`, stroke 1.8, no
   icon lib). Styling is `.dc-*` classes in the injected `<style>` block (built from
@@ -21,9 +38,10 @@ Account (gear) · More Faraday (hamburger)** — each opening a click-toggle dro
   unused. Streak-flame / MW chip / LIVE pulse were already gone; their orphaned CSS
   (`@keyframes pulse`, the `.fdc-mw, .fdc-live` media rule) was also removed in this
   pass (Myke-confirmed "retire live/mw/streak flame").
-- Placeholder links to flag: Puzzle Archive→/challenge, How to Play→/academy,
-  Leaderboard Today/Week/All-Time→/leaderboard (no time-range views), About
-  Faraday→/. Repoint in `buildHeaderMenus` when real pages exist.
+- Placeholder links to flag: Leaderboard Today/Season both →/leaderboard (no
+  time-range views yet); every `/help/*`, `/about`, `/who-is-faraday`, `/share`,
+  `/notifications`, `/merch`, `/free-agency`, `/legal` link lands on a stub.
+  Repoint in `buildHeaderMenus` / `buildSiteMenus` when real pages exist.
 - **Standalone Next routes** (`/account`, and next `/leaderboard`) use the twin
   component `src/components/SiteHeaderNav.tsx` — same icon-dropdown look/behavior
   but **href-based** nav (no in-app screen state). Edit its dropdown text/links in

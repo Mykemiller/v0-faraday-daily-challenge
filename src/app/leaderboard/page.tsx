@@ -187,6 +187,15 @@ export default function LeaderboardPage() {
     }
   }, [activeTab, loadGlobal, loadTeam]);
 
+  // Deep-link: /leaderboard?view=teams opens the Teams tab (header "Compete →
+  // Teams" targets this). Runs once on mount; window.location keeps it out of
+  // the useSearchParams/Suspense contract.
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("view") === "teams") setTeamsView(true);
+    } catch { /* no search */ }
+  }, []);
+
   const myTeams = globalData?.my_teams ?? [];
   const season = globalData?.season ?? teamData?.season ?? null;
 

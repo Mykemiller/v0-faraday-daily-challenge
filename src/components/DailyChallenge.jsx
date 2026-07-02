@@ -2404,16 +2404,20 @@ function SplashScreen({ onEnter }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // HEADER ICON-DROPDOWN NAV (feature/header-icon-nav)
 // ══════════════════════════════════════════════════════════════════════════════
-// Four right-aligned icon triggers (Daily · Leaderboard · Account · More), each
-// opening a click-toggle dropdown. Single-open-at-a-time; click-outside / Escape
-// close; caret flips when open. Icons are inline SVG (stroke 1.8, no fills, no
-// icon library). Styling lives in the injected <style> block (`.dc-*` classes).
+// Five right-aligned icon triggers (All Games · Help & Feedback · Compete ·
+// Account · More Faraday), each opening a click-toggle dropdown. Single-open-at-
+// a-time; click-outside / Escape close; caret flips when open. Icons are inline
+// SVG (stroke 1.8, no fills, no icon library). Styling lives in the injected
+// <style> block (`.dc-*` classes).
 
-// Inline SVGs for the four triggers — grid · trophy · gear · hamburger.
+// Inline SVGs for the five triggers — grid · help · trophy · gear · hamburger.
 function NavGlyph({ name }) {
   const common = { viewBox: "0 0 24 24", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
   if (name === "grid") return (
     <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+  );
+  if (name === "help") return (
+    <svg {...common}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
   );
   if (name === "trophy") return (
     <svg {...common}><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a2 2 0 0 0 2 4M17 6h3a2 2 0 0 1-2 4"/></svg>
@@ -2432,34 +2436,47 @@ function NavGlyph({ name }) {
 //   { label, onClick }   → runs a handler (in-app navigation / auth / sign-out)
 //   { label, href }      → navigates to a URL (same tab)
 //   { label, current:true } → styled as the active destination
+//   { label, disabled:true } → grayed out, not clickable (reserved for later)
 //   { divider:true }     → a horizontal rule
 // The Account menu is auth-conditional (see the `email` branch).
-function buildHeaderMenus({ email, onToday, onSignIn, onAccount, onSettings, onSignOut }) {
+// Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
+function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut }) {
   return [
-    { id: "daily", icon: "grid", label: "Daily Challenge", items: [
-      { label: "Today's Puzzle", onClick: onToday, current: true },
-      { label: "Puzzle Archive", href: "/challenge" },   // TODO: no dedicated archive page yet → lobby
-      { label: "How to Play",    href: "/academy" },      // TODO: no How-to-Play page yet → Academy stub
+    // All 7 games, in lobby-grid order (GAME_CONFIGS is the source of truth).
+    { id: "games", icon: "grid", label: "All Games", items:
+      GAME_CONFIGS.map(c => ({ label: c.type, onClick: () => onGame(c.type), current: c.type === activeGame })),
+    },
+    { id: "help", icon: "help", label: "Help & Feedback", items: [
+      { label: "Hints",           href: "/help/hints" },
+      { label: "Tips and Tricks", href: "/help/tips" },
+      { label: "Questions",       href: "/help/questions" },
+      { label: "Glossary",        href: "/help/glossary" },
+      { label: "Report a Bug",    href: "/help/report-a-bug" },
+      { label: "Feedback",        href: "/help/feedback" },
     ]},
-    { id: "leaderboard", icon: "trophy", label: "Leaderboard", items: [
-      { label: "Today",    href: "/leaderboard" },
-      { label: "This Week", href: "/leaderboard" },       // TODO: no weekly view yet → season board
-      { label: "All-Time", href: "/leaderboard" },
+    { id: "compete", icon: "trophy", label: "Compete", items: [
+      { label: "Leaderboard — Today",  href: "/leaderboard" },  // TODO: no today-only view yet → season board (shows a Today column)
+      { label: "Leaderboard — Season", href: "/leaderboard" },
+      { label: "Teams",                href: "/leaderboard?view=teams" },
+      { label: "Free Agency",          href: "/free-agency" },
     ]},
     { id: "account", icon: "gear", label: "Account", items: email ? [
-      { label: "Streak & Stats", onClick: onAccount },
-      { label: "Settings",       onClick: onSettings },
+      { label: "Account",  onClick: onAccount },
+      { label: "Settings", onClick: onSettings },  // same Account screen today — no separate settings page yet
       { divider: true },
-      { label: "Sign Out",       onClick: onSignOut },
+      { label: "Sign Out", onClick: onSignOut },
     ] : [
       { label: "Sign In", onClick: onSignIn },
     ]},
     { id: "menu", icon: "hamburger", label: "More Faraday", items: [
-      { label: "Jurisdiction Watch", href: "/jurisdiction-watch" },
-      { label: "Signal Room",        href: "/signal-room" },
-      { label: "Faraday Academy",    href: "/academy" },
+      { label: "About Faraday Intelligence", href: "/about" },
+      { label: "Who is Faraday",             href: "/who-is-faraday" },
+      { label: "Share / Invite",             href: "/share" },
+      { label: "Notifications",              href: "/notifications" },
+      { label: "Faraday Merchandise",        href: "/merch" },
+      { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
-      { label: "About Faraday",      href: "/" },          // TODO: no /about page yet → homepage
+      { label: "Terms / Privacy",            href: "/legal" },
     ]},
   ];
 }
@@ -2511,8 +2528,11 @@ function HeaderIconNav({ menus }) {
                     key={i}
                     type="button"
                     role="menuitem"
-                    className={`dc-dd-item${it.current ? " current" : ""}`}
-                    onClick={() => activate(it)}
+                    className={`dc-dd-item${it.current ? " current" : ""}${it.disabled ? " disabled" : ""}`}
+                    disabled={!!it.disabled}
+                    aria-disabled={it.disabled || undefined}
+                    title={it.disabled ? "Coming soon" : undefined}
+                    onClick={() => { if (!it.disabled) activate(it); }}
                   >
                     {it.label}{it.current ? " ·" : ""}
                   </button>
@@ -2783,6 +2803,7 @@ export default function DailyChallenge() {
         background:none; border:none; cursor:pointer; }
       .dc-dd-item:hover, .dc-dd-item:focus-visible { background:rgba(196,146,42,0.15); color:${C.gold}; }
       .dc-dd-item.current { color:${C.gold}; }
+      .dc-dd-item.disabled, .dc-dd-item.disabled:hover { background:none; color:rgba(238,230,218,0.32); cursor:default; }
       .dc-dd hr { border:none; border-top:1px solid rgba(238,230,218,0.1); margin:4px 6px; }
       @media (prefers-reduced-motion: reduce){
         .dc-dd, .dc-caret, .dc-trigger svg { transition:none; }
@@ -2945,9 +2966,16 @@ export default function DailyChallenge() {
   const seasonTotal = serverSeason != null ? serverSeason : (lastDailyTotal || todayScore);
 
   // Header dropdown menus — edit text/links in buildHeaderMenus (defined above).
+  // All Games routes through the same confirm-before-discard flow as the in-game
+  // switcher: picking another game mid-puzzle asks first instead of losing progress.
   const headerMenus = buildHeaderMenus({
     email,
-    onToday:    () => setScreen("lobby"),
+    activeGame: screen === "game" ? activeGame : null,
+    onGame: (type) => {
+      const inLiveGame = screen === "game" && activeGame && !dailyResults[activeGame] && !todayCompletions[activeGame];
+      if (inLiveGame && activeGame !== type) requestSwitch(type);
+      else startGame(type);
+    },
     onSignIn:   () => { setGateReason("default"); setScreen("gate"); },
     onAccount:  openAccount,
     onSettings: openAccount,
@@ -2963,13 +2991,20 @@ export default function DailyChallenge() {
       <div style={{ height:"2px", background:C.gold }} />
       <header style={{ background:C.forest, position:"sticky", top:0, zIndex:50 }}>
         <div className="fdc-header-inner">
-          {/* Wordmark flush left — no bounding box / icon (per header overhaul). */}
-          <div style={{ lineHeight:1.25 }}>
+          {/* Wordmark flush left — no bounding box / icon (per header overhaul).
+              Clickable → lobby: the old grid menu's "Today's Puzzle" item was the
+              way home; the wordmark now carries that (mirrors SiteHeaderNav). */}
+          <button
+            type="button"
+            onClick={() => setScreen("lobby")}
+            aria-label="Daily Challenge lobby"
+            style={{ lineHeight:1.25, background:"none", border:"none", padding:0, cursor:"pointer", textAlign:"left", WebkitTapHighlightColor:"transparent" }}
+          >
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
-          </div>
+          </button>
 
-          {/* Right cluster: ambient status (handle + Today/Season) then the four
+          {/* Right cluster: ambient status (handle + Today/Season) then the five
               icon-dropdown triggers. Status is hidden on the narrowest phones
               (≤430px) where the icon row fills the strip — the totals still show on
               the Account page and in the Account dropdown's Streak & Stats. */}
