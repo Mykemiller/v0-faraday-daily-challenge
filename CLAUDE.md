@@ -24,6 +24,26 @@ Account (gear) · More Faraday (hamburger)** — each opening a click-toggle dro
 - Placeholder links to flag: Puzzle Archive→/challenge, How to Play→/academy,
   Leaderboard Today/Week/All-Time→/leaderboard (no time-range views), About
   Faraday→/. Repoint in `buildHeaderMenus` when real pages exist.
+- **Standalone Next routes** (`/account`, and next `/leaderboard`) use the twin
+  component `src/components/SiteHeaderNav.tsx` — same icon-dropdown look/behavior
+  but **href-based** nav (no in-app screen state). Edit its dropdown text/links in
+  `buildSiteMenus()`. It injects the shared `.dc-*` styles once per document
+  (`id="dc-sitenav-styles"`). `/account` adopted it (feature/account-header-teams);
+  `/leaderboard` is still on the older D·L·A `NavLetter` nav — swap next.
+
+## Teams — Free Agency "pending" retired (feature/account-header-teams)
+
+Players join **up to 5 teams, effective immediately** — the Free Agency deferral
+(`pending`) is gone. `/api/teams` writes memberships `pending=false` on join/create
+and **heals any lingering `pending=true` rows** for the subscriber/season on every
+upsert; `/account` also self-heals a legacy pending membership on load (one-shot).
+At the cap the picker shows "Max teams reached, leave a team to join a new team."
+The `team_memberships.pending` column is retained (always written `false`) — the
+leaderboard season query still filters `pending=eq.false`, so immediate joins now
+count in standings. **Not yet aligned:** the in-app account screen inside
+`DailyChallenge.jsx` (`screen="account"`) shares the same API (so its joins are also
+immediate) but still shows the old Free-Agency copy — repoint if the two account
+surfaces should read identically.
 
 ## Faraday Intelligence site canon (set 2026-06-19, engine-as-site — approved by Myke; FAR-119)
 
