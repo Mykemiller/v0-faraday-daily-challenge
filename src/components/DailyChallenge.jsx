@@ -1687,12 +1687,11 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [createTeamSaving, setCreateTeamSaving] = useState(false);
   const [createTeamError, setCreateTeamError] = useState("");
 
-  const today = new Date().toISOString().slice(0, 10);
-  const inFreeAgencyNotice = season?.free_agency_notice_start && today >= season.free_agency_notice_start;
-  const inFreeAgency = season?.free_agency_start && today >= season.free_agency_start;
   const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
-  // Free Agency: staged changes; no teams yet: allow initial setup any time
-  const canEditTeams = sessionToken && !isLocked && (inFreeAgency || myTeams.length < MAX_ACCOUNT_TEAMS);
+  // Players manage teams (join up to MAX_ACCOUNT_TEAMS, leave) any time unless the
+  // season is hard-locked. Joins are immediate — the Free Agency deferral is retired.
+  const canEditTeams = sessionToken && !isLocked;
+  const atMaxTeams = myTeams.length >= MAX_ACCOUNT_TEAMS;
 
   useEffect(() => {
     (async () => {
@@ -1760,7 +1759,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
       next = myTeams.filter(t => t.team_id !== teamId);
     } else {
       if (myTeams.length >= MAX_ACCOUNT_TEAMS) return;
-      next = [...myTeams, { team_id: teamId, team_name: teamName, pending: true }];
+      next = [...myTeams, { team_id: teamId, team_name: teamName }]; // immediate join
     }
     setMyTeams(next);
     setTeamSaving(true); setTeamError(""); setTeamsSaved(false);
@@ -1964,11 +1963,6 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                     {t.team_name}
                   </span>
-                  {t.pending && (
-                    <span style={{ ...mono, fontSize:"10px", color:C.gold,
-                      background:"rgba(196,146,42,0.1)", borderRadius:"10px",
-                      padding:"2px 7px", flexShrink:0 }}>pending</span>
-                  )}
                 </div>
                 {canEditTeams && (
                   <button type="button" onClick={() => toggleTeam(t.team_id, t.team_name)}
@@ -2023,6 +2017,12 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
               })()}
             </div>
 
+            {atMaxTeams && (
+              <div style={{ ...mono, fontSize:"11px", fontWeight:600, color:C.gold, marginBottom:"12px" }}>
+                Max teams reached, leave a team to join a new team.
+              </div>
+            )}
+
             {/* Create a new team */}
             {!showCreateTeam ? (
               <button type="button" onClick={() => setShowCreateTeam(true)}
@@ -2072,12 +2072,10 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           </>
         )}
 
-        {/* Locked / status message */}
-        {!canEditTeams && sessionToken && myTeams.length > 0 && (
+        {/* Locked status message — only when the season is hard-locked */}
+        {isLocked && sessionToken && myTeams.length > 0 && (
           <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"4px" }}>
-            {inFreeAgencyNotice
-              ? "Free Agency opens soon — you'll be able to switch teams."
-              : "Your teams are set for this season."}
+            The season is locked — team changes reopen next season.
           </div>
         )}
       </div>
