@@ -112,11 +112,11 @@ export async function POST(request: Request) {
   const season = Array.isArray(seasonRows) ? seasonRows[0] : null;
   if (!season) return Response.json({ error: 'season_not_found' }, { status: 404 });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const inFreeAgency = !!(season.free_agency_start && today >= season.free_agency_start);
   const isLocked = season.locked_at && new Date() > new Date(season.locked_at);
   if (isLocked) return Response.json({ error: 'season_locked' }, { status: 403 });
-  const pending = inFreeAgency;
+  // Joins are immediate — the Free Agency deferral (pending) has been retired.
+  // Players may hold up to 5 teams and edits take effect right away.
+  const pending = false;
 
   // ── Create a new team and auto-join it ──────────────────────────────────────
   if (action === 'create') {
@@ -259,6 +259,13 @@ export async function POST(request: Request) {
       return Response.json({ error: 'insert_failed' }, { status: 500 });
     }
   }
+
+  // Heal any legacy rows still flagged pending (from the retired Free Agency
+  // deferral) so kept teams become active — every membership is immediate now.
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&pending=eq.true`,
+    { method: 'PATCH', headers: h, body: JSON.stringify({ pending: false }) }
+  ).catch(() => {});
 
   // Return normalized team list so the client can update without a re-fetch
   const afterR = await fetch(

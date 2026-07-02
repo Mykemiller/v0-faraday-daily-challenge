@@ -3,10 +3,9 @@
 // /account — Account & Settings.
 // Light cream theme matching the Leaderboard. OTPGate embedded for auth.
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import OTPGate from "@/components/OTPGate";
-import BrandMark from "@/components/BrandMark";
+import SiteHeaderNav from "@/components/SiteHeaderNav";
 import {
   SESSION_STORAGE_KEY,
   HANDLE_STORAGE_KEY,
@@ -174,11 +173,11 @@ export default function AccountPage() {
     loadMyTeams(token);
   }, [token, loadAccount, loadSubState, loadSeason, loadMyTeams]);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const inFreeAgency = season?.free_agency_start != null && today >= season.free_agency_start;
   const isLocked = season?.locked_at != null && new Date() > new Date(season.locked_at);
-  // Allow initial setup (no teams yet) any time; gate changes to Free Agency only
-  const canEditTeams = !!token && !isLocked && (inFreeAgency || myTeams.length === 0);
+  // Players manage teams (join up to MAX_TEAMS, leave any time) unless the season
+  // is hard-locked at end-of-season. Joins are immediate — no Free Agency deferral.
+  const canEditTeams = !!token && !isLocked;
+  const atMaxTeams = myTeams.length >= MAX_TEAMS;
 
   // Load available teams when editing is open
   useEffect(() => {
@@ -188,6 +187,24 @@ export default function AccountPage() {
       .then((d) => setAvailableTeams(Array.isArray(d.teams) ? d.teams : []))
       .catch(() => {});
   }, [canEditTeams, teamSearch]);
+
+  // One-time heal: legacy memberships stored under the retired Free Agency
+  // deferral come back flagged `pending`. Silently re-save the same set so the
+  // server clears the flag and the team becomes active immediately.
+  const healedPending = useRef(false);
+  useEffect(() => {
+    if (healedPending.current || !token || !season?.id) return;
+    if (!myTeams.some((t) => t.pending)) return;
+    healedPending.current = true;
+    fetch("/api/teams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, team_ids: myTeams.map((t) => t.team_id), season_id: season.id }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && Array.isArray(d.teams)) setMyTeams(d.teams); })
+      .catch(() => {});
+  }, [token, season, myTeams]);
 
   function signOut() {
     try {
@@ -230,7 +247,7 @@ export default function AccountPage() {
       next = myTeams.filter((t) => t.team_id !== teamId);
     } else {
       if (myTeams.length >= MAX_TEAMS) return;
-      next = [...myTeams, { team_id: teamId, team_name: teamName, pending: inFreeAgency }];
+      next = [...myTeams, { team_id: teamId, team_name: teamName }]; // immediate join
     }
     setMyTeams(next);
     setTeamSaving(true); setTeamError("");
@@ -274,14 +291,7 @@ export default function AccountPage() {
   if (!ready) {
     return (
       <div className="min-h-screen bg-warm-white">
-        <div className="h-0.5 bg-gold" />
-        <header className="bg-forest">
-          <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
-            <BrandMark size={20} framed />
-            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
-          </div>
-        </header>
-        <div className="h-0.5 bg-gold" />
+        <SiteHeaderNav current="account" />
         <main className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 rounded-lg bg-warm-cream" />
@@ -295,19 +305,7 @@ export default function AccountPage() {
   if (!token) {
     return (
       <div className="min-h-screen bg-warm-white font-sans text-near-black">
-        <div className="h-0.5 bg-gold" />
-        <header className="bg-forest">
-          <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
-            <Link href="/challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
-              <BrandMark size={20} framed />
-              <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
-            </Link>
-            <Link href="/challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-              ← Daily Challenge
-            </Link>
-          </div>
-        </header>
-        <div className="h-0.5 bg-gold" />
+        <SiteHeaderNav current="account" authed={false} />
         <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
           <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
           <p className="mb-8 mt-1 text-sm text-near-black/60">
@@ -343,25 +341,12 @@ export default function AccountPage() {
 
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
-      <div className="h-0.5 bg-gold" />
-      <header className="bg-forest">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
-          <Link href="/challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
-            <BrandMark size={20} framed />
-            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
-          </Link>
-          <Link href="/challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-            ← Daily Challenge
-          </Link>
-          <button
-            onClick={signOut}
-            className="font-mono text-[11px] text-warm-cream/70 hover:text-warm-cream"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
-      <div className="h-0.5 bg-gold" />
+      <SiteHeaderNav
+        current="account"
+        authed
+        handle={acct?.handle || (acct?.email ? acct.email.split("@")[0] : null)}
+        onSignOut={signOut}
+      />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
@@ -445,13 +430,12 @@ export default function AccountPage() {
                   key={t.team_id}
                   className="flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px]"
                   style={{
-                    border: `1px solid ${t.pending ? "rgba(196,146,42,0.5)" : "rgba(28,52,36,0.25)"}`,
-                    background: t.pending ? "rgba(196,146,42,0.06)" : "rgba(28,52,36,0.04)",
-                    color: t.pending ? "#C4922A" : "#1C3424",
+                    border: "1px solid rgba(28,52,36,0.25)",
+                    background: "rgba(28,52,36,0.04)",
+                    color: "#1C3424",
                   }}
                 >
                   {t.team_name}
-                  {t.pending && <span className="text-[9px] opacity-70">pending</span>}
                   {canEditTeams && (
                     <button
                       onClick={() => toggleTeam(t.team_id, t.team_name)}
@@ -486,7 +470,7 @@ export default function AccountPage() {
                     <button
                       key={t.id}
                       onClick={() => toggleTeam(t.id, t.name)}
-                      disabled={myTeams.length >= MAX_TEAMS || teamSaving}
+                      disabled={atMaxTeams || teamSaving}
                       className="rounded-full border border-forest/20 px-3 py-1 font-mono text-[11px] text-forest/70 hover:border-forest hover:text-forest disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {t.name}
@@ -494,17 +478,21 @@ export default function AccountPage() {
                   ))}
               </div>
               {teamError && <p className="mt-2 font-mono text-[11px] text-red-600">{teamError}</p>}
-              <p className="mt-3 font-mono text-[10px] text-near-black/40">
-                {inFreeAgency
-                  ? `Free Agency — changes take effect next season. Select up to ${MAX_TEAMS}.`
-                  : `First-time setup — your teams are effective immediately. Select up to ${MAX_TEAMS}.`}
-              </p>
+              {atMaxTeams ? (
+                <p className="mt-3 font-mono text-[11px] font-semibold text-gold">
+                  Max teams reached, leave a team to join a new team.
+                </p>
+              ) : (
+                <p className="mt-3 font-mono text-[10px] text-near-black/40">
+                  Join up to {MAX_TEAMS} teams.
+                </p>
+              )}
             </>
           )}
 
-          {!canEditTeams && token && season && !inFreeAgency && myTeams.length > 0 && (
+          {isLocked && myTeams.length > 0 && (
             <p className="mt-2 font-mono text-[11px] text-near-black/40">
-              Team changes are locked until the Free Agency window (final 3 days of the season).
+              The season is locked — team changes reopen next season.
             </p>
           )}
         </Card>
