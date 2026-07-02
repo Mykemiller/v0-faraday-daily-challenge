@@ -40,10 +40,11 @@ upsert; `/account` also self-heals a legacy pending membership on load (one-shot
 At the cap the picker shows "Max teams reached, leave a team to join a new team."
 The `team_memberships.pending` column is retained (always written `false`) — the
 leaderboard season query still filters `pending=eq.false`, so immediate joins now
-count in standings. **Not yet aligned:** the in-app account screen inside
-`DailyChallenge.jsx` (`screen="account"`) shares the same API (so its joins are also
-immediate) but still shows the old Free-Agency copy — repoint if the two account
-surfaces should read identically.
+count in standings. **Both account surfaces are aligned** (feature/account-inapp-align):
+the standalone `/account` page and the in-app account screen inside
+`DailyChallenge.jsx` (`screen="account"`) now share identical team behavior —
+immediate joins, no `pending` badge, `canEditTeams = session && !isLocked`, and the
+same max-teams copy. The Free-Agency deferral / notice copy was removed from both.
 
 ## Faraday Intelligence site canon (set 2026-06-19, engine-as-site — approved by Myke; FAR-119)
 
