@@ -244,11 +244,17 @@ export default function LeaderboardPage() {
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
           <Link href="/daily-challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
             <BrandMark size={20} framed />
-            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+            <span className="leading-tight">
+              <span className="block font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+              <span className="block font-mono text-[10px] tracking-[0.18em] text-sage">DAILY CHALLENGE</span>
+            </span>
           </Link>
-          <Link href="/daily-challenge" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-            ← Daily Challenge
-          </Link>
+          {/* Nav — matches the in-app masthead: white capital letters D · L · A. */}
+          <nav className="ml-auto flex items-center gap-1.5">
+            <NavLetter letter="D" label="Challenge" href="/daily-challenge" />
+            <NavLetter letter="L" label="Leaderboard" active />
+            <NavLetter letter="A" label="Account" href="/account" />
+          </nav>
         </div>
       </header>
       <div className="h-0.5 bg-gold" />
@@ -454,6 +460,31 @@ export default function LeaderboardPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+// Header nav mark — a white capital letter (D · L · A) mirroring the in-app
+// masthead. Active tab is marked by the gold underline; non-active links navigate.
+function NavLetter({ letter, label, href, active }: { letter: string; label: string; href?: string; active?: boolean }) {
+  const inner = (
+    <span
+      className={`relative flex min-w-[52px] flex-col items-center gap-[3px] rounded-lg px-1.5 pb-1.5 pt-1.5 transition-colors ${
+        active ? "bg-forest-mid/50" : "hover:bg-forest-mid/40"
+      }`}
+    >
+      <span className="grid h-10 w-10 place-items-center font-serif text-[25px] font-extrabold leading-none text-warm-white">
+        {letter}
+      </span>
+      <span className={`font-mono text-[8px] uppercase tracking-[0.1em] ${active ? "text-gold" : "text-sage"}`}>
+        {label}
+      </span>
+      {active && <span aria-hidden className="absolute inset-x-[12%] bottom-0 h-0.5 rounded bg-gold" />}
+    </span>
+  );
+  return href ? (
+    <Link href={href} aria-label={label}>{inner}</Link>
+  ) : (
+    <span aria-label={label} aria-current="page">{inner}</span>
   );
 }
 
