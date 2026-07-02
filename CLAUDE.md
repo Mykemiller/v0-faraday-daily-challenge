@@ -1,5 +1,30 @@
 @AGENTS.md
 
+## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
+
+The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
+wordmark ("Faraday" / "DAILY CHALLENGE") flush left (no BrandMark tile), the
+ambient status (handle + Today's/Season Total Score, hidden ≤430px) and **four
+right-aligned icon triggers** — **Daily Challenge (grid) · Leaderboard (trophy) ·
+Account (gear) · More Faraday (hamburger)** — each opening a click-toggle dropdown.
+
+- **Edit the dropdown text/links in ONE place:** the `buildHeaderMenus()` helper
+  (just above the `DailyChallenge` component). Each item is `{label, onClick}` /
+  `{label, href}` / `{label, current}` / `{divider:true}`. The Account menu is
+  auth-conditional (`email` present → Streak & Stats / Settings / Sign Out;
+  else → Sign In).
+- **Behavior** lives in `HeaderIconNav` (single-open `open` state, click-outside +
+  `Escape` close, caret flip). Icons are inline SVG (`NavGlyph`, stroke 1.8, no
+  icon lib). Styling is `.dc-*` classes in the injected `<style>` block (built from
+  the `C` tokens; respects `prefers-reduced-motion`).
+- The old `NavPill` letter nav (D·L·A) was replaced; `NavPill` remains defined but
+  unused. Streak-flame / MW chip / LIVE pulse were already gone; their orphaned CSS
+  (`@keyframes pulse`, the `.fdc-mw, .fdc-live` media rule) was also removed in this
+  pass (Myke-confirmed "retire live/mw/streak flame").
+- Placeholder links to flag: Puzzle Archive→/challenge, How to Play→/academy,
+  Leaderboard Today/Week/All-Time→/leaderboard (no time-range views), About
+  Faraday→/. Repoint in `buildHeaderMenus` when real pages exist.
+
 ## Faraday Intelligence site canon (set 2026-06-19, engine-as-site — approved by Myke; FAR-119)
 
 This repo **is the entire `faraday-intelligence.ai` site** — not just the Daily

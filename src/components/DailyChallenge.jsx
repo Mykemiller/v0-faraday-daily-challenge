@@ -2404,6 +2404,131 @@ function SplashScreen({ onEnter }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// HEADER ICON-DROPDOWN NAV (feature/header-icon-nav)
+// ══════════════════════════════════════════════════════════════════════════════
+// Four right-aligned icon triggers (Daily · Leaderboard · Account · More), each
+// opening a click-toggle dropdown. Single-open-at-a-time; click-outside / Escape
+// close; caret flips when open. Icons are inline SVG (stroke 1.8, no fills, no
+// icon library). Styling lives in the injected <style> block (`.dc-*` classes).
+
+// Inline SVGs for the four triggers — grid · trophy · gear · hamburger.
+function NavGlyph({ name }) {
+  const common = { viewBox: "0 0 24 24", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  if (name === "grid") return (
+    <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+  );
+  if (name === "trophy") return (
+    <svg {...common}><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a2 2 0 0 0 2 4M17 6h3a2 2 0 0 1-2 4"/></svg>
+  );
+  if (name === "gear") return (
+    <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  );
+  return ( // hamburger
+    <svg {...common}><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  );
+}
+
+// ── EDIT MENU TEXT + LINKS HERE ───────────────────────────────────────────────
+// Single source of truth for every header dropdown. To change a label, add/remove
+// an item, or repoint a link, edit this function only. Each item is one of:
+//   { label, onClick }   → runs a handler (in-app navigation / auth / sign-out)
+//   { label, href }      → navigates to a URL (same tab)
+//   { label, current:true } → styled as the active destination
+//   { divider:true }     → a horizontal rule
+// The Account menu is auth-conditional (see the `email` branch).
+function buildHeaderMenus({ email, onToday, onSignIn, onAccount, onSettings, onSignOut }) {
+  return [
+    { id: "daily", icon: "grid", label: "Daily Challenge", items: [
+      { label: "Today's Puzzle", onClick: onToday, current: true },
+      { label: "Puzzle Archive", href: "/challenge" },   // TODO: no dedicated archive page yet → lobby
+      { label: "How to Play",    href: "/academy" },      // TODO: no How-to-Play page yet → Academy stub
+    ]},
+    { id: "leaderboard", icon: "trophy", label: "Leaderboard", items: [
+      { label: "Today",    href: "/leaderboard" },
+      { label: "This Week", href: "/leaderboard" },       // TODO: no weekly view yet → season board
+      { label: "All-Time", href: "/leaderboard" },
+    ]},
+    { id: "account", icon: "gear", label: "Account", items: email ? [
+      { label: "Streak & Stats", onClick: onAccount },
+      { label: "Settings",       onClick: onSettings },
+      { divider: true },
+      { label: "Sign Out",       onClick: onSignOut },
+    ] : [
+      { label: "Sign In", onClick: onSignIn },
+    ]},
+    { id: "menu", icon: "hamburger", label: "More Faraday", items: [
+      { label: "Jurisdiction Watch", href: "/jurisdiction-watch" },
+      { label: "Signal Room",        href: "/signal-room" },
+      { label: "Faraday Academy",    href: "/academy" },
+      { divider: true },
+      { label: "About Faraday",      href: "/" },          // TODO: no /about page yet → homepage
+    ]},
+  ];
+}
+
+function HeaderIconNav({ menus }) {
+  const [open, setOpen] = useState(null); // menu id currently open, or null
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(null); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(null); };
+    document.addEventListener("click", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("click", onDocClick); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  function activate(item) {
+    setOpen(null);
+    if (typeof item.onClick === "function") item.onClick();
+    else if (item.href) window.location.href = item.href;
+  }
+
+  return (
+    <div ref={wrapRef} style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+      {menus.map((m) => {
+        const isOpen = open === m.id;
+        return (
+          <div key={m.id} className={`dc-navwrap${isOpen ? " open" : ""}`}>
+            <button
+              type="button"
+              className="dc-trigger"
+              aria-haspopup="menu"
+              aria-expanded={isOpen}
+              aria-label={m.label}
+              title={m.label}
+              onClick={(e) => { e.stopPropagation(); setOpen(isOpen ? null : m.id); }}
+            >
+              <NavGlyph name={m.icon} />
+              <span className="dc-caret" aria-hidden="true" />
+            </button>
+            <div className="dc-dd" role="menu" aria-label={m.label}>
+              <div className="dc-dd-label">{m.label}</div>
+              {m.items.map((it, i) =>
+                it.divider ? (
+                  <hr key={i} />
+                ) : (
+                  <button
+                    key={i}
+                    type="button"
+                    role="menuitem"
+                    className={`dc-dd-item${it.current ? " current" : ""}`}
+                    onClick={() => activate(it)}
+                  >
+                    {it.label}{it.current ? " ·" : ""}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
 export default function DailyChallenge() {
@@ -2626,7 +2751,6 @@ export default function DailyChallenge() {
     style.textContent = `
       * { box-sizing:border-box; }
       @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-      @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:0.35} }
       .ca { animation:fadeUp 0.3s ease forwards; }
       button { font-family:inherit; }
       input { font-family:inherit; }
@@ -2635,10 +2759,36 @@ export default function DailyChallenge() {
       /* Game tile hover — lift + neon glow in the game's locked color */
       .fdc-game:hover { transform:translateY(-2px); border-color:#1C3424 !important; }
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
-      /* Narrow masthead — drop secondary chips so Sign in stays legible (ref Ch.09b) */
-      @media (max-width:560px){ .fdc-mw, .fdc-live { display:none !important; } }
       /* Mobile nav collapse (FAR-207): label visibility is controlled in JS via
          useWindowWidth (≤430px → icon only), so no CSS override is needed here. */
+
+      /* ── Header icon-dropdown nav (feature/header-icon-nav) ─────────────── */
+      .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
+      .dc-trigger { display:flex; flex-direction:column; align-items:center; gap:5px;
+        background:none; border:none; cursor:pointer; padding:4px 2px; -webkit-tap-highlight-color:transparent; }
+      .dc-trigger svg { width:19px; height:19px; stroke:rgba(238,230,218,0.62); fill:none; transition:stroke .12s; }
+      .dc-navwrap.open .dc-trigger svg, .dc-trigger:hover svg { stroke:${C.gold}; }
+      .dc-caret { width:6px; height:6px; border-right:1.4px solid rgba(238,230,218,0.35);
+        border-bottom:1.4px solid rgba(238,230,218,0.35); transform:rotate(45deg); margin-top:-1px;
+        transition:transform .15s, border-color .15s; }
+      .dc-navwrap.open .dc-caret { transform:rotate(-135deg); border-color:${C.gold}; }
+      .dc-dd { position:absolute; top:calc(100% + 12px); right:-8px; text-align:left;
+        background:${C.forest}; border:1px solid rgba(196,146,42,0.35); border-radius:8px;
+        min-width:174px; padding:6px; box-shadow:0 12px 28px rgba(20,18,16,0.4);
+        opacity:0; visibility:hidden; transform:translateY(-4px);
+        transition:opacity .15s ease, transform .15s ease; z-index:60; }
+      .dc-navwrap.open .dc-dd { opacity:1; visibility:visible; transform:translateY(0); }
+      .dc-dd-label { font-family:'IBM Plex Mono',monospace; font-size:8.5px; letter-spacing:0.12em;
+        color:rgba(238,230,218,0.4); text-transform:uppercase; padding:6px 10px 4px; }
+      .dc-dd-item { display:block; width:100%; text-align:left; font-family:'IBM Plex Mono',monospace;
+        font-size:11px; color:${C.cream}; text-decoration:none; padding:8px 10px; border-radius:5px;
+        background:none; border:none; cursor:pointer; }
+      .dc-dd-item:hover, .dc-dd-item:focus-visible { background:rgba(196,146,42,0.15); color:${C.gold}; }
+      .dc-dd-item.current { color:${C.gold}; }
+      .dc-dd hr { border:none; border-top:1px solid rgba(238,230,218,0.1); margin:4px 6px; }
+      @media (prefers-reduced-motion: reduce){
+        .dc-dd, .dc-caret, .dc-trigger svg { transition:none; }
+      }
     `;
     document.head.appendChild(style);
   }, []);
@@ -2796,6 +2946,16 @@ export default function DailyChallenge() {
   const todayTotal  = serverToday  != null ? serverToday  : (lastDailyTotal || todayScore);
   const seasonTotal = serverSeason != null ? serverSeason : (lastDailyTotal || todayScore);
 
+  // Header dropdown menus — edit text/links in buildHeaderMenus (defined above).
+  const headerMenus = buildHeaderMenus({
+    email,
+    onToday:    () => setScreen("lobby"),
+    onSignIn:   () => { setGateReason("default"); setScreen("gate"); },
+    onAccount:  openAccount,
+    onSettings: openAccount,
+    onSignOut:  handleSignOut,
+  });
+
   return (
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       {showSplash && <SplashScreen onEnter={dismissSplash} />}
@@ -2805,65 +2965,46 @@ export default function DailyChallenge() {
       <div style={{ height:"2px", background:C.gold }} />
       <header style={{ background:C.forest, position:"sticky", top:0, zIndex:50 }}>
         <div className="fdc-header-inner">
-          <BrandMark size={20} framed />
+          {/* Wordmark flush left — no bounding box / icon (per header overhaul). */}
           <div style={{ lineHeight:1.25 }}>
             <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
             <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
           </div>
-          {/* Signed-in handle (gold) + running Today / Season totals. Hidden on
-              the narrowest phones (≤430px) where the nav already fills the strip;
-              the totals still show on the Account page there. */}
-          {displayHandle && !navIconsLabelHidden && (
-            <div style={{ display:"flex", alignItems:"center", gap:"14px", minWidth:0 }}>
-              <button
-                type="button"
-                onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
-                title="Account"
-                style={{
-                  ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
-                  color:C.gold, letterSpacing:"0.04em",
-                  background:"transparent", border:"none", cursor:"pointer",
-                  padding:"4px 6px", whiteSpace:"nowrap",
-                  WebkitTapHighlightColor:"transparent",
-                }}
-              >
-                @{displayHandle}
-              </button>
-              <div style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
-                <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                  <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</div>
-                  <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</div>
-                </div>
-                <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                  <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</div>
-                  <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</div>
+
+          {/* Right cluster: ambient status (handle + Today/Season) then the four
+              icon-dropdown triggers. Status is hidden on the narrowest phones
+              (≤430px) where the icon row fills the strip — the totals still show on
+              the Account page and in the Account dropdown's Streak & Stats. */}
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:"16px", flexWrap:"nowrap" }}>
+            {displayHandle && !navIconsLabelHidden && (
+              <div style={{ display:"flex", alignItems:"center", gap:"14px", minWidth:0 }}>
+                <button
+                  type="button"
+                  onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+                  title="Account"
+                  style={{
+                    ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
+                    color:C.gold, letterSpacing:"0.04em",
+                    background:"transparent", border:"none", cursor:"pointer",
+                    padding:"4px 6px", whiteSpace:"nowrap",
+                    WebkitTapHighlightColor:"transparent",
+                  }}
+                >
+                  @{displayHandle}
+                </button>
+                <div style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
+                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
+                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</div>
+                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</div>
+                  </div>
+                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
+                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</div>
+                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          {/* Nav — simplified white capital letters: D · L · A (Streak removed). */}
-          <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center", flexWrap:"nowrap" }}>
-            <NavPill
-              letter="D"
-              label="Challenge"
-              hideLabel={navIconsLabelHidden}
-              onClick={() => setScreen("lobby")}
-              active={screen === "lobby"}
-            />
-            <NavPill
-              letter="L"
-              label="Leaderboard"
-              hideLabel={navIconsLabelHidden}
-              onClick={() => { window.location.href = "/leaderboard"; }}
-              active={screen === "leaderboard"}
-            />
-            <NavPill
-              letter="A"
-              label="Account"
-              hideLabel={navIconsLabelHidden}
-              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
-              active={screen === "gate" || screen === "account"}
-            />
+            )}
+            <HeaderIconNav menus={headerMenus} />
           </div>
         </div>
       </header>
