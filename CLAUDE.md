@@ -18,7 +18,9 @@ Account (gear) · More Faraday (hamburger)** — each opening a click-toggle dro
   icon lib). Styling is `.dc-*` classes in the injected `<style>` block (built from
   the `C` tokens; respects `prefers-reduced-motion`).
 - The old `NavPill` letter nav (D·L·A) was replaced; `NavPill` remains defined but
-  unused. Streak-flame / MW chip / LIVE pulse were already gone before this change.
+  unused. Streak-flame / MW chip / LIVE pulse were already gone; their orphaned CSS
+  (`@keyframes pulse`, the `.fdc-mw, .fdc-live` media rule) was also removed in this
+  pass (Myke-confirmed "retire live/mw/streak flame").
 - Placeholder links to flag: Puzzle Archive→/challenge, How to Play→/academy,
   Leaderboard Today/Week/All-Time→/leaderboard (no time-range views), About
   Faraday→/. Repoint in `buildHeaderMenus` when real pages exist.

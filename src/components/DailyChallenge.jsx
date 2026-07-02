@@ -2751,7 +2751,6 @@ export default function DailyChallenge() {
     style.textContent = `
       * { box-sizing:border-box; }
       @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-      @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:0.35} }
       .ca { animation:fadeUp 0.3s ease forwards; }
       button { font-family:inherit; }
       input { font-family:inherit; }
@@ -2760,8 +2759,6 @@ export default function DailyChallenge() {
       /* Game tile hover — lift + neon glow in the game's locked color */
       .fdc-game:hover { transform:translateY(-2px); border-color:#1C3424 !important; }
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
-      /* Narrow masthead — drop secondary chips so Sign in stays legible (ref Ch.09b) */
-      @media (max-width:560px){ .fdc-mw, .fdc-live { display:none !important; } }
       /* Mobile nav collapse (FAR-207): label visibility is controlled in JS via
          useWindowWidth (≤430px → icon only), so no CSS override is needed here. */
 
