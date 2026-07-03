@@ -1,6 +1,7 @@
 // Account self-service backend for the Daily Challenge.
-//   GET  /api/account?token=<session>     → { email, handle, active }
-//   POST /api/account  { token, action }   → action: "leave" | "rejoin"
+//   GET  /api/account?token=<session>     → { email, handle, active, notification_preferences }
+//   POST /api/account  { token, action }   → action: "leave" | "rejoin" | "update-handle"
+//                                                    | "update-notifications"
 //
 // "leave" is a SOFT opt-out: it sets dc_subscribers.active = false. All data is
 // retained — there is NO hard deletion here. Team/company membership is edited
@@ -11,6 +12,8 @@
 // sees the key. Requires env: SUPABASE_SERVICE_ROLE_KEY (and optionally
 // SUPABASE_URL — falls back to the project URL). Until that env var is set in the
 // Vercel project, the route returns 500 "Account service not configured".
+
+import { normalizeNotificationPreferences } from "@/lib/notification-preferences";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -69,7 +72,7 @@ export async function GET(request: Request) {
   if (!id) return Response.json({ error: "Invalid or expired session" }, { status: 401 });
 
   const r = await fetch(
-    `${s.base}/dc_subscribers?id=eq.${id}&select=email,handle,active`,
+    `${s.base}/dc_subscribers?id=eq.${id}&select=email,handle,active,notification_preferences`,
     { headers: s.headers, cache: "no-store" }
   );
   if (!r.ok) return Response.json({ error: "Lookup failed" }, { status: 500 });
@@ -81,6 +84,8 @@ export async function GET(request: Request) {
     email: sub.email,
     handle: sub.handle ?? null,
     active: sub.active !== false, // default-active if the column is absent
+    // NULL column (pre-feature subscriber) → defaults; junk → coerced to shape.
+    notification_preferences: normalizeNotificationPreferences(sub.notification_preferences),
   });
 }
 
@@ -88,7 +93,7 @@ export async function POST(request: Request) {
   const s = svc();
   if (!s) return Response.json({ error: "Account service not configured" }, { status: 500 });
 
-  let body: { token?: string; action?: string; newHandle?: string };
+  let body: { token?: string; action?: string; newHandle?: string; preferences?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -98,7 +103,12 @@ export async function POST(request: Request) {
   const token = (body.token || "").trim();
   const action = body.action;
   if (!token) return Response.json({ error: "Missing session" }, { status: 401 });
-  if (action !== "leave" && action !== "rejoin" && action !== "update-handle") {
+  if (
+    action !== "leave" &&
+    action !== "rejoin" &&
+    action !== "update-handle" &&
+    action !== "update-notifications"
+  ) {
     return Response.json({ error: "Invalid action" }, { status: 400 });
   }
 
@@ -141,6 +151,29 @@ export async function POST(request: Request) {
       );
     }
     return Response.json({ ok: true, handle: raw });
+  }
+
+  // ── Notification preferences ───────────────────────────────────────────────
+  if (action === "update-notifications") {
+    if (!body.preferences || typeof body.preferences !== "object") {
+      return Response.json({ error: "Missing preferences" }, { status: 422 });
+    }
+    // Normalize server-side so only the known shape is ever persisted — unknown
+    // keys are dropped and missing flags fall back to defaults.
+    const prefs = normalizeNotificationPreferences(body.preferences);
+    const patchR = await fetch(`${s.base}/dc_subscribers?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { ...s.headers, Prefer: "return=representation" },
+      body: JSON.stringify({ notification_preferences: prefs }),
+    });
+    if (!patchR.ok) {
+      const detail = await patchR.text().catch(() => "");
+      return Response.json(
+        { error: "Could not update notification preferences", detail: detail.slice(0, 300) },
+        { status: 500 }
+      );
+    }
+    return Response.json({ ok: true, notification_preferences: prefs });
   }
 
   // ── Soft opt-out / rejoin ──────────────────────────────────────────────────

@@ -1,17 +1,8 @@
-import DcStubPage from "@/components/DcStubPage";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Notifications · Faraday Daily Challenge" };
-
-// More Faraday → Notifications stub — preferences for puzzle-drop reminders and
-// streak nudges will live here.
-
+// Notification preferences are live at /account/notifications (Daily Challenge
+// Alerts). This former stub route is kept as a redirect so old menu links and
+// bookmarks never 404.
 export default function NotificationsPage() {
-  return (
-    <DcStubPage
-      title="Notifications"
-      blurb="Daily puzzle reminders, streak nudges, and team updates — choose what reaches you, and where."
-    >
-      <p>Notification preferences are not live yet.</p>
-    </DcStubPage>
-  );
+  redirect("/account/notifications");
 }

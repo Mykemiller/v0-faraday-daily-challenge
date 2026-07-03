@@ -2463,6 +2463,7 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
     { id: "account", icon: "gear", label: "Account", items: email ? [
       { label: "Account",  onClick: onAccount },
       { label: "Settings", onClick: onSettings },  // same Account screen today — no separate settings page yet
+      { label: "Notifications", href: "/account/notifications" },
       { divider: true },
       { label: "Sign Out", onClick: onSignOut },
     ] : [
@@ -2472,7 +2473,7 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       { label: "About Faraday Intelligence", href: "/about" },
       { label: "Who is Faraday",             href: "/who-is-faraday" },
       { label: "Share / Invite",             href: "/share" },
-      { label: "Notifications",              href: "/notifications" },
+      { label: "Notifications",              href: "/account/notifications" },
       { label: "Faraday Merchandise",        href: "/merch" },
       { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
