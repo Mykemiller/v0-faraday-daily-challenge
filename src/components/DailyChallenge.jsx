@@ -2450,12 +2450,10 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
       // day-scoped "Hints Today" below is a distinct page (FAR-287).
+      // Glossary / Report a Bug / Feedback moved to the gear (Account) menu.
       { label: "Hints",           href: "/help/hints" },
       { label: "Tips and Tricks", href: "/help/tips" },
       { label: "Questions",       href: "/help/questions" },
-      { label: "Glossary",        href: "/help/glossary" },
-      { label: "Report a Bug",    href: "/help/report-a-bug" },
-      { label: "Feedback",        href: "/help/feedback" },
       { divider: true },
       { heading: "Today's Challenge" },
       { label: "Hints Today",             href: "/challenge/hints" },
@@ -2473,9 +2471,18 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       { label: "Settings", onClick: onSettings },  // same Account screen today — no separate settings page yet
       { label: "Notifications", href: "/account/notifications" },
       { divider: true },
+      // Moved here from the "?" Help menu (Myke, 2026-07-03).
+      { label: "Glossary",     href: "/help/glossary" },
+      { label: "Report a Bug", href: "/help/report-a-bug" },
+      { label: "Feedback",     href: "/help/feedback" },
+      { divider: true },
       { label: "Sign Out", onClick: onSignOut },
     ] : [
       { label: "Sign In", onClick: onSignIn },
+      { divider: true },
+      { label: "Glossary",     href: "/help/glossary" },
+      { label: "Report a Bug", href: "/help/report-a-bug" },
+      { label: "Feedback",     href: "/help/feedback" },
     ]},
     { id: "menu", icon: "hamburger", label: "More Faraday", items: [
       { label: "About Faraday Intelligence", href: "/about" },
