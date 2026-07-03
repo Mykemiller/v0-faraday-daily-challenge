@@ -5,8 +5,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 //  • NEW (teamCode given): group-scoped board — the group's members ranked by
 //    PERIOD Signals, plus the group bar (member count, team-vs-team within the
 //    company, company-vs-company). period=daily|season.
-//  • LEGACY (no teamCode): the original season team standings (ranked by lifetime
-//    mw_total) used by the DC lobby — preserved for backward compatibility.
+//  • LEGACY (no teamCode): the original season team standings used by the DC
+//    lobby — preserved for backward compatibility. Since the 2026-07-03 Teams
+//    reconciliation the team_leaderboard RPC ranks by season score from
+//    team_memberships + score_events (the retired MW/team_members model is gone).
 // Currency is "signals" at the boundary; emails are never emitted.
 
 const DC_TZ = "America/Chicago";

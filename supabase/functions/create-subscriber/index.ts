@@ -90,7 +90,7 @@ serve(async (req) => {
     const { data: newSub, error: subErr } = await supabase
       .from('dc_subscribers')
       .insert({ email: normalizedEmail, handle })
-      .select('id, handle, email, play_streak, full_set_streak, mw_balance, active')
+      .select('id, handle, email, play_streak, full_set_streak, active')
       .single();
 
     if (subErr || !newSub) {
@@ -138,7 +138,6 @@ serve(async (req) => {
           handle: newSub.handle,
           play_streak: 0,
           full_set_streak: 0,
-          mw_balance: 0,
           active: true,
         },
       }),

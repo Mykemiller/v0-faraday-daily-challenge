@@ -4,9 +4,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // POST /team-action
 //   { sessionToken, action: "create"|"join"|"leave", name?, code?, groupType?, parentCode? }
 // Session-gated group membership (Leaderboard V2 §7.3). Multi-membership: a player
-// can belong to several groups. The refactored RPCs handle hierarchy + transactional
-// leave (last-member delete / creator rollover / company-creator no-cascade).
-// "leave" now REQUIRES a code (which group). Returns the caller's refreshed groups.
+// can belong to several groups. Since the 2026-07-03 Teams reconciliation the
+// team_* RPCs write team_memberships (subscriber_id + season_id — the canonical
+// model; team_members is gone) and maintain teams.captain_id (creator = captain;
+// leave rolls captaincy to the earliest remaining member; last-member leave
+// deletes the team unless it's a company with child teams).
+// "leave" REQUIRES a code (which group). Returns the caller's refreshed groups.
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",

@@ -69,6 +69,42 @@ the standalone `/account` page and the in-app account screen inside
 immediate joins, no `pending` badge, `canEditTeams = session && !isLocked`, and the
 same max-teams copy. The Free-Agency deferral / notice copy was removed from both.
 
+## Teams reconciled · MW retired · Team Captain (claude/teams-reconcile-mw-captain-fj04pj, 2026-07-03)
+
+**`team_memberships` (subscriber_id + season_id) is THE membership table** — the
+email-keyed `team_members` is dropped, and the MW currency is fully retired
+(columns `teams.mw_total`, `team_members.my_mw`, `dc_subscribers.mw_balance`,
+`dc_completions.mw_earned` + the completion→team MW trigger all gone).
+Migrations `20260703120000_teams_reconcile_captain.sql` (additive: captain +
+data migration) and `20260703120001_retire_mw_and_team_members.sql`
+(RPC rewrites + drops) — **both applied to prod 2026-07-03**, with the MW-free
+edge fns (`complete-puzzle`, `verify-otp`, `verify-magic-link`,
+`create-subscriber`) deployed in between (the old deployed complete-puzzle
+REQUIRED `mwEarned`, so `/api/score`'s forward was 400-ing silently — fixed).
+
+- **Team Captain (MVP):** `teams.captain_id` → `dc_subscribers.id`
+  (ON DELETE SET NULL). Creator = captain automatically: `/api/teams` create
+  sets it, and the `team_create` RPC sets it. `team_leave` rolls captaincy to
+  the earliest remaining member; last-member leave deletes the team (unless a
+  company with child teams). This column is the hook for the FUTURE
+  trade-approval session — no trade/Trading Window/League Office logic exists.
+- **RPCs kept their names/signatures** (`team_create/join/leave`,
+  `team_get_my_teams`, `team_leaderboard`, `fn_group_member_emails`) but now
+  run on `team_memberships` (active season, `pending=false`); `team_join` cap
+  is 5 (canon). `team_get_my_teams.role` derives from `captain_id`
+  ('creator'/'member'); `team_leaderboard` ranks by season score
+  (`score_events`), return column `mw` → `score`. Legacy `team_get_my_team`
+  (singular) dropped.
+- **"Signals" = score now:** every ranking/cache fn (`fn_leaderboard_daily/
+  season`, `fn_player_rank_*`, `fn_group_member_board`, `fn_leaderboard_rollover`,
+  `fn_dc_completion_cache_upsert`, `fn_backfill_daily_cache`) sums
+  `dc_completions.score` where it previously summed `mw_earned` (which had
+  degraded to a flat 5/puzzle) — global/season standings are score-based.
+- **`teams.season` (text) DEPRECATED:** founding-era label only (mixed formats
+  "Summer 2026"/"Season 1 — Power Crunch"), now nullable + commented; still
+  stamped on create for continuity. Never filter/join on it — season scoping is
+  `team_memberships.season_id`.
+
 ## Daily Challenge notification settings (claude/daily-challenge-notifications, 2026-07-03)
 
 Subscriber-facing alert preferences at **`/account/notifications`** ("Daily Challenge
