@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import BrandMark from "@/components/BrandMark";
-import { SESSION_STORAGE_KEY } from "@/lib/supabase";
+import SiteHeaderNav from "@/components/SiteHeaderNav";
+import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 // Leaderboard — Global + per-team tabs backed by /api/leaderboard/season.
 // Currency: total_points from score_events (season-scoped).
@@ -142,10 +142,35 @@ export default function LeaderboardPage() {
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [shareMsg, setShareMsg] = useState("");
+  const [token, setToken] = useState<string | null>(null);
+  const [handle, setHandle] = useState<string | null>(null);
 
   const getToken = () => {
     try { return localStorage.getItem(SESSION_STORAGE_KEY); } catch { return null; }
   };
+
+  // Session + handle for the masthead — same localStorage mirror the other
+  // SiteHeaderNav pages use (HANDLE_STORAGE_KEY, email local-part fallback);
+  // the authoritative server handle from /api/leaderboard/season wins below.
+  useEffect(() => {
+    try {
+      setToken(localStorage.getItem(SESSION_STORAGE_KEY));
+      const h = localStorage.getItem(HANDLE_STORAGE_KEY);
+      if (h) setHandle(h);
+      else {
+        const email = localStorage.getItem("dc_email");
+        if (email) setHandle(email.split("@")[0]);
+      }
+    } catch { /* storage disabled */ }
+  }, []);
+
+  function signOut() {
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem(HANDLE_STORAGE_KEY);
+    } catch { /* ignore */ }
+    window.location.href = "/challenge";
+  }
 
   const loadGlobal = useCallback(async () => {
     setStatus("loading");
@@ -157,6 +182,7 @@ export default function LeaderboardPage() {
       const json = (await res.json()) as GlobalData;
       setGlobalData(json);
       setTeamData(null);
+      if (json.you?.handle) setHandle(json.you.handle);
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -248,25 +274,12 @@ export default function LeaderboardPage() {
 
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
-      <div className="h-0.5 bg-gold" />
-      <header className="bg-forest">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-5 py-3">
-          <Link href="/daily-challenge" className="flex items-center gap-3" aria-label="Daily Challenge">
-            <BrandMark size={20} framed />
-            <span className="leading-tight">
-              <span className="block font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
-              <span className="block font-mono text-[10px] tracking-[0.18em] text-sage">DAILY CHALLENGE</span>
-            </span>
-          </Link>
-          {/* Nav — matches the in-app masthead: white capital letters D · L · A. */}
-          <nav className="ml-auto flex items-center gap-1.5">
-            <NavLetter letter="D" label="Challenge" href="/daily-challenge" />
-            <NavLetter letter="L" label="Leaderboard" active />
-            <NavLetter letter="A" label="Account" href="/account" />
-          </nav>
-        </div>
-      </header>
-      <div className="h-0.5 bg-gold" />
+      <SiteHeaderNav
+        current="leaderboard"
+        authed={!!token}
+        handle={token ? handle : null}
+        onSignOut={signOut}
+      />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Leaderboard</h1>
@@ -469,31 +482,6 @@ export default function LeaderboardPage() {
         </section>
       </main>
     </div>
-  );
-}
-
-// Header nav mark — a white capital letter (D · L · A) mirroring the in-app
-// masthead. Active tab is marked by the gold underline; non-active links navigate.
-function NavLetter({ letter, label, href, active }: { letter: string; label: string; href?: string; active?: boolean }) {
-  const inner = (
-    <span
-      className={`relative flex min-w-[52px] flex-col items-center gap-[3px] rounded-lg px-1.5 pb-1.5 pt-1.5 transition-colors ${
-        active ? "bg-forest-mid/50" : "hover:bg-forest-mid/40"
-      }`}
-    >
-      <span className="grid h-10 w-10 place-items-center font-serif text-[25px] font-extrabold leading-none text-warm-white">
-        {letter}
-      </span>
-      <span className={`font-mono text-[8px] uppercase tracking-[0.1em] ${active ? "text-gold" : "text-sage"}`}>
-        {label}
-      </span>
-      {active && <span aria-hidden className="absolute inset-x-[12%] bottom-0 h-0.5 rounded bg-gold" />}
-    </span>
-  );
-  return href ? (
-    <Link href={href} aria-label={label}>{inner}</Link>
-  ) : (
-    <span aria-label={label} aria-current="page">{inner}</span>
   );
 }
 
