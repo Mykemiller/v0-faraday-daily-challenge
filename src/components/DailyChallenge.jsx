@@ -2438,6 +2438,7 @@ function NavGlyph({ name }) {
 //   { label, current:true } → styled as the active destination
 //   { label, disabled:true } → grayed out, not clickable (reserved for later)
 //   { divider:true }     → a horizontal rule
+//   { heading:"…" }      → a small uppercase group label (like the menu title)
 // The Account menu is auth-conditional (see the `email` branch).
 // Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
 function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut }) {
@@ -2447,12 +2448,19 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       GAME_CONFIGS.map(c => ({ label: c.type, onClick: () => onGame(c.type), current: c.type === activeGame })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
+      // Evergreen "Hints" (general how-to-play help) stays as-is — the
+      // day-scoped "Hints Today" below is a distinct page (FAR-287).
       { label: "Hints",           href: "/help/hints" },
       { label: "Tips and Tricks", href: "/help/tips" },
       { label: "Questions",       href: "/help/questions" },
       { label: "Glossary",        href: "/help/glossary" },
       { label: "Report a Bug",    href: "/help/report-a-bug" },
       { label: "Feedback",        href: "/help/feedback" },
+      { divider: true },
+      { heading: "Today's Challenge" },
+      { label: "Hints Today",             href: "/challenge/hints" },
+      { label: "About Today's Challenge", href: "/challenge/about" },
+      { label: "Answers Today",           href: "/challenge/answers" },
     ]},
     { id: "compete", icon: "trophy", label: "Compete", items: [
       { label: "Leaderboard — Today",  href: "/leaderboard" },  // TODO: no today-only view yet → season board (shows a Today column)
@@ -2524,6 +2532,8 @@ function HeaderIconNav({ menus }) {
               {m.items.map((it, i) =>
                 it.divider ? (
                   <hr key={i} />
+                ) : it.heading ? (
+                  <div key={i} className="dc-dd-label">{it.heading}</div>
                 ) : (
                   <button
                     key={i}
@@ -2897,6 +2907,14 @@ export default function DailyChallenge() {
       setLastDailyTotal(t => t + score);
     }
     if (sessionToken && playedGame) {
+      // Analytics-only: highest hint tier revealed today for this game, from the
+      // shared FAR-198 budget key (in-game HintControl + the /challenge/hints
+      // page both spend it). Free — never an input to score math.
+      let hintsUsed = 0;
+      try {
+        const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${playedGame}`) || "0", 10);
+        if (!Number.isNaN(v)) hintsUsed = Math.max(0, Math.min(3, v));
+      } catch { /* storage disabled */ }
       // Authoritative score write — enforces one-attempt-per-day + leaderboard_daily.
       fetch(`/api/score`, {
         method: "POST",
@@ -2906,6 +2924,7 @@ export default function DailyChallenge() {
           gameType: playedGame,
           score,
           result: "win",
+          hintsUsed,
         }),
       })
         .then(r => r.json())

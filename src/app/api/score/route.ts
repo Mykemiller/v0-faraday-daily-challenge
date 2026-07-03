@@ -81,6 +81,10 @@ export async function POST(request: Request) {
   const result = body.result === "lose" ? "lose" : "win";
   const publicId =
     typeof body.publicId === "string" && body.publicId.trim() ? body.publicId.trim() : null;
+  // Analytics-only hint tier (0..3, FAR-198/FAR-287) — forwarded verbatim to
+  // complete-puzzle, which normalizes and writes dc_completions.hints_used.
+  // Never an input to score math here.
+  const hintsUsed = typeof body.hintsUsed === "number" ? body.hintsUsed : null;
 
   const subscriberId = await resolveSubscriber(s, token);
   if (!subscriberId)
@@ -123,6 +127,7 @@ export async function POST(request: Request) {
         puzzleType: gameType,
         score,
         ...(publicId ? { publicId } : {}),
+        ...(hintsUsed !== null ? { hintsUsed } : {}),
       }),
     });
     if (cpRes.ok) {
