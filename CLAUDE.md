@@ -11,8 +11,11 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
 
 - **All Games** = the 7 games in lobby-grid order (`GAME_CONFIGS` in-app;
   `DC_GAMES` in SiteHeaderNav → `/challenge?game=<type>` deep-links; keep in sync).
-- **Help & Feedback** = Hints / Tips and Tricks / Questions / Glossary / Report a
-  Bug / Feedback — all stubs served by the single dynamic route `/help/[topic]`.
+- **Help & Feedback** = Hints / Tips and Tricks / Questions (+ the FAR-287
+  "TODAY'S CHALLENGE" group) — the `/help/*` stubs are served by the single
+  dynamic route `/help/[topic]`. **Glossary / Report a Bug / Feedback moved to
+  the gear (Account) menu (Myke, 2026-07-03)** — same `/help/*` hrefs, shown in
+  both the authed and signed-out gear states, below a divider.
 - **Compete** = Leaderboard — Today / Leaderboard — Season (both `/leaderboard`;
   no today-only view yet) / Teams (`/leaderboard?view=teams` deep-link) / Free
   Agency (`/free-agency` stub, "Trade window: TBD").
@@ -29,7 +32,8 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
   (just above the `DailyChallenge` component). Each item is `{label, onClick}` /
   `{label, href}` / `{label, current}` / `{label, disabled:true}` / `{divider:true}`.
   The Account menu is auth-conditional (`email` present → Account / Settings /
-  Sign Out; else → Sign In; Settings opens the same Account screen today).
+  Notifications / Glossary–Bug–Feedback / Sign Out; else → Sign In +
+  Glossary–Bug–Feedback; Settings opens the same Account screen today).
 - **Behavior** lives in `HeaderIconNav` (single-open `open` state, click-outside +
   `Escape` close, caret flip). Icons are inline SVG (`NavGlyph`, stroke 1.8, no
   icon lib). Styling is `.dc-*` classes in the injected `<style>` block (built from
