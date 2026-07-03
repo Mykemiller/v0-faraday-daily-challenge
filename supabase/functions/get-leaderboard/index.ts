@@ -3,9 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Leaderboard V2 §8 — period-scoped Global board.
 // GET ?scope=global&period=daily|season&token=<session?>&limit=50
-// Ranks from dc_completions aggregates (never lifetime mw_balance): daily via the
-// additive cache with live fallback (§5.5); season via the drop-2 oracle (§5.4).
-// Currency is "signals" at the API boundary; DB columns stay mw_* (1 signal == 1 mw).
+// Ranks from dc_completions aggregates: daily via the additive cache with live
+// fallback (§5.5); season via the drop-2 oracle (§5.4).
+// Currency is "signals" at the API boundary; since the 2026-07-03 MW retirement
+// 1 signal == 1 score point (dc_completions.score — the mw_* columns are gone).
 // Emails are never emitted — real handle, else a masked handle.
 
 const DC_TZ = "America/Chicago";

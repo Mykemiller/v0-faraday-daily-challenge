@@ -151,9 +151,13 @@ export async function POST(request: Request) {
     const teamPayload = (code: string) => ({
       name: teamName,
       code,
+      // teams.season is DEPRECATED (founding-era label only) — still stamped for
+      // continuity; season scoping lives on team_memberships.season_id.
       season: (season as Record<string, unknown>).name ?? '',
       created_by_email: createdByEmail,
       group_type: 'team',
+      // Team Captain MVP: the creating subscriber is automatically captain.
+      captain_id: subscriberId,
     });
 
     // Try insert; retry once with a suffix if the code slug collides

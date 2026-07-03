@@ -105,7 +105,6 @@ Deno.serve(async (req: Request) => {
         handle: effectiveHandle,
         playStreak: sub.play_streak,
         fullSetStreak: sub.full_set_streak,
-        mwBalance: sub.mw_balance,
       },
     };
 

@@ -60,7 +60,7 @@ serve(async (req) => {
     // Check if subscriber exists
     const { data: subscriberRows } = await supabase
       .from('dc_subscribers')
-      .select('id, handle, email, play_streak, full_set_streak, mw_balance, active')
+      .select('id, handle, email, play_streak, full_set_streak, active')
       .eq('email', normalizedEmail)
       .limit(1);
 
@@ -100,7 +100,6 @@ serve(async (req) => {
           handle: subscriber.handle,
           play_streak: subscriber.play_streak,
           full_set_streak: subscriber.full_set_streak,
-          mw_balance: subscriber.mw_balance,
           active: subscriber.active,
         },
       }),

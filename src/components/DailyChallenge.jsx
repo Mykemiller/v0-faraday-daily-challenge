@@ -2217,10 +2217,11 @@ function GameSwitcher({ current, onSwitch }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // TEAM LEADERBOARD — teams_v1 standings, wired to per-player Score
 // ══════════════════════════════════════════════════════════════════════════════
-// Reads the seasonal team standings (public.team_leaderboard via the
-// get-team-leaderboard edge function). Each player's puzzle score feeds their
-// team's total through a DB trigger, so these numbers are real results — no
-// mock data. Signed-in players can start or join a team to put their score on the board.
+// Team standings panel. Display numbers come from /api/leaderboard/season
+// (team_memberships + score_events — the canonical season scoring source);
+// membership actions go through the team-action edge function, whose team_*
+// RPCs also write team_memberships (Teams reconciliation, 2026-07-03).
+// Signed-in players can start or join a team to put their score on the board.
 function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate, onJoin, onLeave }) {
   const [mode, setMode] = useState(null); // null | "create" | "join"
   const [name, setName] = useState("");
@@ -2710,10 +2711,10 @@ export default function DailyChallenge() {
     try { token = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* storage disabled */ }
 
     // Standings come from the SAME season-scoring source as /leaderboard
-    // (score_events, non-pending members) so the team totals actually reflect the
-    // sum of each team's members' scores. The legacy get-team-leaderboard RPC
-    // ranked by a stale lifetime `mw_total` and counted a different table
-    // (team_members), so its numbers and member counts were wrong.
+    // (score_events, non-pending members) so the team totals actually reflect
+    // the sum of each team's members' scores. (The old MW-era team_leaderboard
+    // RPC has since been rewritten over the same sources — Teams reconciliation
+    // 2026-07-03 — but this route stays the display source of truth.)
     const tq = token ? `?token=${encodeURIComponent(token)}` : "";
     const standingsP = fetch(`/api/leaderboard/season${tq}`)
       .then(r => (r.ok ? r.json() : null))

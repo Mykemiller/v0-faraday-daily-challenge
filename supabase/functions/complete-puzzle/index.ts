@@ -42,7 +42,7 @@ function json(body: unknown, status = 200): Response {
 
 // Puzzle Bank V2: normalize the optional, FREE hint counter. Anything outside
 // 0..3 (or non-integer / missing) collapses to 0. This value is analytics-only
-// and is deliberately NEVER read by the scoring/streak/MW logic below.
+// and is deliberately NEVER read by the scoring/streak logic below.
 function normalizeHintsUsed(v: unknown): number {
   if (typeof v !== "number" || !Number.isFinite(v)) return 0;
   const n = Math.trunc(v);
