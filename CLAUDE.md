@@ -46,12 +46,13 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
   time-range views yet); every `/help/*`, `/about`, `/who-is-faraday`, `/share`,
   `/notifications`, `/merch`, `/free-agency`, `/legal` link lands on a stub.
   Repoint in `buildHeaderMenus` / `buildSiteMenus` when real pages exist.
-- **Standalone Next routes** (`/account`, and next `/leaderboard`) use the twin
+- **Standalone Next routes** (`/account`, `/leaderboard`, …) use the twin
   component `src/components/SiteHeaderNav.tsx` — same icon-dropdown look/behavior
   but **href-based** nav (no in-app screen state). Edit its dropdown text/links in
   `buildSiteMenus()`. It injects the shared `.dc-*` styles once per document
   (`id="dc-sitenav-styles"`). `/account` adopted it (feature/account-header-teams);
-  `/leaderboard` is still on the older D·L·A `NavLetter` nav — swap next.
+  `/leaderboard` swapped off the old D·L·A `NavLetter` nav 2026-07-03 — every
+  standalone DC surface is now on `SiteHeaderNav`.
 
 ## Teams — Free Agency "pending" retired (feature/account-header-teams)
 
