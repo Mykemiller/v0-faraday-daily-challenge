@@ -2,6 +2,8 @@
   "crons": [
     { "path": "/api/cron/rotate",                         "schedule": "0 5 * * *" },
     { "path": "/api/cron/rotate",                         "schedule": "0 6 * * *" },
+    { "path": "/api/cron/sync-day-content",               "schedule": "10 5 * * *" },
+    { "path": "/api/cron/sync-day-content",               "schedule": "10 6 * * *" },
     { "path": "/api/pipelines/agenda-watch/crawl",        "schedule": "0 6 * * 6" },
     { "path": "/api/pipelines/puc/crawl",                 "schedule": "0 12 * * 6" },
     { "path": "/api/pipelines/data365/fetch",             "schedule": "0 18 * * 6" },

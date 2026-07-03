@@ -92,6 +92,56 @@ Alerts"), light-cream theme matching `/account` (same Card/SL styling; new light
   "Notifications" entries repointed `/notifications` → `/account/notifications`;
   the old `/notifications` stub is now a redirect (kept so old links never 404).
 
+## Daily Challenge day-content pages (FAR-287, claude/daily-challenge-content-pages, 2026-07-03)
+
+Three day-level pages covering the FULL daily set (all 7 types), reached from a
+second labeled group ("TODAY'S CHALLENGE") in the "?" Help dropdown of BOTH
+`buildHeaderMenus` and `buildSiteMenus` (new `{heading:"…"}` menu-item type):
+**`/challenge/hints`** (Hints Today) · **`/challenge/about`** (About Today's
+Challenge) · **`/challenge/answers`** (Answers Today). The evergreen `/help/hints`
+stub stays — "Hints Today" is a distinct, day-scoped page.
+
+- **Data:** `dc_daily_page_content` (one row per CT serve day; migration
+  `20260703000002…`, **not yet applied to prod** — apply at promotion). RLS
+  deny-all/service-role-only, deliberately NOT public-read like
+  `library_catalog_cache`: the `puzzles` jsonb carries answers + explanations,
+  so an anon-key SELECT policy would leak ungated answers via PostgREST.
+- **Sync (idempotent):** `/api/cron/sync-day-content` (vercel.json 05:10 +
+  06:10 UTC, ten minutes after the AUTO-128 rotator; same midnight-Chicago
+  guard + CRON_SECRET + `?force=1`, plus force-only `?date=` backfill). Gather
+  logic in `src/lib/day-content.ts` (`buildDayContentRow`): reads the bank's
+  Live rows **by field NAME** (Hint 1/2/3 exist; **"Answer Explanation" +
+  "Domain"/"Sub-Domain" links are Phase-1 prerequisites Myke adds in Airtable —
+  absent fields → nulls, never a sync failure**), resolves Domain → IDF Domain
+  Registry `Domain ID`, and picks one Academy course per domain (base
+  `appzhpKGOI248bCDQ` / `Courses`, `School ID` = Domain ID, free-with-URL
+  first) at SYNC time — pages never touch Airtable. Upsert keys on
+  `puzzle_date` (`resolution=merge-duplicates`).
+- **Reads:** `/api/challenge/day-content` (hints/about; answers STRIPPED) and
+  `/api/challenge/answers` (THE gate: a puzzle's answer unlocks only when the
+  subscriber completed it that day per `dc_completions`, or the day rolled
+  over; partial unlock normal; anonymous today = all locked). Live stats
+  (completion % from `dc_daily_attempts`/`dc_completions`, avg `hints_used`)
+  are computed fresh per request — NEVER stored in generated content.
+- **Hint gate (FAR-198) untouched:** the Hints page spends the SAME
+  localStorage budget key as the in-game HintControl
+  (`faraday_hints_${TODAY}_${gameType}`, UTC-slice day, HINT_MAX 3) — shared
+  budget, no duplicated/modified enforcement. New: the game now reports that
+  count at completion (`/api/score` forwards optional `hintsUsed` →
+  `complete-puzzle`, which always accepted it; previously nothing sent it, so
+  `dc_completions.hints_used` was always 0). Analytics-only — never score input.
+- **Academy links (FAR-21 reversed):** hint tier-3 footers + missed-puzzle recs
+  on Answers deep-link the course `URL` (fallback `/academy` lobby redirect).
+  The More Faraday "Faraday Academy — disabled" menu item is separate nav
+  design and stays. Follow-ups flagged: no Supabase-synced Academy catalog
+  exists yet (sync queries the Courses base live, daily, server-side); Academy
+  lobby has no per-course/per-school deep-link scheme beyond the `URL` field.
+- **Verified:** `extractAnswer` (all 7 Puzzle Content shapes) + about/course
+  pickers pass 24 checks against the real 2026-07-03 live set; `npm run build`
+  green. Env needed (already provisioned): `AIRTABLE_API_KEY` (its PAT must
+  also read the Academy base for course recs — fails soft to no-nudge if not),
+  `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`.
+
 ## Faraday Intelligence site canon (set 2026-06-19, engine-as-site — approved by Myke; FAR-119)
 
 This repo **is the entire `faraday-intelligence.ai` site** — not just the Daily

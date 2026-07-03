@@ -28,7 +28,8 @@ type MenuItem =
   | { label: string; href: string; current?: boolean }
   | { label: string; onClick: () => void; current?: boolean }
   | { label: string; disabled: true }
-  | { divider: true };
+  | { divider: true }
+  | { heading: string };
 
 interface Menu {
   id: string;
@@ -82,12 +83,19 @@ export function buildSiteMenus({
       DC_GAMES.map(g => ({ label: g, href: `/challenge?game=${encodeURIComponent(g)}` })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
+      // Evergreen "Hints" (general how-to-play help) stays as-is — the
+      // day-scoped "Hints Today" below is a distinct page (FAR-287).
       { label: "Hints",           href: "/help/hints" },
       { label: "Tips and Tricks", href: "/help/tips" },
       { label: "Questions",       href: "/help/questions" },
       { label: "Glossary",        href: "/help/glossary" },
       { label: "Report a Bug",    href: "/help/report-a-bug" },
       { label: "Feedback",        href: "/help/feedback" },
+      { divider: true },
+      { heading: "Today's Challenge" },
+      { label: "Hints Today",             href: "/challenge/hints" },
+      { label: "About Today's Challenge", href: "/challenge/about" },
+      { label: "Answers Today",           href: "/challenge/answers" },
     ]},
     { id: "compete", icon: "trophy", label: "Compete", items: [
       { label: "Leaderboard — Today",  href: "/leaderboard", current: current === "leaderboard" },  // TODO: no today-only view yet → season board (shows a Today column)
@@ -205,6 +213,8 @@ function IconNav({ menus }: { menus: Menu[] }) {
               {m.items.map((it, i) =>
                 "divider" in it ? (
                   <hr key={i} />
+                ) : "heading" in it ? (
+                  <div key={i} className="dc-dd-label">{it.heading}</div>
                 ) : "disabled" in it ? (
                   <button
                     key={i}
