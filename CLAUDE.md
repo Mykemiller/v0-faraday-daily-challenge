@@ -64,6 +64,34 @@ the standalone `/account` page and the in-app account screen inside
 immediate joins, no `pending` badge, `canEditTeams = session && !isLocked`, and the
 same max-teams copy. The Free-Agency deferral / notice copy was removed from both.
 
+## Daily Challenge notification settings (claude/daily-challenge-notifications, 2026-07-03)
+
+Subscriber-facing alert preferences at **`/account/notifications`** ("Daily Challenge
+Alerts"), light-cream theme matching `/account` (same Card/SL styling; new light
+`Toggle` switch + SMS/Email `ChannelChip` components local to the page).
+
+- **Data:** `dc_subscribers.notification_preferences` (jsonb, nullable — migration
+  `20260703000001…`, **not yet applied to prod**; apply at promotion). NULL = defaults.
+  Shape: `{master_enabled, categories.{reminder_to_play|streak_at_risk|
+  teammate_completed|leaderboard_movement}.{enabled, channels.{sms,email}}}` —
+  the four category keys are a **fixed contract**; do not rename.
+- **Single source of truth:** `src/lib/notification-preferences.ts` — defaults,
+  `normalizeNotificationPreferences()` (coerces NULL/partial/junk to full shape),
+  and **`shouldSendNotification(prefs, category, channel)`** — THE send gate.
+  No sender for these four alert types exists yet (the OTP/ops mailers are
+  unrelated); any future cron/worker/edge sender MUST call the gate before each
+  send. Master off silences everything; per-category settings persist underneath.
+- **API:** `/api/account` GET now returns `notification_preferences` (normalized);
+  POST `action:"update-notifications"` + `preferences` (normalized server-side
+  before PATCH). Same token/service-role pattern as the other account actions.
+- **Save behavior:** auto-save per toggle (optimistic, revert on failure) — same
+  immediate-save pattern as the /account team picker. Master-off dims + disables
+  the category list without discarding values.
+- **Nav:** "Notifications" added to the gear (Account) menu directly after
+  Settings in BOTH `buildSiteMenus` and `buildHeaderMenus`; the More Faraday
+  "Notifications" entries repointed `/notifications` → `/account/notifications`;
+  the old `/notifications` stub is now a redirect (kept so old links never 404).
+
 ## Faraday Intelligence site canon (set 2026-06-19, engine-as-site — approved by Myke; FAR-119)
 
 This repo **is the entire `faraday-intelligence.ai` site** — not just the Daily

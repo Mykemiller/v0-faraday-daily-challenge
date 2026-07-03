@@ -74,7 +74,7 @@ export function buildSiteMenus({
   onSignOut,
 }: {
   authed: boolean;
-  current?: "daily" | "leaderboard" | "account";
+  current?: "daily" | "leaderboard" | "account" | "notifications";
   onSignOut?: () => void;
 }): Menu[] {
   return [
@@ -98,6 +98,7 @@ export function buildSiteMenus({
     { id: "account", icon: "gear", label: "Account", items: authed ? [
       { label: "Account",  href: "/account", current: current === "account" },
       { label: "Settings", href: "/account" },  // same Account page today — no separate settings page yet
+      { label: "Notifications", href: "/account/notifications", current: current === "notifications" },
       { divider: true },
       ...(onSignOut ? [{ label: "Sign Out", onClick: onSignOut } as MenuItem] : []),
     ] : [
@@ -107,7 +108,7 @@ export function buildSiteMenus({
       { label: "About Faraday Intelligence", href: "/about" },
       { label: "Who is Faraday",             href: "/who-is-faraday" },
       { label: "Share / Invite",             href: "/share" },
-      { label: "Notifications",              href: "/notifications" },
+      { label: "Notifications",              href: "/account/notifications" },
       { label: "Faraday Merchandise",        href: "/merch" },
       { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
@@ -242,7 +243,7 @@ export default function SiteHeaderNav({
   handle,
   onSignOut,
 }: {
-  current?: "daily" | "leaderboard" | "account";
+  current?: "daily" | "leaderboard" | "account" | "notifications";
   authed?: boolean;
   handle?: string | null;
   onSignOut?: () => void;
