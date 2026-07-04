@@ -26,6 +26,16 @@
   --color-sage-dark: #4f6b4d;   /* >=4.79:1 on cream, 5.45:1 on white */
   --color-sage-light: #a6bca4;  /* >=5.49:1 on forest-mid */
 
+  /* League Office (internal Commissioner Console) surface tokens. Extends the
+     cream ramp with the two intermediates the console dividers/borders use, the
+     faint panel/table-hover wash, and the "brick" red for flagged/destructive
+     status. These ship ONLY on the staff-gated /league-office tree. */
+  --color-cream-line: #f3ede2;   /* table row dividers */
+  --color-cream-border: #e5ddd0;  /* card + header borders */
+  --color-cream-edge: #d8cfbf;    /* disabled/inset edges */
+  --color-warm-panel: #faf7f2;    /* input bg + table row hover */
+  --color-brick: #9c3b2e;         /* flagged / destructive (4th status color) */
+
   /* Ch.09b neon registry — per game, locked. Game pictograms only. */
   --color-neon-rackl: #00ffc8;
   --color-neon-signaldrop: #ff2d78;
@@ -132,4 +142,39 @@ button:focus-visible {
     font-size: 13px;
     padding: 8px 14px;
   }
+}
+
+/* ── League Office (internal Commissioner Console) — interaction states ────────
+   Desktop-first internal tool. Scoped to /league-office; nothing here ships on
+   subscriber-facing surfaces. */
+.lo-row {
+  transition: background-color .1s ease;
+}
+.lo-row:hover {
+  background: var(--color-warm-panel);
+}
+.lo-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: rgba(248, 245, 240, .82);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background-color .12s ease;
+}
+.lo-nav-item:hover {
+  background: rgba(248, 245, 240, .08);
+}
+.lo-nav-item.is-active {
+  background: rgba(196, 146, 42, .16);
+  border-left-color: var(--color-gold);
+  color: var(--color-gold-light);
+}
+@keyframes loPulse {
+  0% { box-shadow: 0 0 0 0 rgba(196, 146, 42, .5); }
+  70% { box-shadow: 0 0 0 9px rgba(196, 146, 42, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(196, 146, 42, 0); }
 }
