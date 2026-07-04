@@ -233,28 +233,32 @@ function extractTransitions(issues: unknown[]): JiraTransition[] {
 async function fetchJiraIssues(
   auth: string,
 ): Promise<{ open: JiraIssue[]; transitions: JiraTransition[] }> {
-  const headers = { Authorization: auth, Accept: "application/json" };
-
-  const openUrl =
-    `${JIRA_BASE}/search?` +
-    new URLSearchParams({
-      jql: "project=FAR AND statusCategory != Done ORDER BY priority ASC, updated DESC",
-      maxResults: "100",
-      fields: "summary,status,priority,assignee,labels,issuelinks,issuetype",
-    });
-
-  const transUrl =
-    `${JIRA_BASE}/search?` +
-    new URLSearchParams({
-      jql: "project=FAR AND updated >= -24h ORDER BY updated DESC",
-      maxResults: "50",
-      expand: "changelog",
-      fields: "summary,status,priority",
-    });
+  const headers = {
+    Authorization: auth,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
 
   const [openRes, transRes] = await Promise.allSettled([
-    fetch(openUrl, { headers }),
-    fetch(transUrl, { headers }),
+    fetch(`${JIRA_BASE}/search/jql`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jql: "project=FAR AND statusCategory != Done ORDER BY priority ASC, updated DESC",
+        maxResults: 100,
+        fields: ["summary", "status", "priority", "assignee", "labels", "issuelinks", "issuetype"],
+      }),
+    }),
+    fetch(`${JIRA_BASE}/search/jql`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jql: "project=FAR AND updated >= -24h ORDER BY updated DESC",
+        maxResults: 50,
+        expand: ["changelog"],
+        fields: ["summary", "status", "priority"],
+      }),
+    }),
   ]);
 
   let open: JiraIssue[] = [];
