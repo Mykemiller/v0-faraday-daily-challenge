@@ -5,6 +5,7 @@ import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
 import { getTeam } from "@/lib/league-office/data";
 import { PageHeading, Card, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
+import { ActionButton } from "@/components/league-office/actions";
 
 export default async function TeamDetailPage({
   params,
@@ -40,12 +41,31 @@ export default async function TeamDetailPage({
           <span className="font-mono" style={{ fontSize: 10.5, color: "#b2a898" }}>INDEPENDENT</span>
         )}
         <span style={{ flex: 1 }} />
-        {["Reassign captain", "Rename", "Force disband"].map((a) => (
-          <button key={a} disabled title="Write-actions land in the next phase (Tier 2)"
-            style={{ fontSize: 12.5, padding: "7px 12px", borderRadius: 7, border: "1px solid var(--color-cream-border)", background: "#fff", color: a === "Force disband" ? "#d3a29a" : "#b2a898", cursor: "not-allowed" }}>
-            {a}
-          </button>
-        ))}
+        <ActionButton
+          label="Reassign captain"
+          title="Reassign team captain"
+          description={`Choose a new captain for ${d.team.name}. The current captain becomes a regular member.`}
+          confirmLabel="Reassign"
+          payload={{ action: "team.reassign_captain", teamId: d.team.id }}
+          extraField={{
+            kind: "select",
+            name: "captainSubscriberId",
+            label: "New captain",
+            options: d.roster.map((m) => ({ value: m.subscriberId, label: `@${m.handle}` })),
+          }}
+        />
+        <ActionButton
+          label="Rename"
+          title="Rename team"
+          description={`Rename ${d.team.name}. This is visible to all members.`}
+          confirmLabel="Rename"
+          payload={{ action: "team.rename", teamId: d.team.id }}
+          extraField={{ kind: "text", name: "name", label: "New name", initial: d.team.name }}
+        />
+        <button disabled title="Deferred: destructive team deletion on live shared data — later pass"
+          style={{ fontSize: 12.5, padding: "7px 12px", borderRadius: 7, border: "1px solid var(--color-cream-border)", background: "#fff", color: "#d3a29a", cursor: "not-allowed" }}>
+          Force disband
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }}>
@@ -54,12 +74,20 @@ export default async function TeamDetailPage({
             <EmptyState>No confirmed members.</EmptyState>
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {d.roster.map((m, i) => (
-                <li key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderTop: i ? "1px solid var(--color-cream-line)" : "none" }}>
+              {d.roster.map((m) => (
+                <li key={m.membershipId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderTop: "1px solid var(--color-cream-line)" }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>@{m.handle}</span>
                   {m.role === "Captain" ? <StatusChip label="Captain" tone="amber" /> : null}
                   <span style={{ flex: 1 }} />
-                  <button disabled title="Tier 2" style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--color-cream-border)", background: "#fff", color: "#c3b9a8", cursor: "not-allowed" }}>Remove</button>
+                  <ActionButton
+                    label="Remove"
+                    variant="danger"
+                    destructive
+                    title="Remove from team"
+                    description={`Remove @${m.handle} from ${d.team!.name}. Their membership record is deleted.`}
+                    confirmLabel="Remove"
+                    payload={{ action: "membership.deny", membershipId: m.membershipId }}
+                  />
                 </li>
               ))}
             </ul>
@@ -71,13 +99,27 @@ export default async function TeamDetailPage({
             <EmptyState>No pending membership requests.</EmptyState>
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {d.pending.map((m, i) => (
-                <li key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderTop: i ? "1px solid var(--color-cream-line)" : "none" }}>
+              {d.pending.map((m) => (
+                <li key={m.membershipId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderTop: "1px solid var(--color-cream-line)" }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>@{m.handle}</span>
                   <span style={{ flex: 1 }} />
-                  {["Approve", "Deny"].map((a) => (
-                    <button key={a} disabled title="Tier 2" style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--color-cream-border)", background: "#fff", color: "#c3b9a8", cursor: "not-allowed" }}>{a}</button>
-                  ))}
+                  <ActionButton
+                    label="Approve"
+                    variant="primary"
+                    title="Approve membership request"
+                    description={`Approve @${m.handle} into ${d.team!.name}. They become a confirmed member.`}
+                    confirmLabel="Approve"
+                    payload={{ action: "membership.approve", membershipId: m.membershipId }}
+                  />
+                  <ActionButton
+                    label="Deny"
+                    variant="danger"
+                    destructive
+                    title="Deny membership request"
+                    description={`Deny @${m.handle}'s request to join ${d.team!.name}. The pending record is removed.`}
+                    confirmLabel="Deny"
+                    payload={{ action: "membership.deny", membershipId: m.membershipId }}
+                  />
                 </li>
               ))}
             </ul>

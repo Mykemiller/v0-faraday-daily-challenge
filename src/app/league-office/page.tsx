@@ -76,7 +76,7 @@ export default async function DashboardPage({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
-        <Card title="League activity" action={<Link href="/league-office/subscribers" style={{ fontSize: 12, color: "var(--color-amber-dark)", textDecoration: "none" }}>Subscribers →</Link>}>
+        <Card title="League activity" action={<Link href="/league-office/audit" style={{ fontSize: 12, color: "var(--color-amber-dark)", textDecoration: "none" }}>Full audit log →</Link>}>
           {d.activity.length === 0 ? (
             <p style={{ color: "#8d8375", fontSize: 13, margin: 0 }}>No scoring events recorded yet.</p>
           ) : (

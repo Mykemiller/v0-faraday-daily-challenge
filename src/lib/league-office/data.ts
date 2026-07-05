@@ -282,16 +282,16 @@ export async function listTeams(s: Svc): Promise<TeamCard[]> {
 export type TeamDetail = {
   team: Team | null;
   conference: string | null;
-  roster: { handle: string; role: string; pending: boolean }[];
-  pending: { handle: string }[];
+  roster: { membershipId: string; subscriberId: string; handle: string; role: string }[];
+  pending: { membershipId: string; subscriberId: string; handle: string }[];
 };
 
 export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
   const [teams, memberships, subMap] = await Promise.all([
     loadTeams(s),
-    q<{ subscriber_id: string; pending: boolean }>(
+    q<{ id: string; subscriber_id: string; pending: boolean }>(
       s,
-      `team_memberships?team_id=eq.${id}&select=subscriber_id,pending`
+      `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending`
     ),
     loadSubscriberMap(s),
   ]);
@@ -300,13 +300,14 @@ export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
   const roster = memberships
     .filter((m) => !m.pending)
     .map((m) => ({
+      membershipId: m.id,
+      subscriberId: m.subscriber_id,
       handle: handleOf(subMap[m.subscriber_id]),
       role: team?.captain_id === m.subscriber_id ? "Captain" : "Member",
-      pending: false,
     }));
   const pending = memberships
     .filter((m) => m.pending)
-    .map((m) => ({ handle: handleOf(subMap[m.subscriber_id]) }));
+    .map((m) => ({ membershipId: m.id, subscriberId: m.subscriber_id, handle: handleOf(subMap[m.subscriber_id]) }));
   return { team, conference: parent?.name ?? null, roster, pending };
 }
 

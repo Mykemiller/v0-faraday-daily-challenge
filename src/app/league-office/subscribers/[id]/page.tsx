@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/league-office/service";
 import { getSubscriber } from "@/lib/league-office/data";
 import { PageHeading, KpiCard, Card, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { GameDot } from "@/components/league-office/primitives";
+import { ActionButton } from "@/components/league-office/actions";
 
 function fmtDay(d: string) {
   return new Intl.DateTimeFormat("en-US", { month: "numeric", day: "numeric" }).format(new Date(d + "T12:00:00Z"));
@@ -45,11 +46,11 @@ export default async function SubscriberDetailPage({
       <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 20px" }}>
         <span className="font-mono" style={{ fontSize: 11.5, color: "#8d8375" }}>{d.sub.email}</span>
         <span style={{ flex: 1 }} />
-        {["View as read-only", "Correct a score", "Pause account"].map((a) => (
+        {["View as read-only", "Correct a score"].map((a) => (
           <button
             key={a}
             disabled
-            title="Write-actions land in the next phase (Tier 2)"
+            title="Deferred: view-as needs a watermarked session; score-correction needs a corrected-flag column"
             style={{
               fontSize: 12.5,
               padding: "7px 12px",
@@ -63,6 +64,26 @@ export default async function SubscriberDetailPage({
             {a}
           </button>
         ))}
+        {d.sub.active === false ? (
+          <ActionButton
+            label="Reinstate account"
+            variant="primary"
+            title="Reinstate this account"
+            description={`Set @${handle} back to active. They resume streak accrual and reappear in team boards.`}
+            confirmLabel="Reinstate"
+            payload={{ action: "subscriber.rejoin", subscriberId: d.sub.id }}
+          />
+        ) : (
+          <ActionButton
+            label="Pause account"
+            variant="danger"
+            destructive
+            title="Pause this account"
+            description={`Soft opt-out for @${handle}: sets active=false (no data is deleted). Stops streak accrual and hides them from team boards.`}
+            confirmLabel="Pause account"
+            payload={{ action: "subscriber.pause", subscriberId: d.sub.id }}
+          />
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 22 }}>

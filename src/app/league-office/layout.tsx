@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Rail from "@/components/league-office/Rail";
 import HeaderBar from "@/components/league-office/HeaderBar";
 import StaffGate from "@/components/league-office/StaffGate";
+import { Toaster } from "@/components/league-office/actions";
 import { requireStaff } from "@/lib/league-office/service";
 import { loadSeasons } from "@/lib/league-office/data";
 
@@ -37,6 +38,7 @@ export default async function LeagueOfficeLayout({
         <StaffGate>
           <main style={{ padding: "26px 30px", maxWidth: 1200, width: "100%" }}>{children}</main>
         </StaffGate>
+        <Toaster />
       </div>
     </div>
   );
