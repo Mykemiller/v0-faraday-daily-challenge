@@ -476,6 +476,19 @@ artifact/14d per sub-domain, reads BOTH conventions):
 FAR-200/202 — the push to ≥70 runs through Phase-B backfill + whitespace
 crawlers. Verification report: `docs/idf4-coverage/wave0-verification-report.md`.
 
+**Wave 3 (same branch): the AUTO-137→176 block was RESHAPED** per Myke's
+FAR-319 approvals comment (2026-07-05): AUTO-137 = D18.1 Opposition Tracker
+(Designed, supersedes both the old AUTO-176 assignment and the interim
+AUTO-137=D7.1 scaffold), **AUTO-138–152 = `WAVE3_ACTIVATION`** (the 15 priority
+whitespace crawlers: D7.1–7.4, D9.1–9.4, D10.1/.2/.3/.5, D4.5/.6, D6.3 — wired
+into the fleet, ≥4 sources each), AUTO-153–176 = renumbered inert scaffolds with
+**D8.2 pinned at AUTO-168** (Industry Conferences annotations reference it).
+Registry renumber/flips = prepared change list only (`docs/idf4-coverage/
+wave3-whitespace-activation.md`, incl. corpus gaps: CoolIT, Boyd, Danfoss,
+Holder, BladeRoom, Compass, Apollo, Emerald AI). Dry-run harness:
+`scripts/idf4-crawler-dryrun.mjs` (no-write; blocked 07-05 on the depleted
+Anthropic credit balance — run before any Status flip).
+
 ## Daily Challenge win-screen daily total + persistence (FAR-211 + FAR-207, shipped 2026-06-24)
 
 **FAR-211 (Display):** `ScoreCard` now renders `score/dayTotal` on every win screen.

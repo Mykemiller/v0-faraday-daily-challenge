@@ -21,7 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TIER1_ACTIVATION, TIER2_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, WAVE3_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -112,9 +112,15 @@ const BASE_AUTOMATIONS: AutoDef[] = [
 // IDF 4.0 Tier-2 activation (FAR-202, approved 2026-06-24): merge the D11–D23
 // dedicated crawlers AUTO-070–119. Query sets authored in coverage-bridge.ts so the
 // rows actually crawl before they are flipped Status=Active in the Registry.
+//
+// IDF 4.0 Wave-3 whitespace activation (FAR-319, precondition approvals recorded
+// by Myke on the epic 2026-07-05): merge the 15 priority whitespace crawlers
+// AUTO-138–152 (D7.x cooling, D9.x orchestration, D10.x construction, D4.5/.6
+// capital, D6.3 new entrants). Deploy is gated on the 20260705000001
+// ifs_subdomains migration being applied first (rows write that column).
 const AUTOMATIONS: AutoDef[] = mergeApproved(
-  mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION),
-  TIER2_ACTIVATION,
+  mergeApproved(mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION), TIER2_ACTIVATION),
+  WAVE3_ACTIVATION,
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
