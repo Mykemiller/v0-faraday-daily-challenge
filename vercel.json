@@ -13,12 +13,5 @@
     { "path": "/api/pipelines/idf/ingest",                "schedule": "0 5 * * 0" },
     { "path": "/api/pipelines/health",                    "schedule": "0 6 * * 0" }
   ],
-  "redirects": [
-    {
-      "source": "/(.*)",
-      "has": [{ "type": "host", "value": "(www\\.)?faradaydailychallenge\\.com" }],
-      "destination": "https://faraday-intelligence.ai/daily-challenge",
-      "statusCode": 301
-    }
-  ]
+  "rewrites": [{ "source": "/", "has": [{ "type": "host", "value": "(www\\.)?faradaydailychallenge\\.com" }], "destination": "/daily-challenge" }]
 }
