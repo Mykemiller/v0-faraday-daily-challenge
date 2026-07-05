@@ -13,14 +13,7 @@ const nextConfig: NextConfig = {
       { source: "/briefing-library/:path*", destination: "/library/:path*", permanent: true },
     ];
   },
-  async rewrites() {
-    return [
-      // Preserve the canonical Daily Challenge URL without a basePath: serve the
-      // /challenge lobby in place at /daily-challenge (no client-visible bounce).
-      { source: "/daily-challenge", destination: "/challenge" },
-      { source: "/daily-challenge/:path*", destination: "/challenge/:path*" },
-    ];
-  },
+  async rewrites() { return { beforeFiles: [ { source: "/", has: [{ type: "host", value: "(www\\.)?faradaydailychallenge\\.com" }], destination: "/challenge" } ], afterFiles: [ { source: "/daily-challenge", destination: "/challenge" }, { source: "/daily-challenge/:path*", destination: "/challenge/:path*" } ] }; },
 };
 
 export default nextConfig;
