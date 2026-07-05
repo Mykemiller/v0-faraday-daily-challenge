@@ -21,7 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TIER1_ACTIVATION, TIER2_ACTIVATION, D3_SUBDOMAIN_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, D3_SUBDOMAIN_ACTIVATION, WAVE3_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -116,12 +116,18 @@ const BASE_AUTOMATIONS: AutoDef[] = [
 // D3 Grid & Regulatory sub-domain feeds (D3-subdomain-automation-setup): merge the
 // five per-sub-domain crawlers AUTO-164/176/177/165/166 → D3.1–D3.5. They run in
 // this same 07:00 UTC fan-out; Registry Status stays Designed until Myke flips it.
+//
+// IDF 4.0 Wave-3 whitespace activation (FAR-319, precondition approvals recorded
+// by Myke on the epic 2026-07-05): merge the 15 priority whitespace crawlers
+// AUTO-138–152 (D7.x cooling, D9.x orchestration, D10.x construction, D4.5/.6
+// capital, D6.3 new entrants). Deploy is gated on the 20260705000001
+// ifs_subdomains migration being applied first (rows write that column).
 const AUTOMATIONS: AutoDef[] = mergeApproved(
   mergeApproved(
-    mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION),
-    TIER2_ACTIVATION,
+    mergeApproved(mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION), TIER2_ACTIVATION),
+    D3_SUBDOMAIN_ACTIVATION,
   ),
-  D3_SUBDOMAIN_ACTIVATION,
+  WAVE3_ACTIVATION,
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -166,6 +172,30 @@ function validIso(s: string | null): string {
   if (!s) return new Date().toISOString();
   const t = Date.parse(s);
   return Number.isNaN(t) ? new Date().toISOString() : new Date(t).toISOString();
+}
+
+// splitIfsTags: split an automation's IFS tag set into domain codes and
+// sub-domain codes (FAR-319 Wave 0). Dedicated crawlers carry D#.# in their
+// ifs_domains definition; historically that code went into artifacts.ifs_domains
+// verbatim. Going forward D#.# codes land in artifacts.ifs_subdomains and the
+// parent D# is derived into ifs_domains, so both columns are always consistent.
+// Legacy non-D tags (e.g. "data_centers") pass through to domains unchanged.
+// REQUIRES the ifs_subdomains column (migration 20260705000001) before deploy.
+export function splitIfsTags(tags: string[]): { domains: string[]; subdomains: string[] } {
+  const SUB = /^D\d+\.\d+$/;
+  const domains = new Set<string>();
+  const subdomains = new Set<string>();
+  for (const raw of tags ?? []) {
+    const t = String(raw).trim();
+    if (!t) continue;
+    if (SUB.test(t)) {
+      subdomains.add(t);
+      domains.add(t.split(".")[0]);
+    } else {
+      domains.add(t);
+    }
+  }
+  return { domains: [...domains].sort(), subdomains: [...subdomains].sort() };
 }
 
 // extractAndParse: strip fences, attempt full parse; on failure, salvage
@@ -383,6 +413,7 @@ serve(async (req: Request) => {
   const now = new Date().toISOString();
   const rows = await Promise.all(allArtifacts.map(async (a) => {
     const raw_content = `${a.title}\n\n${a.summary}`;
+    const { domains, subdomains } = splitIfsTags(a.ifs_domains);
     return {
       crawler_id: `${a.auto_id}_v1.0`,
       auto_id: a.auto_id,
@@ -391,8 +422,9 @@ serve(async (req: Request) => {
       raw_content,
       content_hash: await sha256Hex(raw_content),
       signal_envelope: { title: a.title, url: a.source_url, source: a.source, summary: a.summary, published_at: validIso(a.published_at), keyword_matches: a.keyword_matches },
-      crawl_metadata: { crawler_version: "1.1", auto_id: a.auto_id, run_date: now.slice(0, 10), search_method: "edge_web_search_batched", crawled_at: now },
-      ifs_domains: a.ifs_domains,
+      crawl_metadata: { crawler_version: "1.2", auto_id: a.auto_id, run_date: now.slice(0, 10), search_method: "edge_web_search_batched", crawled_at: now },
+      ifs_domains: domains,
+      ifs_subdomains: subdomains,
       published_at: validIso(a.published_at),
       discovered_at: now,
       enrich_status: "pending",
@@ -451,7 +483,7 @@ serve(async (req: Request) => {
       errors: errMsg ? [errMsg] : [],
       notes: failed
         ? `faraday-crawl batch failed: ${errMsg?.slice(0, 400)}`
-        : `faraday-crawl v1.1 batched; ${found} found, ${fresh} new${errMsg ? ` (salvaged)` : ""}`,
+        : `faraday-crawl v1.2 batched; ${found} found, ${fresh} new${errMsg ? ` (salvaged)` : ""}`,
     };
   });
 
