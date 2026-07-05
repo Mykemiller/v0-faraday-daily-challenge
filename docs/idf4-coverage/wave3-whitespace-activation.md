@@ -3,9 +3,11 @@
 **Date:** 2026-07-05 · **Branch:** `claude/idf-4-subdomain-coverage-id5ln0`
 **Precondition:** ✅ VERIFIED — Myke's approvals comment exists on FAR-319 (2026-07-05, comment id 11555): (1) AUTO-137→175 block, (2) AUTO-049 stays Active Email Ingestion with the D18.1 Opposition Tracker reassigned to **AUTO-137**, (3) source_type enum additions approved via named migration + PR only (interim `web_news` fallback acceptable). Also logged on the Notion coverage-matrix approvals block.
 
-## Proposed registry mapping (block AUTO-137→176) — PREPARED, NOT APPLIED
+> **RECONCILIATION UPDATE (2026-07-05, post-PR #84 merge):** the D3 Grid & Regulatory feeds merged to main self-assigned **AUTO-164/165/166/176/177 → D3.1/D3.4/D3.5/D3.2/D3.3**. Since they are live (merged by Myke), they keep those IDs; the four whitespace scaffolds this displaces (D11.6, D16.5, D16.6, D18.3) move to **PROPOSED ids AUTO-179–182** (`placeholder:true` — NOT granted; AUTO-178 = faraday-crawl-healthcheck). The table below reflects the reconciled layout. Note the semantic overlaps for Myke's registry pass: AUTO-177 was the *PUC & Utility Rate Case Monitor* (FAR-204) and is now the D3.3 PUC feed — same mission, coherent; AUTO-176 was the old Opposition row and is now the D3.2 moratorium feed, while the Opposition **Register** (D18.1) lives at AUTO-137.
 
-Myke's approval ("Opposition Tracker = AUTO-137, first ID of the block; assign sequentially") supersedes the interim scaffold layout of 2026-06-24 (where AUTO-137=D7.1 and the Opposition Tracker sat on AUTO-176). Resulting renumber — the freed AUTO-176 absorbs the overflow, and **D8.2 stays pinned to AUTO-168** because the 6 Industry Conferences "primary target" annotations (`tblb1S5IKFBPEmUJL`) already reference it:
+## Proposed registry mapping (block AUTO-137→182) — PREPARED, NOT APPLIED
+
+Myke's approval ("Opposition Tracker = AUTO-137, first ID of the block; assign sequentially") supersedes the interim scaffold layout of 2026-06-24 (where AUTO-137=D7.1 and the Opposition Tracker sat on AUTO-176). **D8.2 stays pinned to AUTO-168** because the 6 Industry Conferences "primary target" annotations (`tblb1S5IKFBPEmUJL`) already reference it:
 
 | AUTO-ID | Sub-domain | Status this wave | Note |
 |---|---|---|---|
@@ -25,9 +27,14 @@ Myke's approval ("Opposition Tracker = AUTO-137, first ID of the block; assign s
 | AUTO-150 | D4.5 Private Credit & DC Debt | **Activate** (`financial`) | was AUTO-159 |
 | AUTO-151 | D4.6 GPU-Backed & Neocloud Financing | **Activate** (`financial`) | was AUTO-158 |
 | AUTO-152 | D6.3 AI Labs as Infrastructure Buyers | **Activate** | was AUTO-160 |
-| AUTO-153–167 | D1.1/.2/.3/.6, D2.1–2.4/2.9, D11.1/.2/.6, D16.5/.6, D17.3 | Designed (renumbered scaffolds) | |
+| AUTO-153–163 | D1.1/.2/.3/.6, D2.1–2.4/2.9, D11.1/.2 | Designed (renumbered scaffolds) | |
+| AUTO-164/165/166 | D3.1 / D3.4 / D3.5 (Grid & Regulatory feeds) | **Active on main** (PR #84) | ID grab reconciled — ex-scaffold slots |
+| AUTO-167 | D17.3 Immigration & Labor Competition | Designed (renumbered scaffold) | |
 | AUTO-168 | D8.2 Conference Intelligence (cowork) | Designed — **pinned** | conference-table annotations reference it |
-| AUTO-169–176 | D14.7, D8.4/.5, D14.1, D8.3, D5.3/.4, D18.3 | Designed (renumbered scaffolds) | D5.3/5.4, D8.4/8.5, D14.1, D18.3 = Claude-Routine/cowork editorial workstream — out of crawler scope |
+| AUTO-169–175 | D14.7, D8.4/.5, D14.1, D8.3, D5.3/.4 | Designed (renumbered scaffolds) | D5.3/5.4, D8.4/8.5, D14.1 = Claude-Routine/cowork editorial workstream — out of crawler scope |
+| AUTO-176/177 | D3.2 / D3.3 (Grid & Regulatory feeds) | **Active on main** (PR #84) | 176 ex-Opposition row; 177 ex-PUC Monitor (same mission as D3.3) |
+| AUTO-178 | faraday-crawl-healthcheck | Active (FAR-253) | not part of this block |
+| AUTO-179–182 | D11.6, D16.5, D16.6, D18.3 | **PROPOSED** (`placeholder:true`) | displaced by the D3 ID grab — **needs Myke's ID grant** |
 
 **Airtable change list for Myke (Registry `appxfti7VuoHYUeu6` / `tbl1ef6FgxUc3Uevg`, Status field `fldk6NPtWxxhcH5Qi`, batches ≤10, `typecast: true`):**
 1. Re-map the Designed rows of the block to the table above (name + IFS sub-domain + AUTO-ID per row).
@@ -47,7 +54,7 @@ The no-write harness is `scripts/idf4-crawler-dryrun.mjs` (`--set=wave3`; parses
 
 ## Volume & quality guards
 
-- Per-crawler cap stays **4 artifacts/run** (PER_AUTO_CAP — well under the 25 ceiling). Fleet grows 87 → 102 automations: worst-case 408 found/day vs the ~400/day soft cap, but observed find-rate at 87 automations is 330–346, so projected ~390–405 — **at the cap boundary; monitor the first week** and trim broad-crawler caps if the ceiling is breached.
+- Per-crawler cap stays **4 artifacts/run** (PER_AUTO_CAP — well under the 25 ceiling). Fleet grows 87 → **107** automations (+5 D3 feeds from PR #84, +15 Wave-3): worst-case 428 found/day vs the ~400/day soft cap; scaled from the observed find-rate at 87 automations (330–346), projected **~410–425 — OVER the soft cap.** Monitor the first week; if breached, trim the broad multi-domain crawlers (AUTO-001/027, which duplicate dedicated coverage) to cap 3, or lower PER_AUTO_CAP to 3 fleet-wide (~320/day).
 - Dedup: same `content_hash` upsert (`ignoreDuplicates`) path as the rest of the fleet; collision rate per crawler will be visible in `automation_health_log.artifacts_duped`.
 - Health logging: automatic — the fleet writes one health row per automation per run under its own AUTO-ID.
 - Failure isolation: batched Anthropic calls (`BATCH_SIZE=3`, `Promise.allSettled`) — one bad batch logs its 3 automations only.

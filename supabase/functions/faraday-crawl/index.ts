@@ -21,7 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TIER1_ACTIVATION, TIER2_ACTIVATION, WAVE3_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, D3_SUBDOMAIN_ACTIVATION, WAVE3_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -113,13 +113,20 @@ const BASE_AUTOMATIONS: AutoDef[] = [
 // dedicated crawlers AUTO-070–119. Query sets authored in coverage-bridge.ts so the
 // rows actually crawl before they are flipped Status=Active in the Registry.
 //
+// D3 Grid & Regulatory sub-domain feeds (D3-subdomain-automation-setup): merge the
+// five per-sub-domain crawlers AUTO-164/176/177/165/166 → D3.1–D3.5. They run in
+// this same 07:00 UTC fan-out; Registry Status stays Designed until Myke flips it.
+//
 // IDF 4.0 Wave-3 whitespace activation (FAR-319, precondition approvals recorded
 // by Myke on the epic 2026-07-05): merge the 15 priority whitespace crawlers
 // AUTO-138–152 (D7.x cooling, D9.x orchestration, D10.x construction, D4.5/.6
 // capital, D6.3 new entrants). Deploy is gated on the 20260705000001
 // ifs_subdomains migration being applied first (rows write that column).
 const AUTOMATIONS: AutoDef[] = mergeApproved(
-  mergeApproved(mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION), TIER2_ACTIVATION),
+  mergeApproved(
+    mergeApproved(mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION), TIER2_ACTIVATION),
+    D3_SUBDOMAIN_ACTIVATION,
+  ),
   WAVE3_ACTIVATION,
 );
 

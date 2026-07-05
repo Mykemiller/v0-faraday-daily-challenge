@@ -8,10 +8,16 @@
 //   AUTO-138 → 152  = WAVE3_ACTIVATION — the 15 priority whitespace crawlers
 //                     (D7.1–7.4, D9.1–9.4, D10.1/.2/.3/.5, D4.5/.6, D6.3),
 //                     wired into index.ts's AUTOMATIONS via mergeApproved.
-//   AUTO-153 → 176  = WHITESPACE_SCAFFOLDS — remaining Designed routines,
-//                     renumbered (AUTO-176 freed by the Opposition move;
-//                     D8.2 pinned at AUTO-168 for the Industry Conferences
-//                     table annotations). Inert until built.
+//   AUTO-153 → 163,
+//   167 → 175       = WHITESPACE_SCAFFOLDS — remaining Designed routines,
+//                     renumbered (D8.2 pinned at AUTO-168 for the Industry
+//                     Conferences table annotations). Inert until built.
+//   AUTO-164/165/166,
+//   176/177         = D3_SUBDOMAIN_ACTIVATION (D3.1–D3.5, merged from main in
+//                     PR #84 — live in the fleet; ID grab reconciled here).
+//   AUTO-179 → 182  = PROPOSED ids for the 4 scaffolds the D3 feeds displaced
+//                     (D11.6, D16.5, D16.6, D18.3) — placeholder:true pending
+//                     Myke's grant. AUTO-178 = faraday-crawl-healthcheck.
 // Registry renumber is a PREPARED change list (PR description) — not applied.
 //
 // TIER1_ACTIVATION (AUTO-060–069) and TIER2_ACTIVATION (AUTO-070–119) are wired
@@ -21,8 +27,8 @@
 // Note on order of operations (kept for the record): never flip Status before the
 // dry run succeeds (§2 DONE).
 //
-// NEXT FREE ID after this block is **AUTO-178** (AUTO-177 = the reassigned
-// "PUC & Utility Rate Case Monitor", FAR-204).
+// NEXT FREE ID: **AUTO-183** (177 = D3.3 feed, 178 = crawl healthcheck,
+// 179–182 = proposed displaced-scaffold ids above).
 // =============================================================================
 
 // Mirror of index.ts AutoDef so this file stays self-contained for review/tests.
@@ -178,13 +184,35 @@ export const TIER2_ACTIVATION: AutoDef[] = [
 ];
 
 
+// ── D3 Grid & Regulatory sub-domain feeds (merged from main, PR #84) ────────────
+// ⚠️ ID-collision note (FAR-319 reconciliation, 2026-07-05): these five crawlers
+// self-assigned AUTO-164/165/166/176/177 — IDs inside/adjacent to the granted
+// whitespace block. They are LIVE on main (merged by Myke), so they keep these
+// IDs; the displaced whitespace scaffolds (D11.6, D16.5, D16.6, D18.3) moved to
+// PROPOSED ids AUTO-179–182 below (AUTO-178 = faraday-crawl-healthcheck). The
+// Airtable Registry reconciliation table lives in
+// docs/idf4-coverage/wave3-whitespace-activation.md.
+export const D3_SUBDOMAIN_ACTIVATION: AutoDef[] = [
+  { auto_id: "AUTO-164", source_type: "regulatory", ifs_domains: ["D3.1"],
+    queries: ["ISO RTO interconnection queue data center large load 2026", "FERC Order 2023 interconnection reform cluster study 2026", "PJM MISO ERCOT CAISO large load interconnection process data center", "grid access large load study data center queue position 2026"] },
+  { auto_id: "AUTO-176", source_type: "regulatory", ifs_domains: ["D3.2"],
+    queries: ["state data center moratorium bill legislation 2026", "data center siting permitting bill state legislature 2026", "data center tax incentive rollback water disclosure bill 2026", "large load rate class legislation state data center 2026"] },
+  { auto_id: "AUTO-177", source_type: "state_puc_filing", ifs_domains: ["D3.3"],
+    queries: ["public utility commission large load data center rate case 2026", "PUC special rate class data center tariff proceeding 2026", "utility cost recovery data center ratepayer cost shift PUC 2026", "state PUC docket data center demand charge minimum take 2026"] },
+  { auto_id: "AUTO-165", source_type: "regulatory", ifs_domains: ["D3.4"],
+    queries: ["FERC Order 1920 regional transmission planning cost allocation 2026", "NIETC national interest electric transmission corridor DOE 2026", "interregional transfer capability transmission buildout 2026", "Grain Belt Express SunZia MISO LRTP transmission project 2026"] },
+  { auto_id: "AUTO-166", source_type: "regulatory", ifs_domains: ["D3.5"],
+    queries: ["FERC co-location behind the meter data center ruling 2026", "large load tariff bring your own generation interconnection 2026", "Talen Amazon PJM co-location Susquehanna FERC docket 2026", "minimum take curtailment obligation large load data center tariff 2026"] },
+];
+
 // ── WAVE 3 — priority whitespace crawlers AUTO-138–152 (FAR-319, 2026-07-05) ────
 // Myke's FAR-319 approval comment (2026-07-05) reassigned the block: AUTO-137 =
 // the D18.1 Opposition Tracker ("first ID of the new block", ex-AUTO-049 →
 // ex-AUTO-176 → AUTO-137), with sequential assignment after it. The 15 priority
 // whitespace sub-domains therefore take AUTO-138→152 and graduate here from
-// WHITESPACE_SCAFFOLDS; the remaining scaffolds are renumbered AUTO-153→176
-// below (AUTO-176 was freed by the Opposition Tracker's move to AUTO-137).
+// WHITESPACE_SCAFFOLDS; the remaining scaffolds are renumbered AUTO-153→175 +
+// proposed AUTO-179–182 below (AUTO-164/165/166/176/177 now belong to the D3
+// feeds above; AUTO-178 = faraday-crawl-healthcheck).
 // D8.2 deliberately KEEPS AUTO-168 — the 6 "primary target" annotations in the
 // Industry Conferences table (tblb1S5IKFBPEmUJL) already point at it.
 //
@@ -240,8 +268,12 @@ export const WAVE3_ACTIVATION: AutoDef[] = [
 //                       ex-AUTO-049/ex-AUTO-176 reassignment; Designed, NOT in
 //                       Wave 3's 15-crawler build cap; next activation slot)
 //   AUTO-138 → 152    = WAVE3_ACTIVATION above (graduated out of this list)
-//   AUTO-153 → 176    = the 24 remaining scaffolds below (AUTO-176 freed by the
-//                       Opposition Tracker move; D8.2 pinned to AUTO-168)
+//   AUTO-153 → 163,
+//   AUTO-167 → 175    = 20 remaining scaffolds (D8.2 pinned to AUTO-168;
+//                       164/165/166/176/177 belong to the D3 feeds, PR #84)
+//   AUTO-179 → 182    = the 4 scaffolds displaced by the D3 ID grab (D11.6,
+//                       D16.5, D16.6, D18.3) — PROPOSED ids, placeholder:true
+//                       until Myke grants them (AUTO-178 = crawl healthcheck)
 // Ids are reserved (Designed in the Registry — renumber change list prepared,
 // not applied); each routine is built + activated later.
 export const WHITESPACE_SCAFFOLDS: ScaffoldDef[] = [
@@ -286,13 +318,16 @@ export const WHITESPACE_SCAFFOLDS: ScaffoldDef[] = [
   { auto_id: "AUTO-163", placeholder: false, mechanism: "crawler", subdomain: "D11.2", source_type: "regulatory",
     cadence: "weekly Mon 08:20 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D11.2'])",
     ifs_domains: ["D11.2"], queries: ["data center carbon accounting GHG protocol scope 1 2 3 2026", "TCFD CDP data center operational emissions", "data center carbon disclosure 2026"] },
-  { auto_id: "AUTO-164", placeholder: false, mechanism: "crawler", subdomain: "D11.6", source_type: "web_news",
+  // ---- Displaced by the D3 feeds' ID grab (PR #84) → PROPOSED ids AUTO-179–182.
+  // placeholder:true = these ids are NOT granted yet; do not register/build until
+  // Myke confirms them (AUTO-178 is taken by faraday-crawl-healthcheck).
+  { auto_id: "AUTO-179", placeholder: true, mechanism: "crawler", subdomain: "D11.6", source_type: "web_news",
     cadence: "weekly Mon 08:25 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D11.6'])",
     ifs_domains: ["D11.6"], queries: ["embodied carbon low carbon concrete Sublime Brimstone data center 2026", "green steel recycled copper data center materials", "embodied carbon materials data center 2026"] },
-  { auto_id: "AUTO-165", placeholder: false, mechanism: "crawler", subdomain: "D16.5", source_type: "web_news",
+  { auto_id: "AUTO-180", placeholder: true, mechanism: "crawler", subdomain: "D16.5", source_type: "web_news",
     cadence: "weekly Tue 08:30 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D16.5'])",
     ifs_domains: ["D16.5"], queries: ["firmware BMC supply chain SBOM hardware implant data center 2026", "software supply chain vendor risk data center security", "third party risk SBOM data center 2026"] },
-  { auto_id: "AUTO-166", placeholder: false, mechanism: "crawler", subdomain: "D16.6", source_type: "web_news",
+  { auto_id: "AUTO-181", placeholder: true, mechanism: "crawler", subdomain: "D16.6", source_type: "web_news",
     cadence: "weekly Tue 08:35 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D16.6'])",
     ifs_domains: ["D16.6"], queries: ["SOC threat hunting incident response data center 2026", "tabletop exercise data center security operations", "incident response practice data center 2026"] },
   { auto_id: "AUTO-167", placeholder: false, mechanism: "crawler", subdomain: "D17.3", source_type: "regulatory",
@@ -327,8 +362,9 @@ export const WHITESPACE_SCAFFOLDS: ScaffoldDef[] = [
   { auto_id: "AUTO-175", placeholder: false, mechanism: "claude_routine", subdomain: "D5.4", source_type: "web_news",
     cadence: "weekly Thu 09:15 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D5.4'])",
     ifs_domains: ["D5.4"], queries: ["[Claude Routine] cloud region launch availability zone sovereign region capacity geography"] },
-  { auto_id: "AUTO-176", placeholder: false, mechanism: "claude_routine", subdomain: "D18.3", source_type: "web_news",
+  { auto_id: "AUTO-182", placeholder: true, mechanism: "claude_routine", subdomain: "D18.3", source_type: "web_news",
     cadence: "weekly Thu 09:30 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_subdomains=['D18.3'])",
+    notes: "Displaced off AUTO-176 by the D3.2 feed (PR #84); proposed id pending Myke grant.",
     ifs_domains: ["D18.3"], queries: ["[Claude Routine] data center reputational political risk op-ed ballot measure national press"] },
 ];
 
