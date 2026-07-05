@@ -1,7 +1,7 @@
 // Unit tests for faraday-crawl parser hardening.
 // Run with: deno test supabase/functions/faraday-crawl/faraday-crawl.test.ts
 import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { extractAndParse, normalizeRecords } from "./index.ts";
+import { extractAndParse, normalizeRecords, splitIfsTags } from "./index.ts";
 
 Deno.test("extractAndParse — valid JSON", () => {
   const text = JSON.stringify({
@@ -95,6 +95,40 @@ Deno.test("normalizeRecords — a 50-record batch with one bad record does not a
   assertEquals(parseErrors.length, 1);
   assertEquals(parseErrors[0].auto_id, batch[0].auto_id); // FK preserved
   assertEquals(parseErrors[0].reason, "boom-record");
+});
+
+// ─── FAR-319 Wave 0: sub-domain tag split ──────────────────────────────────────
+Deno.test("splitIfsTags — D#.# codes move to subdomains with parent derived", () => {
+  const { domains, subdomains } = splitIfsTags(["D1.4"]);
+  assertEquals(domains, ["D1"]);
+  assertEquals(subdomains, ["D1.4"]);
+});
+
+Deno.test("splitIfsTags — mixed domain + subdomain tags dedup and sort", () => {
+  const { domains, subdomains } = splitIfsTags(["D2.10", "D2", "D14", "D2.5", "D2.5"]);
+  assertEquals(domains, ["D14", "D2"]);
+  assertEquals(subdomains, ["D2.10", "D2.5"]);
+});
+
+Deno.test("splitIfsTags — domain-only defs are unchanged, no subdomains invented", () => {
+  const { domains, subdomains } = splitIfsTags(["D12", "D6", "D4"]);
+  assertEquals(domains, ["D12", "D4", "D6"]);
+  assertEquals(subdomains, []);
+});
+
+Deno.test("splitIfsTags — legacy non-D tags pass through to domains", () => {
+  const { domains, subdomains } = splitIfsTags(["data_centers", "D5.1", " "]);
+  assertEquals(domains, ["D5", "data_centers"]);
+  assertEquals(subdomains, ["D5.1"]);
+});
+
+Deno.test("splitIfsTags — empty / missing input yields empty arrays", () => {
+  const empty = splitIfsTags([]);
+  assertEquals(empty.domains, []);
+  assertEquals(empty.subdomains, []);
+  const undef = splitIfsTags(undefined as unknown as string[]);
+  assertEquals(undef.domains, []);
+  assertEquals(undef.subdomains, []);
 });
 
 Deno.test("normalizeRecords — null / non-object records are skipped, not fatal", () => {

@@ -455,6 +455,27 @@ ID block, AUTO-049 reassignment, stale-tag fix, conference repoint, and full Tie
 activation (deploy + dry-run + flip). No `source_type` enum was added; the 39
 whitespace routines remain Designed pending per-routine build.
 
+## IDF 4.0 sub-domain tagging layer (FAR-319 Wave 0, claude/idf-4-subdomain-coverage-id5ln0, 2026-07-05)
+
+Sub-domain feed coverage is now measurable: **`artifacts.ifs_subdomains text[]`**
+(migration `20260705000001…`, **NOT yet applied** — apply, THEN deploy
+`faraday-crawl` v1.2, in that order; the function writes the new column).
+D#.# codes are validated against `faraday_subdomains.subdomain_code`
+(116/116 backfilled) by a BEFORE trigger that STRIPS invalid codes with a
+WARNING — never rejects the row (ingest chunks of 10). `splitIfsTags()` in
+`faraday-crawl/index.ts` (pure, tested) routes dedicated-crawler D#.# tags into
+`ifs_subdomains` and derives the parent D# into `ifs_domains` — before this,
+Tier-1/2 crawlers wrote D#.# codes INTO `ifs_domains` (historical rows keep
+that convention until backfill). Backfill: `scripts/idf4-subdomain-backfill.mjs`
+(dry-run default; Phase A deterministic split 1.9k rows, Phase B LLM
+precision-gated for the ~3.9k domain-only rows — high-confidence,
+domain-consistent only, no forced assignments). Coverage query (fed = ≥1
+artifact/14d per sub-domain, reads BOTH conventions):
+`docs/idf4-coverage/subdomain-feed-coverage.sql`. Baseline 2026-07-05:
+**60/116 fed**; Waves 1–2 of FAR-319 (AUTO-060–119) were already live via
+FAR-200/202 — the push to ≥70 runs through Phase-B backfill + whitespace
+crawlers. Verification report: `docs/idf4-coverage/wave0-verification-report.md`.
+
 ## Daily Challenge win-screen daily total + persistence (FAR-211 + FAR-207, shipped 2026-06-24)
 
 **FAR-211 (Display):** `ScoreCard` now renders `score/dayTotal` on every win screen.
