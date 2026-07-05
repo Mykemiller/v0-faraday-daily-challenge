@@ -1,7 +1,7 @@
 // Unit tests for the IDF 4.0 coverage-bridge scaffold (FAR IDF-4).
 // Run with: deno test supabase/functions/faraday-crawl/coverage-bridge.test.ts
 import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { TIER1_ACTIVATION, TIER2_ACTIVATION, WHITESPACE_SCAFFOLDS, SOURCE_FIT_REPOINTS, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, D3_SUBDOMAIN_ACTIVATION, WHITESPACE_SCAFFOLDS, SOURCE_FIT_REPOINTS, mergeApproved } from "./coverage-bridge.ts";
 
 const SUBDOMAIN_RE = /^D([1-9]|1[0-9]|2[0-3])\.\d{1,2}$/;
 
@@ -47,6 +47,37 @@ Deno.test("Full fleet merge (BASE+TIER1+TIER2) has no duplicate auto_id", () => 
   const merged = mergeApproved(mergeApproved(TIER1_ACTIVATION, TIER2_ACTIVATION), []);
   assertEquals(new Set(merged.map((a) => a.auto_id)).size, merged.length);
   assertEquals(merged.length, 60, "10 Tier-1 + 50 Tier-2");
+});
+
+Deno.test("D3_SUBDOMAIN_ACTIVATION — well-formed, one D3.X tag each, covers D3.1..D3.5", () => {
+  for (const a of D3_SUBDOMAIN_ACTIVATION) {
+    assert(a.source_type.length > 0, `empty source_type for ${a.auto_id}`);
+    assertEquals(a.ifs_domains.length, 1, `${a.auto_id} must tag exactly one sub-domain`);
+    assert(/^D3\.[1-5]$/.test(a.ifs_domains[0]), `${a.auto_id} tag ${a.ifs_domains[0]} not D3.1..D3.5`);
+    assert(a.queries.length >= 4, `${a.auto_id} needs >=4 queries`);
+  }
+  const tags = D3_SUBDOMAIN_ACTIVATION.map((a) => a.ifs_domains[0]).sort();
+  assertEquals(tags, ["D3.1","D3.2","D3.3","D3.4","D3.5"], "must cover exactly D3.1..D3.5");
+});
+
+Deno.test("D3_SUBDOMAIN_ACTIVATION — id→sub-domain mapping matches the approved plan", () => {
+  const by = Object.fromEntries(D3_SUBDOMAIN_ACTIVATION.map((a) => [a.auto_id, a.ifs_domains[0]]));
+  assertEquals(by["AUTO-164"], "D3.1");
+  assertEquals(by["AUTO-176"], "D3.2");
+  assertEquals(by["AUTO-177"], "D3.3");
+  assertEquals(by["AUTO-165"], "D3.4");
+  assertEquals(by["AUTO-166"], "D3.5");
+});
+
+Deno.test("D3_SUBDOMAIN_ACTIVATION — D3.3 (PUC) uses the state_puc_filing source_type", () => {
+  const d33 = D3_SUBDOMAIN_ACTIVATION.find((a) => a.ifs_domains[0] === "D3.3");
+  assertEquals(d33?.source_type, "state_puc_filing");
+});
+
+Deno.test("Full fleet merge (TIER1+TIER2+D3) has no duplicate auto_id", () => {
+  const merged = mergeApproved(mergeApproved(TIER1_ACTIVATION, TIER2_ACTIVATION), D3_SUBDOMAIN_ACTIVATION);
+  assertEquals(new Set(merged.map((a) => a.auto_id)).size, merged.length);
+  assertEquals(merged.length, 65, "10 Tier-1 + 50 Tier-2 + 5 D3");
 });
 
 Deno.test("WHITESPACE_SCAFFOLDS — carry the granted block AUTO-137..175 (no placeholders left)", () => {

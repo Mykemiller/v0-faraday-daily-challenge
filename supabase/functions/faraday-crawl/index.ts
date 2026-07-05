@@ -21,7 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TIER1_ACTIVATION, TIER2_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
+import { TIER1_ACTIVATION, TIER2_ACTIVATION, D3_SUBDOMAIN_ACTIVATION, mergeApproved } from "./coverage-bridge.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CRAWL_MODEL = "claude-sonnet-4-6";
@@ -112,9 +112,16 @@ const BASE_AUTOMATIONS: AutoDef[] = [
 // IDF 4.0 Tier-2 activation (FAR-202, approved 2026-06-24): merge the D11–D23
 // dedicated crawlers AUTO-070–119. Query sets authored in coverage-bridge.ts so the
 // rows actually crawl before they are flipped Status=Active in the Registry.
+//
+// D3 Grid & Regulatory sub-domain feeds (D3-subdomain-automation-setup): merge the
+// five per-sub-domain crawlers AUTO-164/176/177/165/166 → D3.1–D3.5. They run in
+// this same 07:00 UTC fan-out; Registry Status stays Designed until Myke flips it.
 const AUTOMATIONS: AutoDef[] = mergeApproved(
-  mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION),
-  TIER2_ACTIVATION,
+  mergeApproved(
+    mergeApproved(BASE_AUTOMATIONS, TIER1_ACTIVATION),
+    TIER2_ACTIVATION,
+  ),
+  D3_SUBDOMAIN_ACTIVATION,
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -169,6 +169,36 @@ export const TIER2_ACTIVATION: AutoDef[] = [
 ];
 
 
+// ── D3 GRID & REGULATORY sub-domain feeds (D3-subdomain-automation-setup) ───────
+// Five per-sub-domain crawlers for D3 — Grid & Regulatory (IDF 4.0 D3.1–D3.5, all
+// active:true in public.faraday_subdomains). Each tags its SPECIFIC sub-domain
+// (D3.X), not the bare "D3" that AUTO-176/177 previously carried. Merged into the
+// live fleet by index.ts via mergeApproved, so they run inside the existing 07:00
+// UTC faraday-crawl-daily fan-out (no sixth cron). source_type per sub-domain:
+// D3.3 = state_puc_filing (state PUC dockets); the rest = regulatory (FERC/ISO
+// governance). Jurisdiction-relevant D3.2/D3.3/D3.5 artifacts are cross-routed to
+// the Data Center Legislation / Jurisdiction Posture registries downstream.
+//
+// ⚠️ AUTO-ID REASSIGNMENT (flagged for Myke): AUTO-164/165/166 previously held the
+// INERT FAR-201 whitespace scaffolds for D16.5 / D16.6 / D17.3 (see
+// WHITESPACE_SCAFFOLDS below — kept intact so the AUTO-137..175 block stays
+// contiguous for the tests). Claiming these three IDs for D3.1/D3.4/D3.5 per the
+// task mapping ORPHANS those three D16/D17 scaffolds — they must NOT be built under
+// these IDs and need Myke to grant replacement IDs. Status stays Designed until
+// Myke flips it. AUTO-176/177 are refined in place (Registry: D3→D3.2 / D3.3).
+export const D3_SUBDOMAIN_ACTIVATION: AutoDef[] = [
+  { auto_id: "AUTO-164", source_type: "regulatory", ifs_domains: ["D3.1"],
+    queries: ["ISO RTO interconnection queue data center large load 2026", "FERC Order 2023 interconnection reform cluster study 2026", "PJM MISO ERCOT CAISO large load interconnection process data center", "grid access large load study data center queue position 2026"] },
+  { auto_id: "AUTO-176", source_type: "regulatory", ifs_domains: ["D3.2"],
+    queries: ["state data center moratorium bill legislation 2026", "data center siting permitting bill state legislature 2026", "data center tax incentive rollback water disclosure bill 2026", "large load rate class legislation state data center 2026"] },
+  { auto_id: "AUTO-177", source_type: "state_puc_filing", ifs_domains: ["D3.3"],
+    queries: ["public utility commission large load data center rate case 2026", "PUC special rate class data center tariff proceeding 2026", "utility cost recovery data center ratepayer cost shift PUC 2026", "state PUC docket data center demand charge minimum take 2026"] },
+  { auto_id: "AUTO-165", source_type: "regulatory", ifs_domains: ["D3.4"],
+    queries: ["FERC Order 1920 regional transmission planning cost allocation 2026", "NIETC national interest electric transmission corridor DOE 2026", "interregional transfer capability transmission buildout 2026", "Grain Belt Express SunZia MISO LRTP transmission project 2026"] },
+  { auto_id: "AUTO-166", source_type: "regulatory", ifs_domains: ["D3.5"],
+    queries: ["FERC co-location behind the meter data center ruling 2026", "large load tariff bring your own generation interconnection 2026", "Talen Amazon PJM co-location Susquehanna FERC docket 2026", "minimum take curtailment obligation large load data center tariff 2026"] },
+];
+
 // ── WHITESPACE — NEW routines (real ids AUTO-137→175, granted 2026-06-24) ───────
 // Mechanism per §3.4. source/queries are the config-driven source list. Each
 // declares its cadence (staggered) + the artifacts-table insert contract. Ids are
@@ -264,6 +294,10 @@ export const WHITESPACE_SCAFFOLDS: ScaffoldDef[] = [
   { auto_id: "AUTO-163", placeholder: false, mechanism: "crawler", subdomain: "D11.6", source_type: "web_news",
     cadence: "weekly Mon 08:25 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_domains=['D11.6'])",
     ifs_domains: ["D11.6"], queries: ["embodied carbon low carbon concrete Sublime Brimstone data center 2026", "green steel recycled copper data center materials", "embodied carbon materials data center 2026"] },
+  // ⚠️ AUTO-164/165/166 REASSIGNED to D3.1/D3.4/D3.5 (see D3_SUBDOMAIN_ACTIVATION
+  // above). The three entries below are ORPHANED: kept ONLY so the AUTO-137..175
+  // block stays contiguous for the tests. Do NOT build D16.5/D16.6/D17.3 under
+  // these IDs — pending Myke granting replacement IDs.
   { auto_id: "AUTO-164", placeholder: false, mechanism: "crawler", subdomain: "D16.5", source_type: "web_news",
     cadence: "weekly Tue 08:30 America/Chicago", postgres_insert: "artifacts(content_hash dedupe; ifs_domains=['D16.5'])",
     ifs_domains: ["D16.5"], queries: ["firmware BMC supply chain SBOM hardware implant data center 2026", "software supply chain vendor risk data center security", "third party risk SBOM data center 2026"] },
