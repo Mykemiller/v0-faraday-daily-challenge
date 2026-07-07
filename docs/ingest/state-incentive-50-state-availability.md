@@ -25,6 +25,8 @@ names; HI anonymized productions; SC/TN jobs-credit programs confidential).
 - **CT** — Socrata `xnw3-nytd` — gold standard (recipient+county+**statute**+$)
 - **OR** — Socrata `rvwj-m6ev` + `re77-krua` — property-tax abatement, incl. data-center deals
 - **IA** — Iowa Data Hub API `idh-be.iowa.gov/api/v1/datasets/946/rows.csv` — credit $ + assistance $ + investment + jobs + county (richest confirmed after NY)
+- **MD** — Socrata `opendata.maryland.gov/resource/cf3i-xdgb.json` — 7,300 rows, recipient+county+city+type+$ (needs App Token)
+- **OK** — CKAN `data.ok.gov/api/3/action/datastore_search?resource_id=d4845ba8-...` (Quality Jobs) + Tax Credits
 - **WI** — ArcGIS FeatureServer (`ImpactMap_featureSvc_Awards/0`) — 4,867 records
 - **HI** — CKAN Film Tax Credit (narrow: film only, anonymized)
 
@@ -85,24 +87,25 @@ OH, LA, NV, SD, FL, MA, SC, WV, MS, AR, ME, AK, WY, ND.
 | MN | A(bulk) | DEED Business Subsidy Reports (MNBAF) | Annual Excel `mn.gov/deed/government/business-subsidy/biz-subsidy-annuals/` | yes | ✓ |
 | MO | B | Missouri Accountability Portal — Tax Credits (§135.805) | `mapyourtaxes.mo.gov/map/taxcredits/` (daily-updated, no bulk export) | yes | ✓ |
 | NC | C | NC Commerce JDIG / OneNC incentive reports | PDFs `commerce.nc.gov/reports-policymakers/incentive-programs-reports` | yes | ✓ |
-| AZ | B? | Arizona Commerce Authority (Qualified Facility / data-center TPT); OpenBooks AZ | `openbooks.az.gov` candidate; **needs verification** | ? | ✗ UNVERIFIED |
-| GA | C? | GA Dept of Economic Development / Dept of Revenue | weak disclosure; **needs verification** | ? | ✗ UNVERIFIED |
-| VA | B? | VEDP (MEI/COIA / COF grant reporting) | data.virginia.gov Socrata candidate; **needs verification** | ? | ✗ UNVERIFIED |
-| NE | C? | DOR Nebraska Advantage / ImagiNE annual reports | Revenue annual report PDFs; **needs verification** | ? | ✗ UNVERIFIED |
-| OK | B? | Commerce / Quality Jobs; Incentive Evaluation Commission | okcommerce.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| UT | B? | GOEO EDTIF (post-performance credits) | business.utah.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| KS | B? | Commerce PEAK / Kansas Data | kansascommerce.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| MD | B? | Commerce / One Maryland; Open Data Maryland | opendata.maryland.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| DE | C? | DE Prosperity Partnership / Strategic Fund | dedo.delaware.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| RI | B? | RI Commerce (Rebuild RI, Qualified Jobs) | commerceri.com; **needs verification** | ? | ✗ UNVERIFIED |
-| VT | C? | Vermont VEPC (VEGI) annual report | accd.vermont.gov; **needs verification** | ? | ✗ UNVERIFIED |
-| NH | C? | NH BEA (ED tax credits) | nheconomy.com; **needs verification** | ? | ✗ UNVERIFIED |
+| MD | A | MD Commerce Consolidated Finance Tracker (Socrata) | `opendata.maryland.gov/resource/cf3i-xdgb.json` (7,300 rows) + CITC `7gad-cuav` | recipient, county, city, type, program, approved_amount, jobs, NAICS, FY | ✓ (2nd pass) |
+| OK | A | OK Tax Commission via `data.ok.gov` CKAN | `data.ok.gov/api/3/action/datastore_search?resource_id=d4845ba8-1caa-43fb-821c-b902d3520b06` (Quality Jobs, 4,324) + `...6c03762e-...` (Tax Credits) | vendor/name, city+zip (QJ), payment/credit $, program, FY (no county col) | ✓ (2nd pass) |
+| VA | C | VEDP Incentives Reporting (COF/VIP/VEDIG/MEE/VJIP) | 8 program PDFs `vedp.org/incentives-reporting`. data.virginia.gov CKAN = boundary maps only (verified) | company, incentive $, jobs, capex, wage, clawback, locality | ✓ (2nd pass) |
+| AZ | C | Arizona Commerce Authority statutory incentive reports | PDFs `azcommerce.com/about-us/incentive-reports/` (Quality Jobs/Qualified Facility/CDC; 403-to-bot). data.az.gov dead | recipient, city, credit/exemption $, jobs, compensation, program, statute | ✓ (2nd pass) |
+| GA | C | GA Dept of Revenue data-center exemption (aggregate) | `dor.georgia.gov/data-centers-sales-use-tax-exemption-...` PDFs. **Recipient names legally suppressed** — FOIA only | county, threshold $ by pop-tier, year (NO recipient) | ✓ (2nd pass) |
+| NE | C | NE Dept of Revenue Tax Incentives Annual Report (Advantage/ImagiNE) | PDF `revenue.nebraska.gov/.../2025_Incentives_Annual_Report.pdf` (+ ImagiNE joint reports) | company, project city, investment $M, FTEs, agreement year, program | ✓ (2nd pass) |
+| KS | B | KS Commerce Transparency Database Explorer (K.S.A. 74-50,227) | `kansascommerce.gov/dataview/transparency-explorer-home/` (Directorist UI, Cloudflare-gated; no CSV/JSON) | program, **county**, recipient name, amount, year (>$50k) | ✓ (2nd pass) |
+| UT | B | GOEO "Incented Companies" dashboard (EDTIF/REDTIF) | `business.utah.gov/recruitment/companies/` — Ninja Table id 71526 (ajax, CF-gated). data.utah.gov not Socrata | company, year, jobs, wages, capex, max incentive $, **term** (NO county) | ✓ (2nd pass) |
+| RI | C | RI Division of Taxation Annual Tax Credit Disclosure Report | PDF `tax.ri.gov/.../FYE2025_Oct1CommerceCreditsReport.pdf` (clean: name+address+statute+$) | recipient, address, city→muni, program, statute, credit $ | ✓ (2nd pass) |
+| VT | B | VEPC VEGI Annual Report + Socrata grants | VEGI PDF/XLS `accd.vermont.gov/.../vegi/annualreports` (403) + Socrata grants `data.vermont.gov/resource/xifk-zskz.json` (live) | VEGI: company, town/county, auth $, jobs, NAICS; grants: grantee, town, $ | ✓ (2nd pass) |
+| DE | C | Council on Development Finance / Strategic Fund summaries | `data.delaware.gov` CDF assets are **PDF files (non-tabular)**; DEDO press releases | recipient, program, $, jobs (PDF-locked) | ✓ (2nd pass) |
+| NH | C | NH BEA ERZ / R&D credits — **no online recipient disclosure** | No state open-data portal; ERZ/R&D recipients not published (records request only). Partial: CDFA CDIP (nonprofits) | none public at recipient level | ✓ (2nd pass) |
 
-**Coverage: 39 jurisdictions verified; 12 still UNVERIFIED** (AZ, GA, VA, NE, OK, UT, KS, MD, DE,
-RI, VT, NH — several hit research rate-limits and need a second pass). The **AZ / GA / VA** gap
-matters most (top data-center markets) and should be the first target of the next research pass —
-probe `data.virginia.gov` (Socrata) and `openbooks.az.gov` before assuming Tier B/C.
+**Coverage: all 51 jurisdictions verified** (second pass 2026-07-07 closed the final 12).
 
-**Verified Tier-A universe (9): NY (live), CT, OR, IA, WI, HI, TN, MN, DC** — these are the
-achievable "API/bulk" ingestion set. Everything else is scrape (B) or PDF/FOIA (C), i.e. the
-explicit out-of-scope follow-on for the API prompt.
+**Verified Tier-A universe (11): NY (live), CT, OR, IA, WI, HI, TN, MN, DC, MD, OK** (+ TX bulk
+Excel) — the achievable "API/bulk" ingestion set. Everything else is scrape (B) or PDF/FOIA (C),
+the explicit out-of-scope follow-on for the API prompt.
+
+**Top data-center markets are all PDF/scrape, not API:** VA (VEDP PDFs), AZ (ACA PDFs), GA
+(**recipient names legally suppressed** — aggregate/FOIA only). Plan for per-state PDF parsing +
+FOIA there; there is no shortcut feed.
