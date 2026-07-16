@@ -833,21 +833,25 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
         {puzzle.clue}
       </div>
 
-      {/* Grid */}
-      <div style={{ display:"flex", flexDirection:"column", gap:"4px" }}>
+      {/* Grid — tiles flex-shrink so long words (e.g. 11-letter SOVEREIGNTY) stay
+          on-screen in narrow portrait viewports instead of overflowing the right
+          edge. maxWidth caps the row at the natural 44px tile size on wide screens,
+          while flex:1 + aspectRatio keeps square tiles when space is tight. */}
+      <div style={{ display:"flex", flexDirection:"column", gap:"4px", width:"100%",
+        maxWidth:`${word.length * 48}px`, margin:"0 auto" }}>
         {[...Array(maxGuesses)].map((_, ri) => {
           const guess = guesses[ri] || (ri === guesses.length ? current : "");
           return (
-            <div key={ri} style={{ display:"flex", gap:"4px" }}>
+            <div key={ri} style={{ display:"flex", gap:"4px", width:"100%" }}>
               {[...Array(word.length)].map((_, ci) => {
                 const state = ri < guesses.length ? getTileState(ri, ci) : (guess[ci] ? "current" : "empty");
                 return (
                   <div key={ci} style={{
-                    width:"44px", height:"44px", borderRadius:"4px",
+                    flex:"1 1 0", minWidth:0, maxWidth:"44px", aspectRatio:"1 / 1", borderRadius:"4px",
                     background: state === "current" ? "rgba(255,255,255,0.06)" : tileColors[state] || tileColors.empty,
                     border: `2px solid ${state === "current" ? C.border : (state === "empty" ? C.dim : "transparent")}`,
                     display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:"16px", fontWeight:700, color: state === "current" ? C.text : (tileText[state] || C.muted),
+                    fontSize:"clamp(13px, 4.5vw, 16px)", fontWeight:700, color: state === "current" ? C.text : (tileText[state] || C.muted),
                     transition:"all 0.2s", ...mono,
                   }}>
                     {guess[ci] || ""}
@@ -3185,7 +3189,12 @@ export default function DailyChallenge() {
                     <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>
-                <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
+                {/* Signal Drop's puzzle.name IS the answer word (e.g. "SOVEREIGNTY"),
+                    so it must never render in-game — it would reveal the solution.
+                    Other games use a descriptive name that is safe to show. */}
+                {activeGame !== "Signal Drop" && (
+                  <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
+                )}
 
                 {/* Identity */}
                 <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"10px", flexWrap:"wrap" }}>
