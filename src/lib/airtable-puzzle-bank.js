@@ -19,6 +19,8 @@
 // Published rows whose Go Live Date is today (America/Chicago) to Live at
 // midnight Central, and retires the previous day's Live rows.
 
+import { toPublicSignalPuzzle, normalizeWord } from "@/lib/signal-drop";
+
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
 // Credential/base/table env names. The June-19 "engine-as-site" migration
@@ -164,9 +166,43 @@ export async function getLivePuzzles() {
     if (!content) continue;
     const rawId = record.fields?.[FIELD.publicId];
     const publicId = typeof rawId === "string" && rawId.trim() ? rawId.trim() : null;
-    puzzles[type] = { ...content, __publicId: publicId };
+    // Signal Drop's `word` (and its mirror `name`) IS the answer. Never ship it
+    // to the browser pre-solve — strip it here, the single choke point between
+    // Airtable and the client. Guesses are validated server-side via
+    // /api/challenge/guess (which reads the answer through getSignalDropAnswer).
+    // Every other type still ships its full content today (see FAR follow-up).
+    const clientContent =
+      type === "Signal Drop" ? toPublicSignalPuzzle(content) : content;
+    puzzles[type] = { ...clientContent, __publicId: publicId };
   }
   return puzzles;
+}
+
+// SERVER-SIDE ONLY. Return the plaintext answer for today's live Signal Drop
+// puzzle, so /api/challenge/guess can validate a guess without the answer ever
+// reaching the client. When `publicId` is given, the exact live record is
+// matched (so a guess is scored against the puzzle the player is actually
+// looking at); otherwise the current live Signal Drop is used. Returns
+// { word, publicId, wordLength } or null when no live Signal Drop exists.
+export async function getSignalDropAnswer({ publicId } = {}) {
+  const records = await fetchRecords({
+    filterByFormula: `{${FIELD_NAME.published}} = "Live"`,
+    fields: [FIELD.puzzleType, FIELD.content, FIELD.publicId],
+  });
+  const wanted = typeof publicId === "string" && publicId.trim() ? publicId.trim() : null;
+  let fallback = null;
+  for (const record of records) {
+    if (record.fields?.[FIELD.puzzleType] !== "Signal Drop") continue;
+    const content = parsePuzzleContent(record);
+    const word = normalizeWord(content?.word);
+    if (!word) continue;
+    const rawId = record.fields?.[FIELD.publicId];
+    const pid = typeof rawId === "string" && rawId.trim() ? rawId.trim() : null;
+    const entry = { word, publicId: pid, wordLength: word.length };
+    if (wanted && pid === wanted) return entry; // exact match wins
+    if (!fallback) fallback = entry;
+  }
+  return fallback;
 }
 
 // Tip of the Day. There is no Tips table in this base today, so this returns
