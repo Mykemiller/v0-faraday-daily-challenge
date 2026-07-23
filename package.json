@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:contrast": "node scripts/contrast-check.mjs"
+    "test:contrast": "node scripts/contrast-check.mjs",
+    "test:signal-drop": "node --experimental-default-type=module --test src/lib/signal-drop.test.js"
   },
   "dependencies": {
     "next": "16.2.3",

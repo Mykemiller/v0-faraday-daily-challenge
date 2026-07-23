@@ -13,6 +13,7 @@ import {
   SUBSCRIBER_ID_KEY,
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
+import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -265,6 +266,12 @@ function hintsForPuzzle(gameType, puzzle) {
   if (gameType === "Rackl") {
     (puzzle.groups || []).forEach(g => { if (g && g.label) out.push(`One of the groups is “${g.label}”.`); });
   } else if (gameType === "Signal Drop") {
+    // Live puzzles ship pre-built hints (server strips `word`, so the client
+    // can't derive the first-letter hint itself). Mock/legacy puzzles that still
+    // carry `word` fall back to building the hints locally.
+    if (Array.isArray(puzzle.hints) && puzzle.hints.length) {
+      return puzzle.hints.filter(Boolean).slice(0, HINT_MAX);
+    }
     if (puzzle.hint1) out.push(String(puzzle.hint1));
     if (puzzle.hint2) out.push(String(puzzle.hint2));
     const w = puzzle.word ? String(puzzle.word).toUpperCase() : "";
@@ -778,54 +785,114 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: SIGNAL DROP — Wordle-style
 // ══════════════════════════════════════════════════════════════════════════════
 function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
-  const word     = puzzle.word.toUpperCase();
-  const [guesses, setGuesses]   = useState([]);
+  // Live puzzles arrive WITHOUT the answer (`word` is stripped server-side and
+  // guesses are validated at /api/challenge/guess). Mock/legacy puzzles still
+  // carry `word` and are validated locally. `localWord` decides which path we
+  // take; `wordLen` drives the grid either way.
+  const localWord  = puzzle.word ? normalizeWord(puzzle.word) : null;
+  const wordLen    = localWord ? localWord.length : Number(puzzle.wordLength) || 0;
+  const maxGuesses = SIGNAL_MAX_GUESSES;
+
+  const [guesses, setGuesses]   = useState([]);   // submitted guess strings
+  const [results, setResults]   = useState([]);   // per-guess state arrays
   const [current, setCurrent]   = useState("");
   const [won,     setWon]       = useState(false);
   const [lost,    setLost]      = useState(false);
-  const [shake,   setShake]     = useState(false);
+  const [revealed,setRevealed]  = useState(null);  // answer, only once game over
   const [scoreVal,setScoreVal]  = useState(null);
-  const maxGuesses = 6;
+  const [checking,setChecking]  = useState(false); // server round-trip in flight
+  const [error,   setError]     = useState(null);
   const startTime  = useRef(Date.now());
 
   function addLetter(l) {
-    if (current.length < word.length && !won && !lost) setCurrent(c => c+l);
+    if (current.length < wordLen && !won && !lost && !checking) setCurrent(c => c+l);
   }
-  function removeLetter() { setCurrent(c => c.slice(0,-1)); }
+  function removeLetter() { if (!checking) setCurrent(c => c.slice(0,-1)); }
 
-  function submitGuess() {
-    if (current.length !== word.length) return;
-    const newGuesses = [...guesses, current];
+  // Commit a validated guess (from either the local or server path) and advance
+  // terminal state. `answerMaybe` is the revealed answer or null.
+  function applyResult(newGuesses, states, correct, answerMaybe) {
     setGuesses(newGuesses);
+    setResults(r => [...r, states]);
     setCurrent("");
-    if (current === word) {
+    if (answerMaybe) setRevealed(normalizeWord(answerMaybe));
+    if (correct) {
       setWon(true);
-      const elapsed  = (Date.now() - startTime.current) / 1000;
-      const perfect  = newGuesses.length === 1;
-      const baseP    = Math.max(0, maxGuesses - newGuesses.length + 1);
-      const s = calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak });
-      setScoreVal(s);
+      const elapsed = (Date.now() - startTime.current) / 1000;
+      const perfect = newGuesses.length === 1;
+      const baseP   = Math.max(0, maxGuesses - newGuesses.length + 1);
+      setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak }));
     } else if (newGuesses.length >= maxGuesses) {
       setLost(true);
       setScoreVal(10);
     }
   }
 
-  function getTileState(rowIdx, colIdx) {
-    const guess = guesses[rowIdx];
-    if (!guess) return "empty";
-    const letter = guess[colIdx];
-    if (letter === word[colIdx]) return "correct";
-    if (word.includes(letter)) return "present";
-    return "absent";
+  async function submitGuess() {
+    if (checking || won || lost) return;
+    if (current.length !== wordLen || wordLen === 0) return;
+    const guess = normalizeWord(current);
+    const newGuesses = [...guesses, guess];
+
+    // Local path (mock / offline): validate against the in-memory word.
+    if (localWord) {
+      const { states, correct } = evaluateGuess(localWord, guess);
+      const done = correct || newGuesses.length >= maxGuesses;
+      applyResult(newGuesses, states, correct, done ? localWord : null);
+      return;
+    }
+
+    // Server path (live): the answer never left the server. Post the full guess
+    // list and get back per-letter feedback (and the answer only once over).
+    setChecking(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/challenge/guess", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameType: "Signal Drop", publicId: puzzle.__publicId, guesses: newGuesses }),
+      });
+      if (!res.ok) throw new Error(`guess check failed (${res.status})`);
+      const data = await res.json();
+      applyResult(newGuesses, Array.isArray(data.states) ? data.states : [], !!data.correct, data.answer || null);
+    } catch {
+      // Don't consume the guess on a network error — let the player retry.
+      setError("Couldn’t check that guess. Check your connection and try again.");
+    } finally {
+      setChecking(false);
+    }
   }
 
   const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
 
-  if (won || lost) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { guesses, word, won })}
-    isNew7Day={streak===6} />;
+  // Keyboard colouring is derived from the per-guess feedback we've accumulated
+  // (server- or locally-computed) — never from the answer, which the client may
+  // not have. Precedence: correct > present > absent.
+  const letterState = {};
+  guesses.forEach((g, gi) => {
+    (results[gi] || []).forEach((st, ci) => {
+      const L = g[ci];
+      if (!L) return;
+      if (st === "correct") letterState[L] = "correct";
+      else if (st === "present" && letterState[L] !== "correct") letterState[L] = "present";
+      else if (st === "absent" && !letterState[L]) letterState[L] = "absent";
+    });
+  });
+
+  if (won || lost) return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
+      {lost && revealed && (
+        <div style={{ ...mono, fontSize:"13px", color:C.muted, textAlign:"center" }}>
+          The word was <span style={{ color:C.text, fontWeight:700 }}>{revealed}</span>
+        </div>
+      )}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
+        streak={streak} onShare={()=>{}}
+        onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won })}
+        isNew7Day={streak===6} />
+    </div>
+  );
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"16px", alignItems:"center" }}>
@@ -838,13 +905,14 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
           edge. maxWidth caps the row at the natural 44px tile size on wide screens,
           while flex:1 + aspectRatio keeps square tiles when space is tight. */}
       <div style={{ display:"flex", flexDirection:"column", gap:"4px", width:"100%",
-        maxWidth:`${word.length * 48}px`, margin:"0 auto" }}>
+        maxWidth:`${(wordLen || 6) * 48}px`, margin:"0 auto" }}>
         {[...Array(maxGuesses)].map((_, ri) => {
           const guess = guesses[ri] || (ri === guesses.length ? current : "");
+          const rowStates = results[ri];
           return (
             <div key={ri} style={{ display:"flex", gap:"4px", width:"100%" }}>
-              {[...Array(word.length)].map((_, ci) => {
-                const state = ri < guesses.length ? getTileState(ri, ci) : (guess[ci] ? "current" : "empty");
+              {[...Array(wordLen || 6)].map((_, ci) => {
+                const state = rowStates ? (rowStates[ci] || "empty") : (guess[ci] ? "current" : "empty");
                 return (
                   <div key={ci} style={{
                     flex:"1 1 0", minWidth:0, maxWidth:"44px", aspectRatio:"1 / 1", borderRadius:"4px",
@@ -863,16 +931,21 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
         })}
       </div>
 
+      {error && (
+        <div style={{ fontSize:"12px", color:C.red, textAlign:"center", ...mono, maxWidth:"320px" }}>{error}</div>
+      )}
+
       {/* Keyboard */}
-      <div style={{ display:"flex", flexDirection:"column", gap:"5px", alignItems:"center" }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:"5px", alignItems:"center", opacity: checking ? 0.6 : 1 }}>
         {[["Q","W","E","R","T","Y","U","I","O","P"],["A","S","D","F","G","H","J","K","L"],["ENTER","Z","X","C","V","B","N","M","⌫"]].map((row, ri) => (
           <div key={ri} style={{ display:"flex", gap:"4px" }}>
             {row.map(key => {
-              const used = guesses.some(g => g.includes(key));
-              const isCorrect = guesses.some((g, gi) => g.split("").some((l,ci) => l===key && word[ci]===key));
-              const isPresent = !isCorrect && guesses.some(g => g.includes(key) && word.includes(key));
+              const st = letterState[key];
+              const isCorrect = st === "correct";
+              const isPresent = st === "present";
+              const used = st === "absent";
               return (
-                <button key={key} onClick={() => {
+                <button key={key} disabled={checking} onClick={() => {
                   if (key === "ENTER") submitGuess();
                   else if (key === "⌫") removeLetter();
                   else addLetter(key);
@@ -881,7 +954,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
                   border:"none", borderRadius:"4px",
                   width: key.length > 1 ? "52px" : "32px", height:"40px",
                   color: isCorrect ? C.green : isPresent ? C.amber : C.text,
-                  fontSize:"13px", cursor:"pointer", fontWeight:600, ...mono,
+                  fontSize:"13px", cursor: checking ? "default" : "pointer", fontWeight:600, ...mono,
                 }}>{key}</button>
               );
             })}
@@ -1482,8 +1555,13 @@ function GameRacklReplay({ snapshot, puzzle, score, onBack }) {
 }
 
 function GameSignalDropReplay({ snapshot, puzzle, score, onBack }) {
-  const word = puzzle?.word?.toUpperCase() || "";
+  // Post-solve reveal. The answer is taken from the snapshot captured when the
+  // player finished (live puzzles no longer carry `word`); `puzzle.word` is only
+  // a fallback for legacy/mock snapshots.
+  const word = normalizeWord(snapshot?.word || puzzle?.word || "");
   const guesses = snapshot?.guesses || [];
+  const savedStates = Array.isArray(snapshot?.results) ? snapshot.results : null;
+  const cols = word.length || Number(snapshot?.wordLength) || (guesses[0]?.length) || 6;
   const tileColors = { correct:"#1C3424", present:"#5A4010", absent:"#2A2520", empty:"rgba(255,255,255,0.03)" };
   const tileText   = { correct:C.green, present:C.amber, absent:C.muted, empty:C.dim };
   function getTileState(guess, colIdx) {
@@ -1499,10 +1577,13 @@ function GameSignalDropReplay({ snapshot, puzzle, score, onBack }) {
       <div style={{ display:"flex", flexDirection:"column", gap:"4px" }}>
         {[...Array(6)].map((_, ri) => {
           const guess = guesses[ri] || "";
+          const rowStates = savedStates ? savedStates[ri] : null;
           return (
             <div key={ri} style={{ display:"flex", gap:"4px" }}>
-              {[...Array(word.length || 6)].map((_, ci) => {
-                const state = ri < guesses.length ? getTileState(guess, ci) : "empty";
+              {[...Array(cols)].map((_, ci) => {
+                const state = ri < guesses.length
+                  ? (rowStates ? (rowStates[ci] || "empty") : getTileState(guess, ci))
+                  : "empty";
                 return (
                   <div key={ci} style={{
                     width:"44px", height:"44px", borderRadius:"4px",
