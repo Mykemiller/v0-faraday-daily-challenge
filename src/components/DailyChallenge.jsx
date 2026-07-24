@@ -1691,56 +1691,6 @@ function GameReplay({ gameType, snapshot, puzzle, onBack }) {
   return <GameQAReplay answers={answers} questions={questions} score={score} gameType={gameType} onBack={onBack} />;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// COMING SOON MODAL
-// ══════════════════════════════════════════════════════════════════════════════
-const COMING_SOON_PRODUCTS = [
-  { name:"Intelligent Alert",  desc:"Signal-to-noise filtered alerts on the deals, regulations, and moves that matter to you." },
-  { name:"Briefing Library",   desc:"A curated archive of deep-dive intelligence briefs across all 23 IDF domains." },
-  { name:"Jurisdiction Watch", desc:"Real-time regulatory posture tracking across every data center jurisdiction in the US." },
-  { name:"Faraday Academy",    desc:"Structured learning paths for professionals building fluency in the AI infrastructure economy." },
-  { name:"Signal Room",        desc:"A collaborative workspace for teams to annotate, debate, and act on Faraday intelligence." },
-  { name:"Thought Forge",      desc:"An AI-assisted environment for developing original theses about where the buildout is heading." },
-  { name:"Live Agent",         desc:"Your always-on AI analyst — ask anything about the data center economy in real time." },
-];
-
-function ComingSoonModal({ onClose }) {
-  return (
-    <div onClick={onClose} style={{
-      position:"fixed", inset:0, zIndex:200,
-      background:"rgba(13,17,14,0.85)", backdropFilter:"blur(8px)",
-      display:"flex", alignItems:"center", justifyContent:"center", padding:"20px",
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background:"#141210", border:`1px solid ${C.border}`,
-        borderRadius:"14px", padding:"32px", maxWidth:"520px", width:"100%",
-        position:"relative", animation:"fadeUp 0.2s ease forwards",
-      }}>
-        <button onClick={onClose} style={{
-          position:"absolute", top:"16px", right:"16px",
-          background:"transparent", border:"none", color:C.muted,
-          fontSize:"18px", cursor:"pointer", lineHeight:1, padding:"4px 8px",
-        }}>✕</button>
-        <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
-          textTransform:"uppercase", color:C.muted, marginBottom:"20px" }}>
-          Coming Soon
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
-          {COMING_SOON_PRODUCTS.map(p => (
-            <div key={p.name} style={{ display:"flex", flexDirection:"column", gap:"3px" }}>
-              <span style={{ ...mono, fontSize:"13px", fontWeight:500, color:C.gold }}>{p.name}</span>
-              <span style={{ ...mono, fontSize:"12px", color:C.muted, lineHeight:1.5 }}>{p.desc}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop:"24px", borderTop:`1px solid ${C.border}`, paddingTop:"16px" }}>
-          <Btn onClick={onClose} variant="ghost" small>← Back to the challenge</Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Daily results persistence ────────────────────────────────────────────────
 const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
@@ -2660,7 +2610,6 @@ export default function DailyChallenge() {
   const [email,      setEmail]      = useState(null);     // registered email
   const [handle,     setHandle]     = useState(null);     // canonical leaderboard handle (mirrored from /auth)
   const [optedOut,   setOptedOut]   = useState(false);    // soft opt-out mirror ("leave the game")
-  const [showComingSoon, setShowComingSoon] = useState(false);
   const [prevScreen, setPrevScreen] = useState("lobby");
   const [pendingSwitch, setPendingSwitch] = useState(null); // game-switcher confirm (discard in-progress puzzle)
   // Session counters — honest defaults for an anonymous session (0). These
@@ -3156,8 +3105,6 @@ export default function DailyChallenge() {
       </header>
       <div style={{ height:"2px", background:C.gold }} />
 
-      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
-
       {/* ── BODY ── */}
       <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
 
@@ -3215,27 +3162,25 @@ export default function DailyChallenge() {
               onLeave={() => teamAction("leave", {})}
             />
 
-            {/* From Faraday Intelligence — persistent, always-on cross-sell band.
-                Brand-voiced; routes to the commercial surfaces on the homepage.
-                NO token/price talk on the lobby (frame value, route commerce). */}
-            <div style={{ background:C.white, border:`1px solid ${C.gray}`, borderRadius:"10px",
-              padding:"22px 24px", margin:"28px 0 0" }}>
-              <div style={{ ...mono, fontSize:"11px", letterSpacing:"0.16em",
-                textTransform:"uppercase", color:C.deepAmber }}>From Faraday Intelligence</div>
-              <p style={{ ...serif, fontSize:"17px", lineHeight:1.5, color:C.black, margin:"8px 0 0" }}>
-                These puzzles come from what Faraday reads every day. There’s a lot more where they came from.
+            {/* Faraday tagline card — forest-green closing statement, final element
+                on the lobby. Replaces the former "From Faraday Intelligence"
+                cross-sell band; deliberately carries NO outbound links to any
+                Faraday Intelligence property (copy-only, brand-voiced). */}
+            <div style={{ background:C.forest, borderRadius:"10px",
+              padding:"28px 24px", margin:"28px 0 0" }}>
+              <p style={{ ...sans, fontWeight:700, fontSize:"22px", lineHeight:1.35,
+                color:C.cream, margin:0 }}>
+                <span style={{ color:C.gold }}>1891 → 2080.</span> We read the signals and trajectory on a 189 year timescale. The news cycle operates on yesterday’s press announcement and next quarter’s chip forecast.
               </p>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:"10px 18px", marginTop:"14px",
-                ...mono, fontSize:"12px" }}>
-                {COMING_SOON_PRODUCTS.map(p => (
-                  <button key={p.name} onClick={() => setShowComingSoon(true)}
-                    style={{ color:C.forest, textDecoration:"none", background:"transparent",
-                      border:"none", cursor:"pointer", borderBottom:`1px solid ${C.gray}`,
-                      paddingBottom:"1px", ...mono, fontSize:"12px" }}>
-                    {p.name} →
-                  </button>
-                ))}
-              </div>
+              <p style={{ ...sans, fontWeight:400, fontSize:"15px", lineHeight:1.7,
+                color:C.cream, opacity:0.85, margin:"16px 0 0" }}>
+                The oldest generators powering our grid came online in 1891, and are still working today. The water and load forecasts that are real constraints run to 2080. Faraday is actively tracking the whole span across more than twenty intelligence domains and aligned to jurisdiction — not the press release. The arc, and the collisions.
+              </p>
+              <p style={{ ...serif, fontStyle:"italic", fontSize:"16px", color:C.gold,
+                margin:"20px 0 0", paddingTop:"16px",
+                borderTop:"1px solid rgba(196,146,42,0.25)" }}>
+                Faraday, your unfair advantage.
+              </p>
             </div>
           </div>
         )}
