@@ -1,0 +1,2378 @@
+{
+  "generated_from": {
+    "registry_version": "IDF 4.0",
+    "notion_page": "37189a0c16808199bca1cf304a45bbde",
+    "supabase_project": "ycadmmngkdhvpcsrcuaq",
+    "coverage_matrix": "docs/idf4-coverage/coverage-matrix.csv"
+  },
+  "theaters": [
+    {
+      "id": "T-001",
+      "name": "The Power Reckoning",
+      "tagline": "The grid wasn't built for this."
+    },
+    {
+      "id": "T-002",
+      "name": "The Thermal Reckoning",
+      "tagline": "Air is over. The question is what replaces it."
+    },
+    {
+      "id": "T-003",
+      "name": "The Consent Crisis",
+      "tagline": "Communities are the new permitting authority."
+    },
+    {
+      "id": "T-004",
+      "name": "The Capital Concentration",
+      "tagline": "Fewer hands. More capital. Higher stakes."
+    },
+    {
+      "id": "T-005",
+      "name": "The Inference Economy",
+      "tagline": "Training built the factories. Inference fills them."
+    },
+    {
+      "id": "T-006",
+      "name": "The Sovereign AI Race",
+      "tagline": "Compute is the new strategic reserve."
+    },
+    {
+      "id": "T-007",
+      "name": "The New Energy Stack",
+      "tagline": "The grid is no longer the default."
+    }
+  ],
+  "sectors": {
+    "D1": "Chips & Density",
+    "D2": "Power Architecture",
+    "D3": "Grid & Regulatory",
+    "D4": "M&A & Capital Markets",
+    "D5": "Hyperscaler Activity",
+    "D6": "New Entrants",
+    "D7": "Cooling & Water Technology",
+    "D8": "People & Signals",
+    "D9": "Orchestration Intelligence & Control Plane",
+    "D10": "Construction",
+    "D11": "Sustainability",
+    "D12": "Networking & Interconnect",
+    "D13": "Community Relations",
+    "D14": "Real Estate & Site Selection",
+    "D15": "Sovereign AI & Geopolitics",
+    "D16": "Cyber & Physical Security and Resilience",
+    "D17": "Workforce & Labor Markets",
+    "D18": "Community Opposition & Regulatory Risk",
+    "D19": "Tax, Incentives & Fiscal Policy",
+    "D20": "Facility IT & Operational Technology",
+    "D21": "Insurance & Risk Markets",
+    "D22": "Industry Media & Analyst Coverage",
+    "D23": "Outage Intelligence & Emergency Response"
+  },
+  "jpas_tiers": [
+    {
+      "code": "PWR",
+      "name": "Power & Energy"
+    },
+    {
+      "code": "REG",
+      "name": "Regulatory Environment"
+    },
+    {
+      "code": "LBR",
+      "name": "Labor & Workforce"
+    },
+    {
+      "code": "ENV",
+      "name": "Environmental Risk"
+    },
+    {
+      "code": "WTR",
+      "name": "Water & Cooling Readiness"
+    },
+    {
+      "code": "RSC",
+      "name": "Real Estate / Site"
+    },
+    {
+      "code": "INC",
+      "name": "Incentives"
+    },
+    {
+      "code": "COM",
+      "name": "Community & Social"
+    },
+    {
+      "code": "NET",
+      "name": "Network & Connectivity Infrastructure"
+    }
+  ],
+  "candidate_threads": [
+    "D12.4",
+    "D12.6",
+    "D12.7",
+    "D13.4",
+    "D13.5",
+    "D14.6",
+    "D14.7"
+  ],
+  "threads": [
+    {
+      "code": "D1.1",
+      "domain": "D1",
+      "display_name": "GPU Architecture & Roadmap",
+      "theme_tags": [
+        "T-002",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.2",
+      "domain": "D1",
+      "display_name": "Rack & Power Density Progression",
+      "theme_tags": [
+        "T-001",
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.3",
+      "domain": "D1",
+      "display_name": "Competing Silicon & Merchant Accelerators",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.4",
+      "domain": "D1",
+      "display_name": "Memory (HBM & Next-Gen)",
+      "theme_tags": [
+        "T-002",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.5",
+      "domain": "D1",
+      "display_name": "Inference-Class Silicon & Economics",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.6",
+      "domain": "D1",
+      "display_name": "Chip Allocation & Supply Politics",
+      "theme_tags": [
+        "T-005",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.7",
+      "domain": "D1",
+      "display_name": "Hyperscaler-Class Silicon & Custom Accelerators",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D1.8",
+      "domain": "D1",
+      "display_name": "Advanced Packaging & Substrate Capacity",
+      "theme_tags": [
+        "T-002",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Chips & Density"
+    },
+    {
+      "code": "D10.1",
+      "domain": "D10",
+      "display_name": "Long-Lead Equipment & Supply Chain",
+      "theme_tags": [
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Construction"
+    },
+    {
+      "code": "D10.2",
+      "domain": "D10",
+      "display_name": "GC/EPC Capacity & Stick-Built Execution",
+      "theme_tags": [
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Construction"
+    },
+    {
+      "code": "D10.3",
+      "domain": "D10",
+      "display_name": "Modular & Prefabricated Delivery",
+      "theme_tags": [
+        "T-002",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Construction"
+    },
+    {
+      "code": "D10.4",
+      "domain": "D10",
+      "display_name": "Project Delivery & Schedule Intelligence",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Construction"
+    },
+    {
+      "code": "D10.5",
+      "domain": "D10",
+      "display_name": "Construction Cost Curves & Inflation",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Construction"
+    },
+    {
+      "code": "D11.1",
+      "domain": "D11",
+      "display_name": "Clean Energy Procurement (PPA/REC/CFE)",
+      "theme_tags": [
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D11.2",
+      "domain": "D11",
+      "display_name": "Carbon Accounting & Scope 1-3",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D11.3",
+      "domain": "D11",
+      "display_name": "Water Stewardship & Rights",
+      "theme_tags": [
+        "T-002",
+        "T-003",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D11.4",
+      "domain": "D11",
+      "display_name": "Heat Recovery & Circular DC",
+      "theme_tags": [
+        "T-002",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D11.5",
+      "domain": "D11",
+      "display_name": "Sustainability Regulation & Disclosure",
+      "theme_tags": [
+        "T-003",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D11.6",
+      "domain": "D11",
+      "display_name": "Embodied Carbon & Materials",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Sustainability"
+    },
+    {
+      "code": "D12.1",
+      "domain": "D12",
+      "display_name": "Long-Haul & Dark Fiber Leasing",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.2",
+      "domain": "D12",
+      "display_name": "Subsea Cable Systems",
+      "theme_tags": [
+        "T-004",
+        "T-005",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.3",
+      "domain": "D12",
+      "display_name": "AI Back-End Fabric & Interconnect",
+      "theme_tags": [
+        "T-002",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.4",
+      "domain": "D12",
+      "display_name": "Cross-Connect & Cloud On-Ramp",
+      "theme_tags": [
+        "T-005",
+        "T-004"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.5",
+      "domain": "D12",
+      "display_name": "Optical Transceivers & Co-Packaged Optics",
+      "theme_tags": [
+        "T-002",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.6",
+      "domain": "D12",
+      "display_name": "Small Cell, Private 5G & Terrestrial Wireless",
+      "theme_tags": [
+        "T-005",
+        "T-001"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D12.7",
+      "domain": "D12",
+      "display_name": "LEO / Satellite Broadband",
+      "theme_tags": [
+        "T-001",
+        "T-005",
+        "T-006"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Networking & Interconnect"
+    },
+    {
+      "code": "D13.1",
+      "domain": "D13",
+      "display_name": "Community Benefits & Host Agreements",
+      "theme_tags": [
+        "T-003",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Relations"
+    },
+    {
+      "code": "D13.2",
+      "domain": "D13",
+      "display_name": "Opposition Movements & Organized Groups",
+      "theme_tags": [
+        "T-003",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Relations"
+    },
+    {
+      "code": "D13.3",
+      "domain": "D13",
+      "display_name": "Local Permitting & Entitlement Strategy",
+      "theme_tags": [
+        "T-003",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Relations"
+    },
+    {
+      "code": "D13.4",
+      "domain": "D13",
+      "display_name": "Public Engagement Practice",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Relations"
+    },
+    {
+      "code": "D13.5",
+      "domain": "D13",
+      "display_name": "Economic Impact Narratives & Legitimacy",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Relations"
+    },
+    {
+      "code": "D14.1",
+      "domain": "D14",
+      "display_name": "Site Selection Methodology",
+      "theme_tags": [
+        "T-001",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.2",
+      "domain": "D14",
+      "display_name": "Primary Market Intelligence (NA Tier 1)",
+      "theme_tags": [
+        "T-001",
+        "T-003",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.3",
+      "domain": "D14",
+      "display_name": "Emerging & Second-Tier Markets",
+      "theme_tags": [
+        "T-001",
+        "T-003",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.4",
+      "domain": "D14",
+      "display_name": "International Markets",
+      "theme_tags": [
+        "T-004",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.5",
+      "domain": "D14",
+      "display_name": "Land Pricing & Acquisition",
+      "theme_tags": [
+        "T-004",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.6",
+      "domain": "D14",
+      "display_name": "Site Certification & Readiness",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D14.7",
+      "domain": "D14",
+      "display_name": "Campus Portfolio Strategy & Build Models",
+      "theme_tags": [
+        "T-004",
+        "T-005"
+      ],
+      "is_candidate": true,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Real Estate & Site Selection"
+    },
+    {
+      "code": "D15.1",
+      "domain": "D15",
+      "display_name": "Chip Export Controls & Outbound Dual-Use",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D15.2",
+      "domain": "D15",
+      "display_name": "National Compute Strategies & Sovereign Programs",
+      "theme_tags": [
+        "T-006",
+        "T-005",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D15.3",
+      "domain": "D15",
+      "display_name": "Bilateral & Multilateral AI Diplomacy",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D15.4",
+      "domain": "D15",
+      "display_name": "Strategic Minerals & Upstream Supply",
+      "theme_tags": [
+        "T-006",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D15.5",
+      "domain": "D15",
+      "display_name": "Data Sovereignty & Cross-Border Flows",
+      "theme_tags": [
+        "T-006",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D15.6",
+      "domain": "D15",
+      "display_name": "Inbound Investment Screening",
+      "theme_tags": [
+        "T-006",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Sovereign AI & Geopolitics"
+    },
+    {
+      "code": "D16.1",
+      "domain": "D16",
+      "display_name": "Enterprise IT & Cloud Security",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D16.2",
+      "domain": "D16",
+      "display_name": "OT / ICS / SCADA Cybersecurity",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D16.3",
+      "domain": "D16",
+      "display_name": "Physical Security & Access Control",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D16.4",
+      "domain": "D16",
+      "display_name": "State-Sponsored & Advanced Persistent Threats",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D16.5",
+      "domain": "D16",
+      "display_name": "Software Supply Chain & Vendor Risk",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D16.6",
+      "domain": "D16",
+      "display_name": "Security Operations & Incident Response",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cyber & Physical Security and Resilience"
+    },
+    {
+      "code": "D17.1",
+      "domain": "D17",
+      "display_name": "Construction & Skilled Trades Labor",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Workforce & Labor Markets"
+    },
+    {
+      "code": "D17.2",
+      "domain": "D17",
+      "display_name": "Operations & Technical Workforce",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Workforce & Labor Markets"
+    },
+    {
+      "code": "D17.3",
+      "domain": "D17",
+      "display_name": "Immigration, Policy & Regional Labor Competition",
+      "theme_tags": [
+        "T-003",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Workforce & Labor Markets"
+    },
+    {
+      "code": "D18.1",
+      "domain": "D18",
+      "display_name": "Project Opposition Register",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Opposition & Regulatory Risk"
+    },
+    {
+      "code": "D18.2",
+      "domain": "D18",
+      "display_name": "Regulatory & Permitting Denial Tracking",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Opposition & Regulatory Risk"
+    },
+    {
+      "code": "D18.3",
+      "domain": "D18",
+      "display_name": "Reputational & Political Risk Register",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Community Opposition & Regulatory Risk"
+    },
+    {
+      "code": "D19.1",
+      "domain": "D19",
+      "display_name": "State & Local Tax Incentives",
+      "theme_tags": [
+        "T-003",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Tax, Incentives & Fiscal Policy"
+    },
+    {
+      "code": "D19.2",
+      "domain": "D19",
+      "display_name": "Federal Tax Policy",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Tax, Incentives & Fiscal Policy"
+    },
+    {
+      "code": "D19.3",
+      "domain": "D19",
+      "display_name": "International Tax & Transfer Pricing",
+      "theme_tags": [
+        "T-006",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Tax, Incentives & Fiscal Policy"
+    },
+    {
+      "code": "D19.4",
+      "domain": "D19",
+      "display_name": "Tax Incentive Backlash & Clawback",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Tax, Incentives & Fiscal Policy"
+    },
+    {
+      "code": "D19.5",
+      "domain": "D19",
+      "display_name": "Tax-Driven Deal Structuring",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Tax, Incentives & Fiscal Policy"
+    },
+    {
+      "code": "D2.1",
+      "domain": "D2",
+      "display_name": "800V DC Power Distribution",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.10",
+      "domain": "D2",
+      "display_name": "Solid-State Transformers & Advanced Power Conversion",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.2",
+      "domain": "D2",
+      "display_name": "BTM Strategy & Cross-Cutting Economics",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.3",
+      "domain": "D2",
+      "display_name": "UPS, Storage & Power Conditioning",
+      "theme_tags": [
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.4",
+      "domain": "D2",
+      "display_name": "DC Power Delivery at the Rack",
+      "theme_tags": [
+        "T-002",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.5",
+      "domain": "D2",
+      "display_name": "Nuclear & SMR Offtake",
+      "theme_tags": [
+        "T-001",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.6",
+      "domain": "D2",
+      "display_name": "Behind-the-Fence Gas & Fuel Cells",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.7",
+      "domain": "D2",
+      "display_name": "Renewables, Storage & PPAs for DC Power",
+      "theme_tags": [
+        "T-007",
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.8",
+      "domain": "D2",
+      "display_name": "Grid-Interactive Load & Demand Response",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D2.9",
+      "domain": "D2",
+      "display_name": "Microgrid Integration & Islanding",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Power Architecture"
+    },
+    {
+      "code": "D20.1",
+      "domain": "D20",
+      "display_name": "Building Management Systems & HVAC Control",
+      "theme_tags": [
+        "T-001",
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Facility IT & Operational Technology"
+    },
+    {
+      "code": "D20.2",
+      "domain": "D20",
+      "display_name": "Facility DCIM & Digital Twin",
+      "theme_tags": [
+        "T-001",
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Facility IT & Operational Technology"
+    },
+    {
+      "code": "D21.1",
+      "domain": "D21",
+      "display_name": "DC Property & Casualty Insurance",
+      "theme_tags": [
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Insurance & Risk Markets"
+    },
+    {
+      "code": "D21.2",
+      "domain": "D21",
+      "display_name": "Cyber Insurance & Tech E&O",
+      "theme_tags": [
+        "T-004",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Insurance & Risk Markets"
+    },
+    {
+      "code": "D21.3",
+      "domain": "D21",
+      "display_name": "Climate & Parametric Risk Products",
+      "theme_tags": [
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Insurance & Risk Markets"
+    },
+    {
+      "code": "D21.4",
+      "domain": "D21",
+      "display_name": "Lender Insurance & Risk Transfer",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Insurance & Risk Markets"
+    },
+    {
+      "code": "D22.1",
+      "domain": "D22",
+      "display_name": "U.S. Media Coverage",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Industry Media & Analyst Coverage"
+    },
+    {
+      "code": "D22.2",
+      "domain": "D22",
+      "display_name": "EU Media Coverage",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Industry Media & Analyst Coverage"
+    },
+    {
+      "code": "D22.3",
+      "domain": "D22",
+      "display_name": "APAC / LATAM / MENA Media Coverage",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Industry Media & Analyst Coverage"
+    },
+    {
+      "code": "D22.4",
+      "domain": "D22",
+      "display_name": "Industry Analysts",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Industry Media & Analyst Coverage"
+    },
+    {
+      "code": "D23.1",
+      "domain": "D23",
+      "display_name": "Major Outage Postmortems",
+      "theme_tags": [
+        "T-001",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Outage Intelligence & Emergency Response"
+    },
+    {
+      "code": "D23.2",
+      "domain": "D23",
+      "display_name": "Grid Events & Physical Disasters",
+      "theme_tags": [
+        "T-001",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Outage Intelligence & Emergency Response"
+    },
+    {
+      "code": "D23.3",
+      "domain": "D23",
+      "display_name": "Cyber Incidents Targeting DC Infrastructure",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Outage Intelligence & Emergency Response"
+    },
+    {
+      "code": "D23.4",
+      "domain": "D23",
+      "display_name": "Business Continuity & Disaster Recovery",
+      "theme_tags": [
+        "T-001"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "Outage Intelligence & Emergency Response"
+    },
+    {
+      "code": "D3.1",
+      "domain": "D3",
+      "display_name": "Interconnection Queue & Grid Access",
+      "theme_tags": [
+        "T-001",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Grid & Regulatory"
+    },
+    {
+      "code": "D3.2",
+      "domain": "D3",
+      "display_name": "State Moratorium & Legislative Landscape",
+      "theme_tags": [
+        "T-001",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Grid & Regulatory"
+    },
+    {
+      "code": "D3.3",
+      "domain": "D3",
+      "display_name": "Utility Rate Cases & PUC Proceedings",
+      "theme_tags": [
+        "T-001",
+        "T-003",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Grid & Regulatory"
+    },
+    {
+      "code": "D3.4",
+      "domain": "D3",
+      "display_name": "Transmission Buildout & FERC Policy",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Grid & Regulatory"
+    },
+    {
+      "code": "D3.5",
+      "domain": "D3",
+      "display_name": "Large-Load Tariff Design & Co-Location Rules",
+      "theme_tags": [
+        "T-001",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Grid & Regulatory"
+    },
+    {
+      "code": "D4.1",
+      "domain": "D4",
+      "display_name": "PE & Infrastructure Fund Activity",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D4.2",
+      "domain": "D4",
+      "display_name": "DC REIT Performance & Valuation",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D4.3",
+      "domain": "D4",
+      "display_name": "Sovereign Wealth & Institutional Capital",
+      "theme_tags": [
+        "T-004",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D4.4",
+      "domain": "D4",
+      "display_name": "Integrated Infrastructure Vendor M&A",
+      "theme_tags": [
+        "T-002",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D4.5",
+      "domain": "D4",
+      "display_name": "Private Credit & DC Debt Financing",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D4.6",
+      "domain": "D4",
+      "display_name": "GPU-Backed & Neocloud Financing",
+      "theme_tags": [
+        "T-004",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "M&A & Capital Markets"
+    },
+    {
+      "code": "D5.1",
+      "domain": "D5",
+      "display_name": "Big 5 Capex & Campus Announcements",
+      "theme_tags": [
+        "T-001",
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Hyperscaler Activity"
+    },
+    {
+      "code": "D5.2",
+      "domain": "D5",
+      "display_name": "Hyperscaler Custom Silicon Strategy",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "Hyperscaler Activity"
+    },
+    {
+      "code": "D5.3",
+      "domain": "D5",
+      "display_name": "Build-vs-Lease & Colocation Strategy",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Hyperscaler Activity"
+    },
+    {
+      "code": "D5.4",
+      "domain": "D5",
+      "display_name": "Capacity Geography & Region Expansion",
+      "theme_tags": [
+        "T-001",
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Hyperscaler Activity"
+    },
+    {
+      "code": "D6.1",
+      "domain": "D6",
+      "display_name": "Neocloud Infrastructure",
+      "theme_tags": [
+        "T-004",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "New Entrants"
+    },
+    {
+      "code": "D6.2",
+      "domain": "D6",
+      "display_name": "Sovereign AI Programs & National Compute",
+      "theme_tags": [
+        "T-006"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Broad-only",
+      "sector_name": "New Entrants"
+    },
+    {
+      "code": "D6.3",
+      "domain": "D6",
+      "display_name": "AI Labs & Model Developers as Infrastructure Buyers",
+      "theme_tags": [
+        "T-004",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "New Entrants"
+    },
+    {
+      "code": "D7.1",
+      "domain": "D7",
+      "display_name": "Direct-to-Chip Liquid Cooling (DLC)",
+      "theme_tags": [
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cooling & Water Technology"
+    },
+    {
+      "code": "D7.2",
+      "domain": "D7",
+      "display_name": "Immersion Cooling",
+      "theme_tags": [
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cooling & Water Technology"
+    },
+    {
+      "code": "D7.3",
+      "domain": "D7",
+      "display_name": "Water Use & Waterless Cooling Strategies",
+      "theme_tags": [
+        "T-002",
+        "T-003"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cooling & Water Technology"
+    },
+    {
+      "code": "D7.4",
+      "domain": "D7",
+      "display_name": "Thermal Components & Coolant Supply Chain",
+      "theme_tags": [
+        "T-002"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Cooling & Water Technology"
+    },
+    {
+      "code": "D8.1",
+      "domain": "D8",
+      "display_name": "Executive Movement & C-Suite Intelligence",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Dedicated",
+      "sector_name": "People & Signals"
+    },
+    {
+      "code": "D8.2",
+      "domain": "D8",
+      "display_name": "Conference Intelligence & Speaking Circuit",
+      "theme_tags": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006",
+        "T-007"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "People & Signals"
+    },
+    {
+      "code": "D8.3",
+      "domain": "D8",
+      "display_name": "Talent Flows & Specialized Hiring Signals",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "People & Signals"
+    },
+    {
+      "code": "D8.4",
+      "domain": "D8",
+      "display_name": "Founder & Operator Network Mapping",
+      "theme_tags": [
+        "T-004"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "People & Signals"
+    },
+    {
+      "code": "D8.5",
+      "domain": "D8",
+      "display_name": "Earnings-Call & Investor-Day Signal Extraction",
+      "theme_tags": [
+        "T-004",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "People & Signals"
+    },
+    {
+      "code": "D9.1",
+      "domain": "D9",
+      "display_name": "AI Factory Orchestration & DCIM",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Orchestration Intelligence & Control Plane"
+    },
+    {
+      "code": "D9.2",
+      "domain": "D9",
+      "display_name": "GPU Utilization & Compute Scheduling Economics",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Orchestration Intelligence & Control Plane"
+    },
+    {
+      "code": "D9.3",
+      "domain": "D9",
+      "display_name": "Inference Serving & Model-Routing Infrastructure",
+      "theme_tags": [
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Orchestration Intelligence & Control Plane"
+    },
+    {
+      "code": "D9.4",
+      "domain": "D9",
+      "display_name": "Power-Aware & Grid-Responsive Workload Orchestration",
+      "theme_tags": [
+        "T-001",
+        "T-005"
+      ],
+      "is_candidate": false,
+      "coverage_grade": "Whitespace",
+      "sector_name": "Orchestration Intelligence & Control Plane"
+    }
+  ],
+  "pairs": [
+    {
+      "theater_id": "T-001",
+      "sector_code": "D1",
+      "threads": [
+        "D1.2"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D2",
+      "threads": [
+        "D2.1",
+        "D2.10",
+        "D2.2",
+        "D2.4",
+        "D2.5",
+        "D2.6",
+        "D2.7",
+        "D2.8",
+        "D2.9"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D3",
+      "threads": [
+        "D3.1",
+        "D3.2",
+        "D3.3",
+        "D3.4",
+        "D3.5"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D5",
+      "threads": [
+        "D5.1",
+        "D5.4"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D9",
+      "threads": [
+        "D9.4"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D10",
+      "threads": [
+        "D10.1",
+        "D10.2",
+        "D10.3",
+        "D10.4",
+        "D10.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D12",
+      "threads": [
+        "D12.1"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D13",
+      "threads": [
+        "D13.1",
+        "D13.2",
+        "D13.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D14",
+      "threads": [
+        "D14.1",
+        "D14.2",
+        "D14.3",
+        "D14.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D20",
+      "threads": [
+        "D20.1",
+        "D20.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D21",
+      "threads": [
+        "D21.1",
+        "D21.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-001",
+      "sector_code": "D23",
+      "threads": [
+        "D23.1",
+        "D23.2",
+        "D23.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D1",
+      "threads": [
+        "D1.1",
+        "D1.2",
+        "D1.4",
+        "D1.8"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D2",
+      "threads": [
+        "D2.10",
+        "D2.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D4",
+      "threads": [
+        "D4.4"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D7",
+      "threads": [
+        "D7.1",
+        "D7.2",
+        "D7.3",
+        "D7.4"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D10",
+      "threads": [
+        "D10.3"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D11",
+      "threads": [
+        "D11.3",
+        "D11.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D12",
+      "threads": [
+        "D12.3",
+        "D12.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D20",
+      "threads": [
+        "D20.1",
+        "D20.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-002",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D3",
+      "threads": [
+        "D3.1",
+        "D3.2",
+        "D3.3"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D7",
+      "threads": [
+        "D7.3"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D11",
+      "threads": [
+        "D11.2",
+        "D11.3",
+        "D11.5",
+        "D11.6"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D13",
+      "threads": [
+        "D13.1",
+        "D13.2",
+        "D13.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D14",
+      "threads": [
+        "D14.1",
+        "D14.2",
+        "D14.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D15",
+      "threads": [
+        "D15.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D17",
+      "threads": [
+        "D17.3"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D18",
+      "threads": [
+        "D18.1",
+        "D18.2",
+        "D18.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D19",
+      "threads": [
+        "D19.1",
+        "D19.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D21",
+      "threads": [
+        "D21.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-003",
+      "sector_code": "D23",
+      "threads": [
+        "D23.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D4",
+      "threads": [
+        "D4.1",
+        "D4.2",
+        "D4.3",
+        "D4.4",
+        "D4.5",
+        "D4.6"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D5",
+      "threads": [
+        "D5.1",
+        "D5.3"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D6",
+      "threads": [
+        "D6.1",
+        "D6.3"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D8",
+      "threads": [
+        "D8.1",
+        "D8.2",
+        "D8.3",
+        "D8.4",
+        "D8.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D10",
+      "threads": [
+        "D10.4",
+        "D10.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D12",
+      "threads": [
+        "D12.1",
+        "D12.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D14",
+      "threads": [
+        "D14.2",
+        "D14.3",
+        "D14.4",
+        "D14.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D15",
+      "threads": [
+        "D15.2",
+        "D15.4",
+        "D15.6"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D17",
+      "threads": [
+        "D17.1",
+        "D17.2",
+        "D17.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D19",
+      "threads": [
+        "D19.1",
+        "D19.2",
+        "D19.3",
+        "D19.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D21",
+      "threads": [
+        "D21.2",
+        "D21.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-004",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D1",
+      "threads": [
+        "D1.1",
+        "D1.3",
+        "D1.4",
+        "D1.5",
+        "D1.6",
+        "D1.7",
+        "D1.8"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D4",
+      "threads": [
+        "D4.6"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D5",
+      "threads": [
+        "D5.2"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D6",
+      "threads": [
+        "D6.1",
+        "D6.3"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2",
+        "D8.5"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D9",
+      "threads": [
+        "D9.1",
+        "D9.2",
+        "D9.3",
+        "D9.4"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D12",
+      "threads": [
+        "D12.2",
+        "D12.3",
+        "D12.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D15",
+      "threads": [
+        "D15.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-005",
+      "sector_code": "D23",
+      "threads": [
+        "D23.1"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D1",
+      "threads": [
+        "D1.6"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D2",
+      "threads": [
+        "D2.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D4",
+      "threads": [
+        "D4.3"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D5",
+      "threads": [
+        "D5.4"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D6",
+      "threads": [
+        "D6.2"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D12",
+      "threads": [
+        "D12.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D14",
+      "threads": [
+        "D14.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D15",
+      "threads": [
+        "D15.1",
+        "D15.2",
+        "D15.3",
+        "D15.4",
+        "D15.5",
+        "D15.6"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D16",
+      "threads": [
+        "D16.1",
+        "D16.2",
+        "D16.3",
+        "D16.4",
+        "D16.5",
+        "D16.6"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D19",
+      "threads": [
+        "D19.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D21",
+      "threads": [
+        "D21.2"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-006",
+      "sector_code": "D23",
+      "threads": [
+        "D23.3"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-007",
+      "sector_code": "D2",
+      "threads": [
+        "D2.1",
+        "D2.10",
+        "D2.2",
+        "D2.3",
+        "D2.5",
+        "D2.6",
+        "D2.7",
+        "D2.8",
+        "D2.9"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-007",
+      "sector_code": "D3",
+      "threads": [
+        "D3.3",
+        "D3.4",
+        "D3.5"
+      ],
+      "best_coverage": "Broad-only"
+    },
+    {
+      "theater_id": "T-007",
+      "sector_code": "D8",
+      "threads": [
+        "D8.2"
+      ],
+      "best_coverage": "Whitespace"
+    },
+    {
+      "theater_id": "T-007",
+      "sector_code": "D11",
+      "threads": [
+        "D11.1",
+        "D11.3",
+        "D11.4",
+        "D11.5"
+      ],
+      "best_coverage": "Dedicated"
+    },
+    {
+      "theater_id": "T-007",
+      "sector_code": "D22",
+      "threads": [
+        "D22.1",
+        "D22.2",
+        "D22.3",
+        "D22.4"
+      ],
+      "best_coverage": "Dedicated"
+    }
+  ],
+  "derived": {
+    "pair_count": 78,
+    "triple_pool": 702,
+    "per_theater": [
+      {
+        "theater_id": "T-001",
+        "sectors": [
+          "D1",
+          "D2",
+          "D3",
+          "D5",
+          "D8",
+          "D9",
+          "D10",
+          "D12",
+          "D13",
+          "D14",
+          "D20",
+          "D21",
+          "D22",
+          "D23"
+        ]
+      },
+      {
+        "theater_id": "T-002",
+        "sectors": [
+          "D1",
+          "D2",
+          "D4",
+          "D7",
+          "D8",
+          "D10",
+          "D11",
+          "D12",
+          "D20",
+          "D22"
+        ]
+      },
+      {
+        "theater_id": "T-003",
+        "sectors": [
+          "D3",
+          "D7",
+          "D8",
+          "D11",
+          "D13",
+          "D14",
+          "D15",
+          "D17",
+          "D18",
+          "D19",
+          "D21",
+          "D22",
+          "D23"
+        ]
+      },
+      {
+        "theater_id": "T-004",
+        "sectors": [
+          "D4",
+          "D5",
+          "D6",
+          "D8",
+          "D10",
+          "D12",
+          "D14",
+          "D15",
+          "D17",
+          "D19",
+          "D21",
+          "D22"
+        ]
+      },
+      {
+        "theater_id": "T-005",
+        "sectors": [
+          "D1",
+          "D4",
+          "D5",
+          "D6",
+          "D8",
+          "D9",
+          "D12",
+          "D15",
+          "D22",
+          "D23"
+        ]
+      },
+      {
+        "theater_id": "T-006",
+        "sectors": [
+          "D1",
+          "D2",
+          "D4",
+          "D5",
+          "D6",
+          "D8",
+          "D12",
+          "D14",
+          "D15",
+          "D16",
+          "D19",
+          "D21",
+          "D22",
+          "D23"
+        ]
+      },
+      {
+        "theater_id": "T-007",
+        "sectors": [
+          "D2",
+          "D3",
+          "D8",
+          "D11",
+          "D22"
+        ]
+      }
+    ],
+    "single_theater_sectors": [
+      "D16",
+      "D18"
+    ],
+    "sectors_covered": 23
+  }
+}
