@@ -102,13 +102,20 @@ function StandingsRow({ row }: { row: LeaderboardRow }) {
 }
 
 function TeamTotalRow({ team, rank }: { team: TeamTotal; rank: number }) {
+  // Whole row links through to the team page — a real anchor so it's
+  // keyboard-focusable and middle-clickable. Route key is the team id (uuid).
   return (
-    <div className="grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 py-3 rounded odd:bg-warm-cream/50">
+    <Link
+      href={`/leaderboard/team/${team.team_id}`}
+      aria-label={`View ${team.team_name} — rank ${rank}`}
+      className="grid grid-cols-[2.5rem_1fr_4rem_4.75rem] items-center gap-2 px-3 py-3 rounded odd:bg-warm-cream/50 transition-colors hover:bg-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+    >
       <span className="text-sm font-semibold text-forest" style={NUM}>
         #{rank}
       </span>
-      <span className="truncate text-sm font-semibold text-near-black">
-        {team.team_name}
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="truncate text-sm font-semibold text-near-black">{team.team_name}</span>
+        <span aria-hidden className="shrink-0 text-near-black/30">›</span>
       </span>
       <span className="text-right text-sm text-near-black/70" style={NUM}>
         {team.today.toLocaleString()}
@@ -116,7 +123,7 @@ function TeamTotalRow({ team, rank }: { team: TeamTotal; rank: number }) {
       <span className="text-right text-sm font-semibold text-near-black" style={NUM}>
         {team.total.toLocaleString()}
       </span>
-    </div>
+    </Link>
   );
 }
 
@@ -383,6 +390,21 @@ export default function LeaderboardPage() {
                 </div>
               </div>
               {shareMsg && <p className="mt-2 text-xs text-forest">{shareMsg}</p>}
+              {/* One-click path into the team page(s) — preserves the chip
+                  filter UX (chips stay pure filters). */}
+              {myTeams.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gold/20 pt-2.5">
+                  {myTeams.slice(0, 3).map(t => (
+                    <Link
+                      key={t.team_id}
+                      href={`/leaderboard/team/${t.team_id}`}
+                      className="rounded text-xs font-semibold text-forest hover:text-forest/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+                    >
+                      {myTeams.length === 1 ? "View team" : t.team_name} →
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {status === "loading" && (
