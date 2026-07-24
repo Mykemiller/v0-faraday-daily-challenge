@@ -1,10 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Faraday — Your unfair advantage",
   description:
     "Faraday reads the AI data center market every day and tells you what it means. Specific. Sourced. Ahead.",
+};
+
+// Brand forest green — sets the browser UI / PWA theme color site-wide.
+// (Next 16: themeColor lives on the viewport export, not metadata.)
+export const viewport: Viewport = {
+  themeColor: "#1C3424",
 };
 
 export default function RootLayout({
