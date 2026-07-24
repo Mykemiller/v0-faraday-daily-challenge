@@ -18,11 +18,11 @@ const DC_GAMES = [
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
-const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean }[] = [
+const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean; external?: boolean }[] = [
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
-  { name: "Signal Room", href: "/signal-room", blurb: "Your watchlist — compose a personalized feed across Theater, Sector, Thread, Company, and cadence.", tag: "Metered" },
+  { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
   { name: "Thought Forge", href: "/thought-forge", blurb: "Turn Faraday intelligence into your own briefs, memos, and models.", tag: "Metered" },
 ];
 
@@ -100,31 +100,44 @@ export default function Home() {
 
         {/* Storefront tiles — Live Agent is the primary path, the rest subordinated */}
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {STOREFRONTS.map((s) => (
-            <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
-              {s.href === "/jurisdiction-watch" ? (
-                <JwHomeTile />
-              ) : (
-                <Link
-                  href={s.href}
-                  className={`group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
-                    s.primary
-                      ? "border-gold bg-warm-cream hover:border-gold"
-                      : "border-warm-gray bg-warm-white hover:border-gold"
-                  }`}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={`font-serif font-semibold text-near-black ${s.primary ? "text-[20px]" : "text-[17px]"}`}>{s.name}</span>
-                    {s.tag && (
-                      <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
-                    )}
-                  </div>
-                  <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
-                  <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Open →</span>
-                </Link>
-              )}
-            </li>
-          ))}
+          {STOREFRONTS.map((s) => {
+            const cardClass = `group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
+              s.primary
+                ? "border-gold bg-warm-cream hover:border-gold"
+                : "border-warm-gray bg-warm-white hover:border-gold"
+            }`;
+            const inner = (
+              <>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={`font-serif font-semibold text-near-black ${s.primary ? "text-[20px]" : "text-[17px]"}`}>{s.name}</span>
+                  {s.tag && (
+                    <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
+                  )}
+                </div>
+                <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
+                <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">
+                  {s.external ? "Enter →" : "Open →"}
+                </span>
+              </>
+            );
+            return (
+              <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
+                {s.href === "/jurisdiction-watch" ? (
+                  <JwHomeTile />
+                ) : s.external ? (
+                  // External storefront (Signal Room lives on its own domain);
+                  // same tab per spec, rel=noopener for safety.
+                  <a href={s.href} rel="noopener noreferrer" className={cardClass}>
+                    {inner}
+                  </a>
+                ) : (
+                  <Link href={s.href} className={cardClass}>
+                    {inner}
+                  </Link>
+                )}
+              </li>
+            );
+          })}
         </ul>
 
         {/* Faraday Academy — full-width panel; separately priced. Links straight
