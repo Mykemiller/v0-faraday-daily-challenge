@@ -98,6 +98,63 @@ export async function POST(request: Request) {
   const seasonId = typeof body.season_id === 'string' ? body.season_id : null;
 
   if (!token) return Response.json({ error: 'missing_token' }, { status: 401 });
+
+  // ── Join a team via a durable invite token (team page "Invite / Share") ──────
+  // Resolves the active season itself (the invite link carries no season_id) and
+  // adds an immediate, non-pending membership, honouring the 5-team cap and the
+  // season lock. Idempotent: already-a-member is a success no-op.
+  if (action === 'join_by_token') {
+    const joinToken = typeof body.join_token === 'string' ? body.join_token.trim() : '';
+    if (!joinToken) return Response.json({ error: 'missing_join_token' }, { status: 400 });
+
+    const subscriberId = await resolveSubscriber(token);
+    if (!subscriberId) return Response.json({ error: 'invalid_session' }, { status: 401 });
+
+    // Active season
+    const seasonR = await fetch(
+      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=id,locked_at&limit=1`,
+      { headers: h, cache: 'no-store' }
+    );
+    const seasonRows = await seasonR.json().catch(() => null);
+    const season = Array.isArray(seasonRows) ? seasonRows[0] : null;
+    if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
+    if (season.locked_at && new Date() > new Date(season.locked_at)) {
+      return Response.json({ error: 'season_locked' }, { status: 403 });
+    }
+
+    // Resolve the team by its invite token
+    const teamR = await fetch(
+      `${SUPABASE_URL}/rest/v1/teams?join_token=eq.${encodeURIComponent(joinToken)}&select=id,name&limit=1`,
+      { headers: h, cache: 'no-store' }
+    );
+    const teamRows = teamR.ok ? await teamR.json().catch(() => []) : [];
+    const team = Array.isArray(teamRows) ? teamRows[0] : null;
+    if (!team) return Response.json({ error: 'invalid_invite' }, { status: 404 });
+
+    // Current memberships — cap + already-member check
+    const curR = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${season.id}&select=team_id`,
+      { headers: h, cache: 'no-store' }
+    );
+    const curRows: Array<{ team_id: string }> = curR.ok ? await curR.json().catch(() => []) : [];
+    if (curRows.some(r => r.team_id === team.id)) {
+      return Response.json({ ok: true, team_id: team.id, team_name: team.name, already_member: true });
+    }
+    if (curRows.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
+
+    const insR = await fetch(`${SUPABASE_URL}/rest/v1/team_memberships`, {
+      method: 'POST',
+      headers: { ...h, Prefer: 'return=minimal' },
+      body: JSON.stringify([{ subscriber_id: subscriberId, team_id: team.id, season_id: season.id, pending: false }]),
+    });
+    if (!insR.ok) {
+      const err = await insR.text();
+      console.error('team_memberships join_by_token failed', err);
+      return Response.json({ error: 'join_failed' }, { status: 500 });
+    }
+    return Response.json({ ok: true, team_id: team.id, team_name: team.name });
+  }
+
   if (!seasonId) return Response.json({ error: 'missing_season_id' }, { status: 400 });
 
   const subscriberId = await resolveSubscriber(token);
