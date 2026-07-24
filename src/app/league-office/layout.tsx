@@ -7,6 +7,7 @@
 // rendering — correct for live, per-request admin data.
 
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import Rail from "@/components/league-office/Rail";
 import HeaderBar from "@/components/league-office/HeaderBar";
 import StaffGate from "@/components/league-office/StaffGate";
@@ -24,6 +25,15 @@ export default async function LeagueOfficeLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Exclude the whole /league-office tree from prerendering. requireStaff()
+  // normally opts this segment into dynamic rendering via cookies(), but it
+  // returns early (before the cookie read) whenever the service client is
+  // unconfigured — which is the case at build time (no SUPABASE_SERVICE_ROLE_KEY).
+  // Without this, the route is statically prerendered and HeaderBar's
+  // useSearchParams() fails the build with a missing-Suspense-boundary error.
+  // These are live, per-request, noindex admin pages — runtime rendering is correct.
+  await connection();
+
   const staff = await requireStaff();
   const email = staff.ok ? staff.email : null;
   const seasons = staff.ok
