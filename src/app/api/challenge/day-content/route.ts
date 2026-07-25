@@ -46,11 +46,13 @@ export async function GET() {
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row) return Response.json({ available: false, puzzle_date: today });
 
-  // Spoiler guard: never let answers ride along with hints/about.
+  // Spoiler guard: never let answers ride along with hints/about. The Faraday's
+  // Take fields (answer_explanation + its byline) are completion-screen-only, so
+  // they are stripped here too (FAR-389).
   const puzzles = (Array.isArray(row.puzzles) ? row.puzzles : []).map(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ({ answer, answer_explanation, ...safe }: any) => {
-      void answer; void answer_explanation;
+    ({ answer, answer_explanation, take_byline, ...safe }: any) => {
+      void answer; void answer_explanation; void take_byline;
       return safe;
     }
   );

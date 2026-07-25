@@ -13,7 +13,10 @@ import {
   SUBSCRIBER_ID_KEY,
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
+import FaradaysTake from "@/components/FaradaysTake";
 import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
+import { resolveDomainName } from "@/lib/idf-labels";
+import { resolveMarketReaction } from "@/lib/market-reaction";
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -580,8 +583,14 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
-function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext }) {
+function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
+  // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
+  // keeping the seconds as secondary supporting text (D8). null → render nothing.
+  const reaction = resolveMarketReaction(puzzleType, elapsedSec);
+  const reactionColor = reaction
+    ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
+    : C.muted;
   const [shareLabel, setShareLabel] = useState("↑ Share Result");
   async function handleShare() {
     setShareLabel("…");
@@ -605,6 +614,8 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   }
   return (
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
+      {/* FAR-389: Faraday's Take sits above the score summary; self-hides with no take. */}
+      <FaradaysTake take={take} byline={takeByline} />
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"2px" }}>
@@ -615,6 +626,21 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         </div>
         <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>this game / today · {puzzleType}</div>
       </div>
+      {/* FAR-388: Market Reaction Speed — band label primary, seconds secondary.
+          No countdown, no red/pressure states (D10). Hidden when unclassifiable. */}
+      {reaction && (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"3px" }}>
+          <div style={{ fontSize:"11px", letterSpacing:"0.14em", textTransform:"uppercase", color:C.muted, ...mono }}>
+            Market Reaction Speed
+          </div>
+          <div style={{ fontSize:"16px", fontWeight:700, color:reactionColor, letterSpacing:"-0.01em", ...sans }}>
+            {reaction.label}
+          </div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
+            {reaction.elapsedSec}s · par {reaction.parSec}s
+          </div>
+        </div>
+      )}
       <div style={{ background:`rgba(196,146,42,0.06)`, border:`1px solid rgba(196,146,42,0.2)`,
         borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
         <div style={{ textAlign:"center" }}>
@@ -650,6 +676,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
   const [done,     setDone]     = useState(false);
   const [lost,     setLost]     = useState(false);
   const [scoreVal, setScoreVal] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const startTime = useRef(Date.now());
 
   function toggle(id) {
@@ -667,7 +694,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       setFeedback({ type:"correct", label:puzzle.groups[groups[0]].label });
       setTimeout(() => setFeedback(null), 1500);
       if (newSolved.length === 16) {
-        const elapsed = (Date.now() - startTime.current) / 1000;
+        const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
         const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak });
         setScoreVal(s);
@@ -680,7 +707,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       if (newMistakes >= RACKL_MAX_MISTAKES) {
         // Out of guesses — end the round and score partial credit for any groups
         // already solved (no perfect bonus on a loss).
-        const elapsed = (Date.now() - startTime.current) / 1000;
+        const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak });
         setFeedback(null);
         setScoreVal(s);
@@ -709,7 +736,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
           ))}
         </>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
         isNew7Day={streak===6} />
     </div>
@@ -800,6 +827,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
   const [lost,    setLost]      = useState(false);
   const [revealed,setRevealed]  = useState(null);  // answer, only once game over
   const [scoreVal,setScoreVal]  = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const [checking,setChecking]  = useState(false); // server round-trip in flight
   const [error,   setError]     = useState(null);
   const startTime  = useRef(Date.now());
@@ -818,12 +846,13 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
     if (answerMaybe) setRevealed(normalizeWord(answerMaybe));
     if (correct) {
       setWon(true);
-      const elapsed = (Date.now() - startTime.current) / 1000;
+      const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = newGuesses.length === 1;
       const baseP   = Math.max(0, maxGuesses - newGuesses.length + 1);
       setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak }));
     } else if (newGuesses.length >= maxGuesses) {
       setLost(true);
+      setElapsedSec((Date.now() - startTime.current) / 1000);
       setScoreVal(10);
     }
   }
@@ -887,7 +916,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
           The word was <span style={{ color:C.text, fontWeight:700 }}>{revealed}</span>
         </div>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}}
         onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won })}
         isNew7Day={streak===6} />
@@ -975,6 +1004,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
   const [dragging, setDragging] = useState(null);
   const [submitted,setSubmitted]= useState(false);
   const [scoreVal, setScoreVal] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const startTime = useRef(Date.now());
 
   // Reorder runs through a ref so rapid touchmove events never read a stale
@@ -1019,7 +1049,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
     // Score: count how many are in correct relative position
     const correct = order.filter((item, idx) => puzzle.correctOrder.indexOf(item) === idx).length;
     const perfect = correct === order.length;
-    const elapsed = (Date.now() - startTime.current) / 1000;
+    const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
     const s = calcScore({ basePoints:correct, maxPoints:order.length, timeElapsed:elapsed, timeLimit:120, perfect, streak });
     setScoreVal(s);
     setSubmitted(true);
@@ -1050,7 +1080,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric })}
         isNew7Day={streak===6} />
     </div>
@@ -1105,6 +1135,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
   const [timeLeft,setTimeLeft]= useState(puzzle.timeLimit);
   const [done,    setDone]    = useState(false);
   const [scoreVal,setScoreVal]= useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const [lastFeedback, setLastFeedback] = useState(null);
   const startTime = useRef(Date.now());
 
@@ -1134,7 +1165,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
   function finish(finalAnswers) {
     setDone(true);
     const correct = finalAnswers.filter(a => a.ok).length;
-    const elapsed = (Date.now() - startTime.current) / 1000;
+    const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
     const perfect = correct === puzzle.questions.length;
     const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:puzzle.timeLimit, perfect, streak });
     setScoreVal(s);
@@ -1154,7 +1185,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
@@ -1209,6 +1240,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
   const [answers, setAnswers] = useState([]);
   const [selected,setSelected]= useState(null);
   const [scoreVal,setScoreVal]= useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const [timeLeft,setTimeLeft]= useState(puzzle.readTime);
   const startTime = useRef(Date.now());
 
@@ -1229,7 +1261,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
     setSelected(null);
     if (qIdx + 1 >= puzzle.questions.length) {
       const correct = newAnswers.filter(a => a.ok).length;
-      const elapsed = (Date.now() - startTime.current) / 1000;
+      const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
       const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:300, perfect, streak });
       setScoreVal(s);
@@ -1253,7 +1285,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
@@ -1315,6 +1347,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   const [matched,      setMatched]      = useState([]);
   const [wrong,        setWrong]        = useState(false);
   const [scoreVal,     setScoreVal]     = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const [done,         setDone]         = useState(false);
   const [mistakes,     setMistakes]     = useState(0);
   const [shuffledDefs, setShuffledDefs] = useState(() => [...puzzle.pairs].sort(()=>Math.random()-0.5).map(p=>p.term));
@@ -1328,7 +1361,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
       setSelectedTerm(null);
       setSelectedDef(null);
       if (newMatched.length === puzzle.pairs.length) {
-        const elapsed = (Date.now() - startTime.current) / 1000;
+        const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
         const s = calcScore({ basePoints:puzzle.pairs.length, maxPoints:puzzle.pairs.length, timeElapsed:elapsed, timeLimit:180, perfect, streak });
         setScoreVal(s);
@@ -1341,7 +1374,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
     streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs })}
     isNew7Day={streak===6} />;
 
@@ -1407,6 +1440,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
   const [selected,setSelected]= useState(null);
   const [revealed,setRevealed]= useState(false);
   const [scoreVal,setScoreVal]= useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null); // FAR-388 solve time for the Market Reaction band
   const [done,    setDone]    = useState(false);
   const startTime = useRef(Date.now());
 
@@ -1424,7 +1458,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
     setRevealed(false);
     if (qIdx + 1 >= puzzle.questions.length) {
       const correct = newAnswers.filter(a=>a.ok).length;
-      const elapsed = (Date.now() - startTime.current) / 1000;
+      const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
       const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:240, perfect, streak });
       setScoreVal(s);
@@ -1448,7 +1482,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
         isNew7Day={streak===6} />
     </div>
@@ -3208,10 +3242,14 @@ export default function DailyChallenge() {
                     </div>
                   </div>
                   <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-                    <span style={{ fontSize:"11px", color:C.muted, background:"rgba(255,255,255,0.04)",
-                      border:`1px solid ${C.border}`, padding:"3px 8px", borderRadius:"3px", ...mono }}>
-                      {puzzle.domain}
-                    </span>
+                    {/* FAR-387 D3/D4: never render a raw IDF code. resolveDomainName
+                        passes a plain name through unchanged and maps/drops a code. */}
+                    {resolveDomainName(puzzle.domain) && (
+                      <span style={{ fontSize:"11px", color:C.muted, background:"rgba(255,255,255,0.04)",
+                        border:`1px solid ${C.border}`, padding:"3px 8px", borderRadius:"3px", ...mono }}>
+                        Domain: {resolveDomainName(puzzle.domain)}
+                      </span>
+                    )}
                     <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>

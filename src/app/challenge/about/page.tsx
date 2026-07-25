@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
+import { resolveDomainName } from "@/lib/idf-labels";
 
 interface AboutContent {
   date?: string;
@@ -85,11 +86,18 @@ export default function AboutTodayPage() {
               </p>
             )}
 
-            {about.domain_name && (
-              <p className="mt-3 font-mono text-[11px] text-near-black/50">
-                IDF Domain{about.domain_code ? ` ${about.domain_code}` : ""} · {about.domain_name}
-              </p>
-            )}
+            {(() => {
+              // FAR-387 D3/D4: render the mapped plain-language name only — never
+              // the raw IDF code. Prefer the canonical map (domain_code → name);
+              // fall back to the sync-resolved domain_name (already a plain name).
+              const domainName =
+                resolveDomainName(about.domain_code) ?? about.domain_name ?? null;
+              return domainName ? (
+                <p className="mt-3 font-mono text-[11px] text-near-black/50">
+                  Domain: {domainName}
+                </p>
+              ) : null;
+            })()}
 
             {!!(about.topics && about.topics.length) && (
               <div className="mt-5 flex flex-wrap gap-1.5">

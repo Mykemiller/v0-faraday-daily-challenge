@@ -56,6 +56,12 @@
      licensed files land in /public/fonts. See public/fonts/README.md.
      TODO: drop licensed Freight/Tiempos files, then point this at --font-display. */
   --font-display: 'Freight Display Pro', 'Tiempos Headline', var(--font-serif);
+
+  /* Faraday's Take editorial italic (FAR-389). Uses IBM Plex Serif's real italic
+     face (loaded in layout.tsx: ital,1,400/1,600) — a true italic, not a CSS
+     oblique fake (D15). Repoint this ONE token to Tiempos Text once its licensed
+     files land in /public/fonts; nothing else needs to change. */
+  --font-take: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
 }
 
 html {

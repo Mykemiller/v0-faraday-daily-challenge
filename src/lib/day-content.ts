@@ -69,7 +69,9 @@ export interface DayPuzzleEntry {
   topic: string | null;
   hints: string[]; // Hint 1..3 from the bank, in order, empties dropped
   answer: unknown | null; // structured, per-type — see extractAnswer
-  answer_explanation: string | null; // Phase-1 field; null until it exists
+  answer_explanation: string | null; // Phase-1 field; null until it exists.
+  // FAR-389: also THE "Faraday's Take" text — rendered on the completion screen.
+  take_byline: string | null; // optional byline (FAR-389 D13); null → Gilbert Faraday
   domain_code: string | null; // IDF domain id ("D2"); null until FAR-178
   academy: AcademyCourseRef | null;
 }
@@ -352,6 +354,9 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
         .filter((h): h is string => !!h),
       answer: extractAnswer(type, content),
       answer_explanation: str(record.fields["Answer Explanation"]),
+      // Optional byline field (FAR-389 D13). Absent in Airtable today → null →
+      // the FaradaysTake component defaults the byline to Gilbert Faraday.
+      take_byline: str(record.fields["Take Byline"]),
       domain_code: domainCode,
       academy,
     });
