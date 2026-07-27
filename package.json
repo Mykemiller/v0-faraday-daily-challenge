@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test 'src/lib/tokenomics/**/*.test.ts'",
+    "test:tokenomics": "node --test 'src/lib/tokenomics/**/*.test.ts'",
     "test:contrast": "node scripts/contrast-check.mjs",
     "test:signal-drop": "node --experimental-default-type=module --test src/lib/signal-drop.test.js",
     "test:no-codes": "node --test scripts/no-idf-codes-check.mjs"
