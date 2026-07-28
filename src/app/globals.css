@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
-/* ── Faraday Brand Tokens — Brand Bible Ch.05 / Ch.09b (locked) ────────────────
-   Palette is locked: forest family for dark surfaces, warm white/cream canvas,
-   gold accents. The seven game neons live in the Ch.09b registry below and are
-   used ONLY by the Daily Challenge game pictograms. No other colors ship on the
-   public surfaces. */
+/* ── Faraday Brand Tokens — Brand Bible Ch.05 / Ch.09b ─────────────────────────
+   Palette: forest family for dark surfaces, warm white canvas, gold accents.
+   The seven per-game differentiators live in the game-accent registry below —
+   desaturated jewel tones (FAR-394, was raw neon) used ONLY by the Daily
+   Challenge game pictograms. No other colors ship on the public surfaces. */
 @theme {
   --color-forest: #1c3424;
   --color-forest-mid: #244228;
@@ -36,14 +36,25 @@
   --color-warm-panel: #faf7f2;    /* input bg + table row hover */
   --color-brick: #9c3b2e;         /* flagged / destructive (4th status color) */
 
-  /* Ch.09b neon registry — per game, locked. Game pictograms only. */
-  --color-neon-rackl: #00ffc8;
-  --color-neon-signaldrop: #ff2d78;
-  --color-neon-stack: #ffe600;
-  --color-neon-circuit: #00cfff;
-  --color-neon-brief: #b8ff00;
-  --color-neon-darkfiber: #bf5fff;
-  --color-neon-frequency: #ff6b00;
+  /* Per-game jewel registry — one desaturated jewel tone per game (FAR-394,
+     editorial palette; was the Ch.09b raw-neon registry). Game pictograms only.
+     Mirror of GAME_ACCENT in src/components/GameIcon.jsx — keep the two in sync.
+     The --color-neon-* aliases are retained (same values) so any older utility
+     class keeps resolving during the palette transition. */
+  --color-game-rackl: #2f9c8b;       /* teal */
+  --color-game-signaldrop: #c86a85;  /* garnet rose */
+  --color-game-stack: #a08a3a;       /* citrine/bronze */
+  --color-game-circuit: #4c90bd;     /* sapphire */
+  --color-game-brief: #7ca34a;       /* olive */
+  --color-game-darkfiber: #9a74c0;   /* amethyst */
+  --color-game-frequency: #c06a3c;   /* rust/copper */
+  --color-neon-rackl: #2f9c8b;
+  --color-neon-signaldrop: #c86a85;
+  --color-neon-stack: #a08a3a;
+  --color-neon-circuit: #4c90bd;
+  --color-neon-brief: #7ca34a;
+  --color-neon-darkfiber: #9a74c0;
+  --color-neon-frequency: #c06a3c;
 
   /* Type — Bricolage Grotesque (body/UI), IBM Plex Serif (editorial),
      IBM Plex Mono (labels/data/citations). */

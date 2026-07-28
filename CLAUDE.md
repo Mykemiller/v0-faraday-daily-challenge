@@ -1,5 +1,41 @@
 @AGENTS.md
 
+## Daily Challenge editorial palette (FAR-394, claude/daily-challenge-editorial-palette-9tvxzv, 2026-07-28)
+
+Moved the DC from raw neon-on-dark toward Faraday's institutional editorial
+palette — **color tokens only** (spacing/type/layout are FAR-395). Runs BEFORE
+FAR-395 per the ticket so layout primitives build against final styling; both
+touch `DailyChallenge.jsx`, so coordinate if run in parallel.
+
+- **Per-game differentiator: raw neon → one desaturated jewel tone per game.**
+  Single source of truth is now **`GAME_ACCENT`** in `src/components/GameIcon.jsx`
+  (`{accent, deep, glow}` per game): Rackl teal `#2F9C8B` · Circuit sapphire
+  `#4C90BD` · Dark Fiber amethyst `#9A74C0` · Signal Drop garnet `#C86A85` ·
+  Frequency rust `#C06A3C` · The Stack bronze `#A08A3A` · The Brief olive
+  `#7CA34A`. `GAME_NEON` is kept as a back-compat alias (`{neon,glow}` → accent).
+  The pictogram fills (GameIcon.jsx), the **share-card SVG mirror**
+  (`gameIconSvg.js` — MUST stay in sync), the lobby hover glow, and the
+  `globals.css` `--color-game-*`/`--color-neon-*` mirror all derive from these.
+  **These per-game values are a PROPOSED design pass** — the ticket asks to
+  confirm final values with Myke/design; The Stack (bronze) is the one adjacent to
+  gold and most worth a look.
+- **Surfaces standardized on Warm White `#F8F5F0`** (was the near-identical Warm
+  Cream `#EEE6DA`): `C.cream` in `DailyChallenge.jsx` and `SiteHeaderNav.tsx` is
+  now an alias === `white` (avoids re-touching every ref) and the Rackl sample
+  `textColor`s were repointed. Warm Cream stays in `globals.css`
+  (`--color-warm-cream`) for the homepage editorial double-rule + League Office —
+  both out of scope, untouched.
+- **Accessibility:** `scripts/contrast-check.mjs` extended → **29/29 WCAG 2.1 AA**;
+  adds warm-white surface pairings + each jewel ≥3:1 on the forest tile (they are
+  `aria-hidden` decorative graphics, not text) + a jewel/gold/sage
+  distinguishability guard (Δ≥40; closest pair Stack↔Gold Δ66). Run
+  `npm run test:contrast` after any color edit.
+- **Verified:** `next build` green; visual QA screenshotted at desktop (1440) +
+  mobile (390), lobby + in-game. Report + full token table:
+  `docs/far394-editorial-palette/qa-report.md`. League Office game-dot neons
+  (`src/lib/league-office/constants.ts`) are a separate internal registry, left
+  as-is (staff-only, out of the lobby+games scope) — flagged as a follow-up.
+
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
