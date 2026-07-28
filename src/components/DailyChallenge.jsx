@@ -14,6 +14,7 @@ import {
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
 import FaradaysTake from "@/components/FaradaysTake";
+import { deriveTakeFallback } from "@/lib/faradays-take";
 import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 import { resolveDomainName } from "@/lib/idf-labels";
 import { resolveMarketReaction } from "@/lib/market-reaction";
@@ -615,7 +616,7 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 // consumer, nested inside all 7 game components.
 const SolveBandsContext = createContext(null);
 
-function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline }) {
+function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline, takeFallback }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
@@ -648,8 +649,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   }
   return (
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
-      {/* FAR-389: Faraday's Take sits above the score summary; self-hides with no take. */}
-      <FaradaysTake take={take} byline={takeByline} />
+      {/* FAR-389: Faraday's Take sits above the score summary. Voiced take when
+          authored; else the plain explanation fallback; else self-hides. */}
+      <FaradaysTake take={take} byline={takeByline} puzzleType={puzzleType} fallback={takeFallback} />
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"2px" }}>
@@ -774,7 +776,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
           ))}
         </>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -954,7 +956,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
           The word was <span style={{ color:C.text, fontWeight:700 }}>{revealed}</span>
         </div>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} takeFallback={deriveTakeFallback(puzzle)} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}}
         onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won }, elapsedSec)}
         isNew7Day={streak===6} />
@@ -1118,7 +1120,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1223,7 +1225,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1323,7 +1325,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1412,7 +1414,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
     streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs }, elapsedSec)}
     isNew7Day={streak===6} />;
 
@@ -1520,7 +1522,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>

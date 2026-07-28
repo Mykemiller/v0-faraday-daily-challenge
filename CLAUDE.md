@@ -1,5 +1,36 @@
 @AGENTS.md
 
+## Faraday's Take on completion (FAR-389, claude/faraday-take-completion-tquznw, 2026-07-28)
+
+Reconciles the first-cut Take (shipped in "Launch backlog 1–3") with the full
+FAR-389 ticket. Full spec: **`docs/far389-faradays-take.md`**.
+
+- **Take source = a dedicated `Faraday Take` field** (multilineText), SEPARATE
+  from the per-question `explanation` keys inside `Puzzle Content` and from the
+  (non-existent) `Answer Explanation` concept. Confirmed 2026-07-28 against the
+  live Puzzle Bank: **none of `Faraday Take` / `Answer Explanation` / `Take
+  Byline` exist yet** — so no field collision. **BLOCKED on Myke** to add
+  `Faraday Take` (+ optional `Take Byline`) manually in Airtable; the code reads
+  them **by name** (`day-content.ts`) so they light up with no redeploy. Do NOT
+  write the schema via API (canonical bank rejects it).
+- **Voice by game type** — `src/lib/faradays-take.ts` `TAKE_VOICE_BY_TYPE`:
+  Gilbert Faraday (Rackl · The Stack · Dark Fiber · Frequency), Mach Eigen
+  (Circuit · The Brief · Signal Drop). `resolveTakeByline` = override → voice →
+  Gilbert. The `Take Byline` field overrides per puzzle.
+- **Fallback, never blank** — when no Take is authored, the win screen surfaces
+  the puzzle's own per-question `explanation` (`deriveTakeFallback`) in PLAIN
+  (non-italic, unsigned) styling. Derived client-side from content the browser
+  already has → works day one, no field/store needed. Only Circuit/Brief/
+  Frequency carry explanations; the other four show nothing until authored.
+- **Render:** `FaradaysTake.tsx` (voiced italic-serif Take + byline · plain
+  fallback · else null), threaded through `ScoreCard` for all 7 games. Read path
+  unchanged in shape: `day-content` sync → `dc_daily_page_content` →
+  `/api/challenge/today` (`fetchTodaysTakes`), now reading `Faraday Take` not
+  `Answer Explanation`. The FAR-287 Answers page keeps `Answer Explanation`.
+- **Recurring cost flagged:** every new puzzle needs a Take authored in Airtable
+  (else fallback). No AI auto-drafting (out of scope). Tests: `npm run test:take`
+  (9). `npm run build` green.
+
 ## Daily Challenge domain = faradaydailychallenge.com (claude/dc-canonical-domain, 2026-07-28)
 
 **The Daily Challenge is canonical on `faradaydailychallenge.com` (+ `www`).** Every
