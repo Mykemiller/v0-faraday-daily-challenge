@@ -2,8 +2,10 @@
 //
 // THE single source of truth that turns internal IDF codes into the
 // plain-language names a subscriber is allowed to see. No subscriber-facing
-// surface may ever render a raw D-code or T-code (see the guard test in
-// `idf-labels.test.ts`); route the value through the resolvers here instead.
+// surface may ever render a raw D-code or T-code: the build guard
+// `scripts/no-idf-codes-check.mjs` fails the build on any raw code in
+// subscriber-facing source, and `idf-labels.test.ts` proves these resolvers
+// map/drop codes correctly. Route the value through the resolvers here instead.
 //
 // Codes come from the IDF 4.0 registry snapshot
 // (`scripts/far287/idf-taxonomy-snapshot.json`):
