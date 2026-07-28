@@ -14,6 +14,32 @@ export function staffRole(email: string | null | undefined): "commissioner" | nu
   return STAFF[email.trim().toLowerCase()] ?? null;
 }
 
+/** ⚠️ AUTH KILL-SWITCH (temporary, owner-requested).
+ *
+ *  When `NEXT_PUBLIC_LEAGUE_OFFICE_OPEN` is "1"/"true", the entire League Office
+ *  authorization gate is BYPASSED — the client `StaffGate` renders the console to
+ *  anyone, and every server reader/action (`requireStaff`) grants commissioner
+ *  access without a session. This exposes player PII and destructive service-role
+ *  actions on the public production URL; it exists only so the gate can be dropped
+ *  and restored with a single env toggle (no code change).
+ *
+ *  DEFAULT (env unset) = gate fully enforced, exactly as before. To OPEN the
+ *  console: set the env in Vercel and redeploy. To RESTORE: delete the env (or set
+ *  it to anything else) and redeploy. NEXT_PUBLIC_ is inlined into the client
+ *  bundle at build time, so a redeploy is required either way.
+ *
+ *  `NEXT_PUBLIC_` is deliberate: one flag is read by BOTH the client gate and the
+ *  server checks, so there is no way to open one layer and forget the other. */
+export function isLeagueOfficeOpen(): boolean {
+  const v = process.env.NEXT_PUBLIC_LEAGUE_OFFICE_OPEN;
+  return v === "1" || v === "true";
+}
+
+/** The audited actor recorded for any Tier 2 write performed while the gate is
+ *  open (no real staff identity is available then). Makes "auth was disabled"
+ *  unmistakable in the lo_audit_log trail. */
+export const OPEN_MODE_ACTOR = "auth-disabled@league-office.local";
+
 /** The seven games — LOCKED order + neon identity dot (Brand Bible Ch.09b).
  *  `key` matches the live `dc_daily_attempts.game_type` / puzzle_type values. */
 export const GAMES = [
