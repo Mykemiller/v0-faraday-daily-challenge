@@ -2,8 +2,16 @@
 //
 // THE single source of truth that turns internal IDF codes into the
 // plain-language names a subscriber is allowed to see. No subscriber-facing
-// surface may ever render a raw D-code or T-code (see the guard test in
-// `idf-labels.test.ts`); route the value through the resolvers here instead.
+// surface may ever render a raw D-code or T-code (enforced by the build guard
+// `scripts/no-idf-codes-check.mjs`, run via `npm run test:no-codes`); route the
+// value through the resolvers here instead.
+//
+// DRIFT CAVEAT (FAR-387): these maps are a hardcoded snapshot of the live
+// Airtable registries — IDF Domain Registry `tbltFtmWgBYPuRLSc` (Domain ID →
+// Domain Name) and IDF Theme Registry `tbl9BRMxHm5fL8oy5` (Theme Name; the
+// registry has NO T-ID column, so theme codes have no canonical lookup — see
+// FAR-387 notes). There is no live sync, so this file can drift; verified
+// against live on 2026-07-28 (Domains 23/23 in sync; Themes reconciled below).
 //
 // Codes come from the IDF 4.0 registry snapshot
 // (`scripts/far287/idf-taxonomy-snapshot.json`):
@@ -46,7 +54,9 @@ export const DOMAIN_LABELS: Readonly<Record<string, string>> = Object.freeze({
 /** Theme (theater) code → plain-language theme name. Frozen: this is the contract. */
 export const THEME_LABELS: Readonly<Record<string, string>> = Object.freeze({
   "T-001": "The Power Reckoning",
-  "T-002": "The Thermal Reckoning",
+  // Renamed in the live IDF Theme Registry (was "The Thermal Reckoning"); the
+  // taxonomy snapshot is stale — the live Theme Name is canonical (FAR-387).
+  "T-002": "The Rack Revolution",
   "T-003": "The Consent Crisis",
   "T-004": "The Capital Concentration",
   "T-005": "The Inference Economy",
