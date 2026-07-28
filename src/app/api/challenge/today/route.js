@@ -44,10 +44,12 @@ function centralDate(d) {
 
 // Faraday's Take (FAR-389): read today's take per puzzle type from
 // dc_daily_page_content — the canonical day-content store the sync populates
-// from the Airtable "Answer Explanation" field (D12: dc_daily_page_content is
-// THE read path; Airtable is never in the take's hot path). Returns
-// { [puzzleType]: { take, byline } }. Fails soft to {} on any missing
-// config / table / row so the lobby never hard-fails on the take.
+// from the Airtable "Faraday Take" field (a dedicated editorial field, SEPARATE
+// from "Answer Explanation"; D12: dc_daily_page_content is THE read path so
+// Airtable is never in the take's hot path). Returns { [puzzleType]: { take,
+// byline } }. Fails soft to {} on any missing config / table / row so the lobby
+// never hard-fails on the take — the win screen then shows the explanation
+// fallback derived client-side from each puzzle's own content.
 async function fetchTodaysTakes() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) return {};
@@ -65,14 +67,14 @@ async function fetchTodaysTakes() {
     for (const p of puzzles) {
       if (!p || typeof p.puzzle_type !== "string") continue;
       const take =
-        typeof p.answer_explanation === "string" && p.answer_explanation.trim()
-          ? p.answer_explanation.trim()
+        typeof p.faradays_take === "string" && p.faradays_take.trim()
+          ? p.faradays_take.trim()
           : null;
-      if (!take) continue; // no take → nothing to attach (D14)
+      if (!take) continue; // no authored take → fall back to the explanation (D14)
       const byline =
         typeof p.take_byline === "string" && p.take_byline.trim()
           ? p.take_byline.trim()
-          : null; // null → the component defaults to Gilbert Faraday (D13)
+          : null; // null → the component defaults the byline by game type (D13)
       out[p.puzzle_type] = { take, byline };
     }
     return out;

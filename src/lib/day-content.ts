@@ -17,10 +17,16 @@
 //      and returns the dc_daily_page_content row to upsert.
 //
 // Airtable field CONTRACT (by NAME — the sync reads name-keyed fields because
-// two of them don't exist yet and so have no stable field id):
+// several of them don't exist yet and so have no stable field id):
 //   "Puzzle Type" · "Puzzle Name" · "Public ID" · "Puzzle Content" ·
 //   "Hint 1" · "Hint 2" · "Hint 3"                    — exist today
 //   "Answer Explanation" (long text)                  — Phase-1 prerequisite,
+//                                                       feeds the Answers page.
+//   "Faraday Take" (long text) · "Take Byline"        — FAR-389: the editorial
+//                                                       verdict + optional voice
+//                                                       override for the win
+//                                                       screen. SEPARATE from
+//                                                       "Answer Explanation".
 //   "Domain" / "Sub-Domain" (links to IDF registries) — added by Myke in
 //                                                       Airtable (FAR-178);
 //                                                       absent → nulls, never
@@ -69,9 +75,12 @@ export interface DayPuzzleEntry {
   topic: string | null;
   hints: string[]; // Hint 1..3 from the bank, in order, empties dropped
   answer: unknown | null; // structured, per-type — see extractAnswer
-  answer_explanation: string | null; // Phase-1 field; null until it exists.
-  // FAR-389: also THE "Faraday's Take" text — rendered on the completion screen.
-  take_byline: string | null; // optional byline (FAR-389 D13); null → Gilbert Faraday
+  answer_explanation: string | null; // Answers page; null until the field exists.
+  // FAR-389: the editorial "Faraday's Take" rendered on the completion screen —
+  // a SEPARATE field from answer_explanation (that one justifies the answer;
+  // this is a single voiced verdict for the whole puzzle). null until authored.
+  faradays_take: string | null;
+  take_byline: string | null; // optional voice override (FAR-389 D13); null → by game type
   domain_code: string | null; // IDF domain id ("D2"); null until FAR-178
   academy: AcademyCourseRef | null;
 }
@@ -354,8 +363,10 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
         .filter((h): h is string => !!h),
       answer: extractAnswer(type, content),
       answer_explanation: str(record.fields["Answer Explanation"]),
-      // Optional byline field (FAR-389 D13). Absent in Airtable today → null →
-      // the FaradaysTake component defaults the byline to Gilbert Faraday.
+      // FAR-389: the voiced Take + its optional voice override. Both absent in
+      // Airtable today → null → the win screen shows the explanation fallback
+      // (deriveTakeFallback) and defaults the byline by game type.
+      faradays_take: str(record.fields["Faraday Take"]),
       take_byline: str(record.fields["Take Byline"]),
       domain_code: domainCode,
       academy,

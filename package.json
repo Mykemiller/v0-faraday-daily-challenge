@@ -11,6 +11,7 @@
     "test:tokenomics": "node --test 'src/lib/tokenomics/**/*.test.ts'",
     "test:contrast": "node scripts/contrast-check.mjs",
     "test:signal-drop": "node --experimental-default-type=module --test src/lib/signal-drop.test.js",
+    "test:take": "node --test src/lib/faradays-take.test.ts",
     "test:no-codes": "node --test scripts/no-idf-codes-check.mjs",
     "test:scoring-reset": "node --test src/lib/league-office/scoring-reset-logic.test.mjs"
   },
