@@ -3,7 +3,7 @@ import SiteHeaderNav from "@/components/SiteHeaderNav";
 
 export const metadata = {
   title: "Tips and Tricks · Faraday Daily Challenge",
-  description: "Strategy notes for each of the seven daily games — how regulars keep streaks alive and squeeze out the points.",
+  description: "Strategy notes for each of the seven daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
 };
 
 // Help & Feedback → Tips and Tricks. One strategy card per game format
@@ -48,8 +48,8 @@ export default function TipsPage() {
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Tips &amp; Tricks</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">
-          Seven games, seven habits. A little strategy per format is how regulars keep streaks alive
-          and squeeze out the last points.
+          Seven games, seven habits. A little strategy per format is how regulars keep their
+          Intelligence Readiness up and squeeze out the last points.
         </p>
 
         <div className="mt-8 space-y-4">
@@ -72,7 +72,7 @@ export default function TipsPage() {
         </div>
 
         <div className="mt-8 rounded-lg border border-gold/30 bg-gold/8 px-5 py-4 text-[14px] leading-relaxed text-near-black/80">
-          The single biggest score lever is showing up daily — streaks compound. New to a format?
+          The single biggest score lever is showing up daily — Intelligence Readiness compounds. New to a format?
           The <Link href="/help/hints" className="font-medium text-forest underline hover:text-gold">hints guide</Link>{" "}
           explains what each game&rsquo;s hint reveals.
         </div>

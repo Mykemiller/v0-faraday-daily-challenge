@@ -10,7 +10,7 @@ export default function MerchPage() {
   return (
     <DcStubPage
       title="Faraday Merchandise"
-      blurb="Wear the streak. Faraday merch is in the works."
+      blurb="Wear the Readiness. Faraday merch is in the works."
     >
       <p>The shop isn&rsquo;t open yet — check back soon.</p>
     </DcStubPage>

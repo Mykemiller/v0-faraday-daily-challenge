@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs, GAME_ACCENT } from "@/components/GameIcon";
 import { gameIconSvgString } from "@/components/gameIconSvg";
@@ -83,6 +83,31 @@ function getStreakMultiplier(streak) {
     if (streak >= STREAK_MULTIPLIERS[i].days) return STREAK_MULTIPLIERS[i];
   }
   return STREAK_MULTIPLIERS[0];
+}
+
+// FAR-393: Intelligence Readiness — the daily play streak reframed as an
+// institutional "readiness" state for the DC exec / investor / site-selector
+// audience. This is DISPLAY ONLY: the underlying day counter and its scoring
+// multiplier (getStreakMultiplier/calcScore) are unchanged. Milestone token
+// rewards (5-day: +1 Faraday token; 10-day: +3) are granted SERVER-SIDE in
+// /api/score → dc_grant_readiness_reward; the client never mints token value.
+const READINESS_TIERS = [
+  { days: 10, label: "Readiness: Elevated" },
+  { days: 5,  label: "Readiness: Active"   },
+  { days: 3,  label: "Readiness: Building" },
+  { days: 0,  label: "Readiness: Baseline" },
+];
+function readinessTier(streak) {
+  const s = streak || 0;
+  for (const t of READINESS_TIERS) if (s >= t.days) return t;
+  return READINESS_TIERS[READINESS_TIERS.length - 1];
+}
+// Human copy for a fired milestone reward (from /api/score `readinessReward`).
+function readinessRewardMessage(reward) {
+  if (!reward || !reward.ok) return null;
+  const n = Number(reward.granted) || 0;
+  const unit = n === 1 ? "Faraday token" : "Faraday tokens";
+  return `Intelligence Readiness milestone — ${reward.threshold}-day. +${n} ${unit} added to your wallet.`;
 }
 
 function calcScore({ basePoints, maxPoints, timeElapsed, timeLimit, perfect, streak }) {
@@ -588,11 +613,20 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
+// FAR-388: per-game-type solve-time percentile bands (from /api/challenge/today),
+// consumed by ScoreCard's Market Reaction band. Null until the today fetch
+// resolves — resolveMarketReaction then falls back to seed par times, so the band
+// still renders. Context (not prop-threading) because ScoreCard is the sole
+// consumer, nested inside all 7 game components.
+const SolveBandsContext = createContext(null);
+
 function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
-  const reaction = resolveMarketReaction(puzzleType, elapsedSec);
+  // Prefers per-game-type percentile bands when available; else seed par times.
+  const solveBands = useContext(SolveBandsContext);
+  const reaction = resolveMarketReaction(puzzleType, elapsedSec, solveBands);
   const reactionColor = reaction
     ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
     : C.muted;
@@ -642,15 +676,19 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
             {reaction.label}
           </div>
           <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-            {reaction.elapsedSec}s · par {reaction.parSec}s
+            {reaction.detail}
           </div>
         </div>
       )}
       <div style={{ background:`rgba(196,146,42,0.06)`, border:`1px solid rgba(196,146,42,0.2)`,
-        borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
+        borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px", alignItems:"center" }}>
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
-          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day streak</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day readiness</div>
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:"12px", fontWeight:600, color:C.sage, ...sans }}>{readinessTier(streak).label}</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>Intelligence Readiness</div>
         </div>
       </div>
       <div style={{ display:"flex", gap:"10px" }}>
@@ -658,7 +696,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-        Score includes {getStreakMultiplier(streak).mult}× streak multiplier
+        Score includes {getStreakMultiplier(streak).mult}× Readiness multiplier
       </div>
     </div>
   );
@@ -742,7 +780,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         </>
       )}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -923,7 +961,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
       )}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}}
-        onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won })}
+        onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1086,7 +1124,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
         Ranking by: {puzzle.metric}
       </div>
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1191,7 +1229,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1291,7 +1329,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1380,7 +1418,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   }, [selectedTerm, selectedDef]);
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs })}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs }, elapsedSec)}
     isNew7Day={streak===6} />;
 
   return (
@@ -1488,7 +1526,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1950,7 +1988,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         <div style={labelStyle}>Stats</div>
         <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
           {[
-            { label:"🔥 Day Streak", value: streak },
+            { label:"⚡ Intelligence Readiness", value: `${streak}d` },
             { label:"Today", value: `${todayScore} pts` },
             { label:"Season", value: `${seasonScore} pts` },
           ].map(s => (
@@ -2657,6 +2695,9 @@ export default function DailyChallenge() {
   // persistence belongs to the subscriber session (Supabase) and is wired
   // separately; we never seed these with fabricated values. (FAR-63 stats AC.)
   const [streak,     setStreak]     = useState(0);
+  // FAR-393: transient banner for a fired Intelligence Readiness token reward
+  // (server-confirmed via /api/score `readinessReward`). Null = nothing to show.
+  const [readinessReward, setReadinessReward] = useState(null);
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
@@ -2708,6 +2749,9 @@ export default function DailyChallenge() {
   // so the lobby always renders all 7 games even if Airtable is unreachable.
   const [livePuzzles,  setLivePuzzles]  = useState({});
   const [tipOfTheDay,  setTipOfTheDay]  = useState(null);
+  // FAR-388: per-game-type solve-time percentile bands, served alongside today's
+  // puzzles. null until resolved → Market Reaction band uses seed par times.
+  const [solveBands,   setSolveBands]   = useState(null);
 
   // Show the welcome splash once per browser. Runs on mount only, so it is
   // SSR-safe (localStorage is never touched during render).
@@ -2730,6 +2774,7 @@ export default function DailyChallenge() {
         if (cancelled || !data) return;
         if (data.puzzles && typeof data.puzzles === "object") setLivePuzzles(data.puzzles);
         if (data.tip) setTipOfTheDay(data.tip);
+        if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
       })
       .catch(() => { /* keep mock fallback */ });
     return () => { cancelled = true; };
@@ -2947,6 +2992,7 @@ export default function DailyChallenge() {
     setHandle(null);
     setSessionToken(null);
     setStreak(0);
+    setReadinessReward(null);
     setDailyResults({});
     setOptedOut(false);
     setScreen("lobby");
@@ -2963,7 +3009,7 @@ export default function DailyChallenge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function onGameComplete(score, puzzleSnapshot, result) {
+  function onGameComplete(score, puzzleSnapshot, solveSeconds) {
     const playedGame = activeGame;
     setLastScore(score);
     // Record locally for one-play enforcement + replay state
@@ -2997,6 +3043,13 @@ export default function DailyChallenge() {
         const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${playedGame}`) || "0", 10);
         if (!Number.isNaN(v)) hintsUsed = Math.max(0, Math.min(3, v));
       } catch { /* storage disabled */ }
+      // FAR-388: elapsed solve time (seconds), analytics-only. Persisted additively
+      // by complete-puzzle; feeds the Market Reaction Speed band's percentile
+      // recompute. Only forwarded when it's a usable positive number.
+      const solveSecondsOut =
+        typeof solveSeconds === "number" && Number.isFinite(solveSeconds) && solveSeconds > 0
+          ? solveSeconds
+          : null;
       // Authoritative score write — enforces one-attempt-per-day + leaderboard_daily.
       fetch(`/api/score`, {
         method: "POST",
@@ -3007,6 +3060,7 @@ export default function DailyChallenge() {
           score,
           result: "win",
           hintsUsed,
+          ...(solveSecondsOut !== null ? { solveSeconds: solveSecondsOut } : {}),
         }),
       })
         .then(r => r.json())
@@ -3016,6 +3070,10 @@ export default function DailyChallenge() {
           if (typeof data?.runningDailyTotal === "number") {
             setLastDailyTotal(data.runningDailyTotal);
           }
+          // FAR-393: surface a milestone token reward only when the server
+          // actually granted one (5/10-day). Server-authoritative — never derived
+          // from the client streak.
+          if (data?.readinessReward?.ok) setReadinessReward(data.readinessReward);
           refreshLeaderboard();
         })
         .catch(() => { /* offline — keep optimistic counters */ });
@@ -3088,6 +3146,26 @@ export default function DailyChallenge() {
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       {showSplash && <SplashScreen onEnter={dismissSplash} />}
       <GameIconDefs />
+
+      {/* FAR-393: Intelligence Readiness reward banner — shown only when the
+          server confirmed a milestone token grant this session. Dismissible. */}
+      {readinessReward && (
+        <div
+          role="status"
+          onClick={() => setReadinessReward(null)}
+          style={{ position:"fixed", top:"14px", left:"50%", transform:"translateX(-50%)",
+            zIndex:200, maxWidth:"92vw", cursor:"pointer",
+            background:C.forest, color:C.cream, border:`1px solid ${C.gold}`,
+            borderRadius:"10px", padding:"12px 18px", boxShadow:"0 6px 24px rgba(0,0,0,0.35)",
+            display:"flex", alignItems:"center", gap:"10px", ...sans }}
+        >
+          <span style={{ fontSize:"18px" }} aria-hidden>⚡</span>
+          <span style={{ fontSize:"13px", fontWeight:600 }}>
+            {readinessRewardMessage(readinessReward)}
+          </span>
+          <span style={{ fontSize:"12px", color:C.gold, marginLeft:"4px" }} aria-hidden>✕</span>
+        </div>
+      )}
 
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
       <div style={{ height:"2px", background:C.gold }} />
@@ -3184,7 +3262,7 @@ export default function DailyChallenge() {
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
-                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · Score: {lastDailyTotal}
+                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day Readiness · Score: {lastDailyTotal}
                 · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
@@ -3307,7 +3385,9 @@ export default function DailyChallenge() {
                 // tiles/order/shuffled-defs from the mock puzzle never re-run,
                 // leaving stale tiles while the title/hints/scoring use the live
                 // puzzle. Falls back to a per-game key when there is no publicId.
-                <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                <SolveBandsContext.Provider value={solveBands}>
+                  <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                </SolveBandsContext.Provider>
               )}
             </div>
           );
