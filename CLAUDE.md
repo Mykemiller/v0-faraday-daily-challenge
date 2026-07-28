@@ -1,5 +1,30 @@
 @AGENTS.md
 
+## Daily Challenge domain = faradaydailychallenge.com (claude/dc-canonical-domain, 2026-07-28)
+
+**The Daily Challenge is canonical on `faradaydailychallenge.com` (+ `www`).** Every
+subscriber-facing DC link now uses it: the in-game share card + team invite
+(`SITE_URL`/`DC_URL`/`SHARE_URL` in `DailyChallenge.jsx`), the `/share` hub, the
+`/leaderboard` share text, and the **auth magic-link base** (`MAGIC_LINK_BASE` in
+`supabase/functions/register-with-magic-link` → `…/auth`, so the session is set on
+the same origin the player uses). This **amends the FAR-119 invariant** that had
+`faradaydailychallenge.com` 301-ing to `faraday-intelligence.ai/daily-challenge`.
+The **storefront / brand site + the other 7 products stay on `faraday-intelligence.ai`**
+— only DC-facing URLs moved.
+
+- **Two operational prerequisites, both outside the repo:**
+  1. **Vercel:** `faradaydailychallenge.com` (+ `www`) must be attached to the
+     **`v0-faraday-daily-challenge-n2u5`** project and **follow current production**.
+     It was found (2026-07-28) pinned to a stale pre-#101 deployment
+     (`dpl_AHvf9Hkq…`) — which is why the domain showed the old "Coming soon"
+     glossary while `faraday-intelligence.ai` served the finished page. Repoint /
+     un-pin it in the Vercel dashboard.
+  2. **Supabase:** redeploy `register-with-magic-link` so the new `MAGIC_LINK_BASE`
+     takes effect (merging the code alone does nothing — edge fns deploy separately).
+     One-time: subscribers who authed on the old origin will re-auth on the new one.
+- `vercel.json` rewrite (`/` on `(www.)?faradaydailychallenge.com` → `/daily-challenge`)
+  is retained — the branded apex opens the lobby.
+
 ## ⚠️ League Office auth kill-switch (owner-requested, 2026-07-28)
 
 The League Office staff gate can be fully **disabled** with one env var:

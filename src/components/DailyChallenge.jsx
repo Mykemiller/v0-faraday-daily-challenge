@@ -540,11 +540,11 @@ function NavPill({ icon, letter, label, onClick, active, hideLabel, size = 40, b
 }
 
 // ── Viral share — generated score card + device share/copy/download ───────────
-const SITE_URL = "https://faraday-intelligence.ai";
-const DC_URL = `${SITE_URL}/daily-challenge`;
+// The Daily Challenge is canonical on faradaydailychallenge.com — every
+// subscriber-facing DC link (share cards, team invites, deep links) uses it.
+const SITE_URL = "https://www.faradaydailychallenge.com";
+const DC_URL = SITE_URL;
 // Public-facing share domain — the short, memorable URL we hand to recipients.
-// faradaydailychallenge.com 301-redirects to the canonical /daily-challenge
-// route, so deep links resolve while the shared text stays brandable.
 const SHARE_URL = "https://www.faradaydailychallenge.com";
 
 // Load an SVG-string into an <Image> for canvas drawing. Resolves null on any

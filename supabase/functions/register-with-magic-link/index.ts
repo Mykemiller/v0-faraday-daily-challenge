@@ -6,7 +6,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // challenge@faradaydailychallenge.com apex 301-redirects and its SPF does not
 // authorize Resend's amazonses path — magic links from it risk spam-filing.
 const FROM_EMAIL = "challenge@faraday-intelligence.ai";
-const MAGIC_LINK_BASE = "https://www.faraday-intelligence.ai/auth";
+// DC auth lives on the canonical Daily Challenge domain so the session cookie /
+// localStorage is set on the same origin the player uses. Requires a redeploy of
+// this edge function to take effect (Supabase deploy, not a Vercel/git merge).
+const MAGIC_LINK_BASE = "https://www.faradaydailychallenge.com/auth";
 
 // Leaderboard V2 §5.1: same format the dc_subscribers_handle_format CHECK enforces.
 const HANDLE_RE = /^[a-z0-9_]{3,20}$/;
