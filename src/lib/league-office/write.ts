@@ -7,6 +7,11 @@
 // row — history is append-only, never deleted.
 
 import { type Svc } from "./service";
+import {
+  validateResetReason,
+  rpcErrorMessage,
+  resetSuccessMessage,
+} from "./scoring-reset-logic.mjs";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -161,11 +166,43 @@ export async function executeAction(
       return { ok: true, message: "Captain reassigned — logged to Audit Log." };
     }
 
+    case "scoring.reset_season":
+      return resetSeasonScoring(s, staffEmail, reason);
+
     case "audit.revert":
       return revertAction(s, staffEmail, input.auditId, reason);
 
     default:
       return { ok: false, message: `Unknown action: ${input.action}` };
+  }
+}
+
+// ── scoring: reset the active season to zero ─────────────────────────────────
+// Delegates the whole operation to the lo_reset_season_scoring() RPC so every
+// mutation + the audit row run in ONE transaction (atomic rollback on any
+// failure). The RPC resolves the active season itself and writes its own audit
+// row — do NOT also call writeAudit() here (that would double-log). Pure
+// decisions (reason validation, error/success copy) live in scoring-reset-logic.
+export async function resetSeasonScoring(
+  s: Svc,
+  staffEmail: string,
+  reason: string
+): Promise<ActionResult> {
+  const v = validateResetReason(reason);
+  if (!v.ok) return { ok: false, message: v.message ?? "A reason is required." };
+
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/lo_reset_season_scoring`, {
+      method: "POST",
+      headers: { ...s.headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_staff_email: staffEmail, p_reason: v.reason }),
+      cache: "no-store",
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) return { ok: false, message: rpcErrorMessage(j) };
+    return { ok: true, message: resetSuccessMessage(j ?? {}) };
+  } catch {
+    return { ok: false, message: "Reset failed — network error. Nothing was changed." };
   }
 }
 
