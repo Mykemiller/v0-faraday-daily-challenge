@@ -255,7 +255,7 @@ export default function AnswersTodayPage() {
 
         {typeof data?.play_streak === "number" && data.play_streak > 0 && (
           <p className="mt-6 rounded-lg border border-forest/10 bg-warm-cream/60 px-4 py-3 font-mono text-[12px] text-forest">
-            🔥 You&rsquo;re on a {data.play_streak}-day streak — tomorrow&rsquo;s set drops at midnight Central.
+            ⚡ You&rsquo;re on a {data.play_streak}-day Intelligence Readiness run — tomorrow&rsquo;s set drops at midnight Central.
           </p>
         )}
 

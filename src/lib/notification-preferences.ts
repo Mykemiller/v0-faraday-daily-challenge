@@ -23,9 +23,9 @@ export const NOTIFICATION_CATEGORIES = [
     description: "Nudge me before today's challenge closes",
   },
   {
-    id: "streak_at_risk",
-    label: "Streak at risk",
-    description: "Warn me when my streak is about to break",
+    id: "streak_at_risk", // fixed contract key — do NOT rename (see CLAUDE.md)
+    label: "Readiness at risk",
+    description: "Warn me when my Intelligence Readiness is about to break",
   },
   {
     id: "teammate_completed",

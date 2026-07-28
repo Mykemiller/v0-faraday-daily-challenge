@@ -271,3 +271,108 @@ Whichever wallet D2 selects, AC#2 should assert against that **one** wallet.
 - Wallet keying: grep of `/api/live-agent/route.ts` (`dc_sessions → subscriber_id → live_agent_debit`).
 
 No schema changes, no UI changes, no writes were made in Phase 0.
+
+---
+
+# Phase 1 — Implemented (decisions D1–D5 confirmed by Myke 2026-07-28)
+
+**Confirmed:** D1 = key off `play_streak`; D2/D5 = **one Faraday wallet**
+(`live_agent_token_ledger`, keyed to `dc_subscribers.id`); D3 = agreed (adapted —
+see below); D4 = **descope** the 10-day brief to a token grant.
+
+## Final design
+
+**Single Faraday wallet with a durable bonus balance.** Migration
+`supabase/migrations/20260728120000_far393_readiness_rewards.sql` (**applied to prod
+`ycadmmngkdhvpcsrcuaq` 2026-07-28**):
+
+1. **`live_agent_token_ledger.bonus_balance`** (int, default 0) — the durable reward
+   balance. It is **not** wiped by the monthly plan reset, is **spent before** the plan
+   balance, and is **spendable by the free tier** — so a Daily Challenge player who never
+   pays can spend earned tokens on real Live-Agent intelligence. This is the "real
+   intelligence value" the ticket asked for.
+2. **`dc_streak_grants`** — grant audit + idempotency log, keyed to `dc_subscribers.id`.
+   Necessary because `token_transactions` **cannot** hold DC-player grants (its FK points at
+   the empty `subscribers` table — Phase-0 §4/§5), so the JW-wallet audit trail can't be
+   reused. RLS-on / deny-all (service role + SECURITY-DEFINER RPC only) — matches the
+   `live_agent_*` posture.
+3. **`dc_grant_readiness_reward(p_subscriber, p_threshold)`** — the **only** sanctioned
+   grant path. Server-verifies the streak against `dc_subscribers.play_streak` (never trusts
+   the caller), enforces the **no-backfill epoch** and **abuse caps**, credits `bonus_balance`,
+   and logs the grant. Idempotent per window.
+4. **`live_agent_debit`** rewritten to spend `bonus_balance` first and let any tier spend it;
+   the monthly reset still only touches the plan `balance`.
+
+**D3 adaptation (as flagged):** the ticket's `tokens_burned = -1` / `kind='streak_grant'`
+convention is **DB-rejected** (`CHECK tokens_burned >= 0`; `CHECK kind IN
+('unlock','grant','adjustment')`) — and `token_transactions` is the wrong wallet for a DC
+player anyway (D2). So grants land on the single Faraday wallet (`bonus_balance`) with a
+dedicated audit log, **no `token_transactions` write and no `kind` enum change**. This
+honors D3's intent (positive-amount grant, audited via `ref_id`-equivalent
+`play_streak_at_grant`/`grant_date`) without the DB-blocked overload.
+
+## Reward ladder (built)
+
+| Streak | Reward | Mechanism | Cap |
+|---|---|---|---|
+| 3 days | Cosmetic "Readiness: Building" label — no wallet write | client display only | — |
+| 5 days | **+1 Faraday token** | `dc_grant_readiness_reward(…,5)` → `bonus_balance += 1` | once / rolling 30 days |
+| 10 days | **+3 Faraday tokens** (descoped from brief access, D4) | `dc_grant_readiness_reward(…,10)` → `bonus_balance += 3` | once / calendar week (Central) |
+
+Amounts (1 and 3) are provisional launch values — 3 ties to one Jurisdiction Watch unlock
+(`product_meters.jurisdiction_watch = 3`). Flag if you want different numbers.
+
+## Reset / no-backfill / anti-farm (built)
+
+- **Reset + timezone:** `America/Chicago` throughout, server-computed (matches
+  `complete-puzzle` / `/api/score`). Streak breaks lazily on the next completion via the
+  existing `play_streak_last_day` logic (unchanged).
+- **No pre-ship backfill:** a grant fires only if the streak **run started on/after the ship
+  epoch** (`2026-07-28`), computed as `last_day − (streak − 1) ≥ epoch`. A pre-existing
+  streak is never retroactively rewarded even as it grows. (Consequence: the earliest real
+  grant is 5 days after ship; validated the gate blocks a same-day 5-day streak whose run
+  started 2026-07-24.)
+- **Anti-farm:** break-and-rebuild can't re-mint — 5-day capped once / 30 days, 10-day once /
+  calendar week, checked against `dc_streak_grants` server-side (not client).
+
+## Wiring (built)
+
+- **`/api/score`** (authoritative, service-role): after `complete-puzzle` returns the new
+  `playStreak`, if it is exactly 5 or 10 the route calls `dc_grant_readiness_reward` and
+  returns `readinessReward` only when a grant actually fired. This is the only client-reachable
+  trigger and it is still fully DB-verified.
+- **`DailyChallenge.jsx`**: streak reframed as **Intelligence Readiness** (win-screen chip +
+  tier label, multiplier line, account stat, lobby status line); a server-confirmed reward
+  shows a dismissible banner. Scoring (`calcScore` / `getStreakMultiplier`) is **untouched**.
+- **Copy rename** across `/account`, `/account/notifications` (label only — the
+  `streak_at_risk` key is a fixed contract), `/challenge/answers`, `/help/[topic]`, `/merch`,
+  `OTPGate`, `teasers` — no subscriber-facing "streak" wording remains. (`league-office/*` is
+  internal admin tooling and intentionally unchanged.)
+
+## Validation (live, then cleaned up)
+
+Exercised end-to-end against a throwaway subscriber on prod, all rows removed after:
+- 5-day → `+1`, `bonus_balance = 1`, one `dc_streak_grants` row. ✅
+- Re-trigger 5-day within 30 days → `already_granted_in_window` (no duplicate). ✅
+- **Real** function on a same-day 5-day streak → `pre_ship_streak` (no-backfill gate). ✅
+- 10-day → `+3`, `bonus_balance = 4`; weekly re-trigger → blocked. ✅
+- Free-tier `live_agent_debit`: spends bonus (idempotent replay = no double charge), drains
+  to `not_entitled`. ✅
+- Post-run: `live_agent_token_ledger` / `dc_streak_grants` / `token_transactions` all 0 rows;
+  self-test fn dropped. ✅
+- **`get_advisors` (security):** the only line touching this change is one INFO
+  `rls_enabled_no_policy` on `dc_streak_grants` (intended deny-all). Both new functions set
+  `search_path` (absent from the mutable-search-path warnings). **No new RLS gaps.** ✅
+- **`npm run build`** green.
+
+## Acceptance criteria → status
+
+- Streak reads "Intelligence Readiness" everywhere subscriber-facing — ✅
+- 5-day → exactly one token, verified by a grant row + a `live_agent_token_ledger` balance
+  increase — ✅ (single-wallet form per D5; not `token_transactions`, which can't key a DC
+  player)
+- 10-day → capped once per subscriber per calendar week — ✅ (reward is a token grant per D4)
+- Reset at the confirmed TZ boundary — ✅ (America/Chicago, unchanged logic)
+- No pre-ship streak rewarded — ✅ (epoch/run-start gate)
+- Re-trigger 5-day within 30 days → no duplicate — ✅
+- `get_advisors` after schema change → no new RLS gaps — ✅
