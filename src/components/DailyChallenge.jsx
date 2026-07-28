@@ -2529,6 +2529,7 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       { label: "Hints Today",             href: "/challenge/hints" },
       { label: "About Today's Challenge", href: "/challenge/about" },
       { label: "Answers Today",           href: "/challenge/answers" },
+      { label: "Faraday's Take",           href: "/challenge/signals" },
     ]},
     { id: "compete", icon: "trophy", label: "Compete", items: [
       { label: "Leaderboard — Today",  href: "/leaderboard" },  // TODO: no today-only view yet → season board (shows a Today column)
