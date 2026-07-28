@@ -13,11 +13,11 @@ const TOPICS: Record<string, { title: string; blurb: string; note?: string }> = 
   },
   tips: {
     title: "Tips and Tricks",
-    blurb: "Strategy notes for each game format — how regulars keep streaks alive and squeeze out the bonus points.",
+    blurb: "Strategy notes for each game format — how regulars keep their Intelligence Readiness up and squeeze out the bonus points.",
   },
   questions: {
     title: "Questions",
-    blurb: "Frequently asked questions about scoring, streaks, teams, and the daily rotation.",
+    blurb: "Frequently asked questions about scoring, Intelligence Readiness, teams, and the daily rotation.",
   },
   glossary: {
     title: "Glossary",

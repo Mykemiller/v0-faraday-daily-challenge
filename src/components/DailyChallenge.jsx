@@ -645,7 +645,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
-          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day streak</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day readiness</div>
         </div>
       </div>
       <div style={{ display:"flex", gap:"10px" }}>
@@ -653,7 +653,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-        Score includes {getStreakMultiplier(streak).mult}× streak multiplier
+        Score includes {getStreakMultiplier(streak).mult}× readiness multiplier
       </div>
     </div>
   );
@@ -1945,7 +1945,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         <div style={labelStyle}>Stats</div>
         <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
           {[
-            { label:"🔥 Day Streak", value: streak },
+            { label:"Intelligence Readiness", value: streak },
             { label:"Today", value: `${todayScore} pts` },
             { label:"Season", value: `${seasonScore} pts` },
           ].map(s => (
@@ -3179,7 +3179,7 @@ export default function DailyChallenge() {
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
-                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · Score: {lastDailyTotal}
+                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day readiness · Score: {lastDailyTotal}
                 · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>

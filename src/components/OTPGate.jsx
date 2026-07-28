@@ -218,7 +218,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
 
   const headlines = {
     leaderboard: "You just scored. See where you rank.",
-    streak: "7-day streak — you're on a run.",
+    streak: "7-day Intelligence Readiness — you're on a run.",
     default: "Enter the game.",
   };
 

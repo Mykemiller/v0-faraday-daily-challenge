@@ -24,8 +24,8 @@ export const NOTIFICATION_CATEGORIES = [
   },
   {
     id: "streak_at_risk",
-    label: "Streak at risk",
-    description: "Warn me when my streak is about to break",
+    label: "Readiness at risk",
+    description: "Warn me when my Intelligence Readiness is about to lapse",
   },
   {
     id: "teammate_completed",

@@ -52,7 +52,7 @@ export function selectTeaser(ctx: TeaserContext): Teaser | null {
   if (ctx.registered && ctx.streak >= 3) {
     return {
       surface: "Live Agent",
-      copy: "On a streak — ask Faraday the question behind today's puzzle, live.",
+      copy: "Your Intelligence Readiness is building — ask Faraday the question behind today's puzzle, live.",
       href: "/live-agent",
       slot: "between-games",
     };
