@@ -80,6 +80,31 @@ function getStreakMultiplier(streak) {
   return STREAK_MULTIPLIERS[0];
 }
 
+// FAR-393: Intelligence Readiness — the daily play streak reframed as an
+// institutional "readiness" state for the DC exec / investor / site-selector
+// audience. This is DISPLAY ONLY: the underlying day counter and its scoring
+// multiplier (getStreakMultiplier/calcScore) are unchanged. Milestone token
+// rewards (5-day: +1 Faraday token; 10-day: +3) are granted SERVER-SIDE in
+// /api/score → dc_grant_readiness_reward; the client never mints token value.
+const READINESS_TIERS = [
+  { days: 10, label: "Readiness: Elevated" },
+  { days: 5,  label: "Readiness: Active"   },
+  { days: 3,  label: "Readiness: Building" },
+  { days: 0,  label: "Readiness: Baseline" },
+];
+function readinessTier(streak) {
+  const s = streak || 0;
+  for (const t of READINESS_TIERS) if (s >= t.days) return t;
+  return READINESS_TIERS[READINESS_TIERS.length - 1];
+}
+// Human copy for a fired milestone reward (from /api/score `readinessReward`).
+function readinessRewardMessage(reward) {
+  if (!reward || !reward.ok) return null;
+  const n = Number(reward.granted) || 0;
+  const unit = n === 1 ? "Faraday token" : "Faraday tokens";
+  return `Intelligence Readiness milestone — ${reward.threshold}-day. +${n} ${unit} added to your wallet.`;
+}
+
 function calcScore({ basePoints, maxPoints, timeElapsed, timeLimit, perfect, streak }) {
   const accuracy = maxPoints > 0 ? (basePoints / maxPoints) : 1;
   let score = Math.round(accuracy * BASE_SCORE);
@@ -642,10 +667,14 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         </div>
       )}
       <div style={{ background:`rgba(196,146,42,0.06)`, border:`1px solid rgba(196,146,42,0.2)`,
-        borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px" }}>
+        borderRadius:"8px", padding:"12px 20px", display:"flex", gap:"24px", alignItems:"center" }}>
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
-          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day streak</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day readiness</div>
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:"12px", fontWeight:600, color:C.sage, ...sans }}>{readinessTier(streak).label}</div>
+          <div style={{ fontSize:"11px", color:C.muted, ...mono }}>Intelligence Readiness</div>
         </div>
       </div>
       <div style={{ display:"flex", gap:"10px" }}>
@@ -653,7 +682,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-        Score includes {getStreakMultiplier(streak).mult}× streak multiplier
+        Score includes {getStreakMultiplier(streak).mult}× Readiness multiplier
       </div>
     </div>
   );
@@ -1945,7 +1974,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         <div style={labelStyle}>Stats</div>
         <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
           {[
-            { label:"🔥 Day Streak", value: streak },
+            { label:"⚡ Intelligence Readiness", value: `${streak}d` },
             { label:"Today", value: `${todayScore} pts` },
             { label:"Season", value: `${seasonScore} pts` },
           ].map(s => (
@@ -2652,6 +2681,9 @@ export default function DailyChallenge() {
   // persistence belongs to the subscriber session (Supabase) and is wired
   // separately; we never seed these with fabricated values. (FAR-63 stats AC.)
   const [streak,     setStreak]     = useState(0);
+  // FAR-393: transient banner for a fired Intelligence Readiness token reward
+  // (server-confirmed via /api/score `readinessReward`). Null = nothing to show.
+  const [readinessReward, setReadinessReward] = useState(null);
   const [gamesPlayed,setGamesPlayed]= useState(0);
   const [gateReason, setGateReason] = useState(null);
   const [lastScore,  setLastScore]  = useState(null);
@@ -2942,6 +2974,7 @@ export default function DailyChallenge() {
     setHandle(null);
     setSessionToken(null);
     setStreak(0);
+    setReadinessReward(null);
     setDailyResults({});
     setOptedOut(false);
     setScreen("lobby");
@@ -3011,6 +3044,10 @@ export default function DailyChallenge() {
           if (typeof data?.runningDailyTotal === "number") {
             setLastDailyTotal(data.runningDailyTotal);
           }
+          // FAR-393: surface a milestone token reward only when the server
+          // actually granted one (5/10-day). Server-authoritative — never derived
+          // from the client streak.
+          if (data?.readinessReward?.ok) setReadinessReward(data.readinessReward);
           refreshLeaderboard();
         })
         .catch(() => { /* offline — keep optimistic counters */ });
@@ -3083,6 +3120,26 @@ export default function DailyChallenge() {
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       {showSplash && <SplashScreen onEnter={dismissSplash} />}
       <GameIconDefs />
+
+      {/* FAR-393: Intelligence Readiness reward banner — shown only when the
+          server confirmed a milestone token grant this session. Dismissible. */}
+      {readinessReward && (
+        <div
+          role="status"
+          onClick={() => setReadinessReward(null)}
+          style={{ position:"fixed", top:"14px", left:"50%", transform:"translateX(-50%)",
+            zIndex:200, maxWidth:"92vw", cursor:"pointer",
+            background:C.forest, color:C.cream, border:`1px solid ${C.gold}`,
+            borderRadius:"10px", padding:"12px 18px", boxShadow:"0 6px 24px rgba(0,0,0,0.35)",
+            display:"flex", alignItems:"center", gap:"10px", ...sans }}
+        >
+          <span style={{ fontSize:"18px" }} aria-hidden>⚡</span>
+          <span style={{ fontSize:"13px", fontWeight:600 }}>
+            {readinessRewardMessage(readinessReward)}
+          </span>
+          <span style={{ fontSize:"12px", color:C.gold, marginLeft:"4px" }} aria-hidden>✕</span>
+        </div>
+      )}
 
       {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
       <div style={{ height:"2px", background:C.gold }} />
@@ -3179,7 +3236,7 @@ export default function DailyChallenge() {
             {email && (
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
-                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day streak · Score: {lastDailyTotal}
+                {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day Readiness · Score: {lastDailyTotal}
                 · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
