@@ -16,6 +16,7 @@ const PRIMARY: Item[] = [
   { icon: "⛨", label: "Teams", href: "/league-office/teams" },
   { icon: "▦", label: "Leagues & Conferences", href: "/league-office/leagues" },
   { icon: "◷", label: "Seasons", href: "/league-office/seasons" },
+  { icon: "⧗", label: "Scoring", href: "/league-office/scoring" },
   { icon: "✎", label: "Puzzle & Hint Admin", href: "/league-office/puzzles" },
 ];
 const TOOLS: Item[] = [

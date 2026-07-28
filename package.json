@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:contrast": "node scripts/contrast-check.mjs",
     "test:signal-drop": "node --experimental-default-type=module --test src/lib/signal-drop.test.js",
-    "test:no-codes": "node --test scripts/no-idf-codes-check.mjs"
+    "test:no-codes": "node --test scripts/no-idf-codes-check.mjs",
+    "test:scoring-reset": "node --test src/lib/league-office/scoring-reset-logic.test.mjs"
   },
   "dependencies": {
     "next": "16.2.3",
