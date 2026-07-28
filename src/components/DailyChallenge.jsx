@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon, { GameIconDefs, GAME_NEON } from "@/components/GameIcon";
 import { gameIconSvgString } from "@/components/gameIconSvg";
@@ -608,11 +608,20 @@ async function shareViaDevice({ title, text, url, blob, filename }) {
 }
 
 // ── Score display ─────────────────────────────────────────────────────────────
+// FAR-388: per-game-type solve-time percentile bands (from /api/challenge/today),
+// consumed by ScoreCard's Market Reaction band. Null until the today fetch
+// resolves — resolveMarketReaction then falls back to seed par times, so the band
+// still renders. Context (not prop-threading) because ScoreCard is the sole
+// consumer, nested inside all 7 game components.
+const SolveBandsContext = createContext(null);
+
 function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
-  const reaction = resolveMarketReaction(puzzleType, elapsedSec);
+  // Prefers per-game-type percentile bands when available; else seed par times.
+  const solveBands = useContext(SolveBandsContext);
+  const reaction = resolveMarketReaction(puzzleType, elapsedSec, solveBands);
   const reactionColor = reaction
     ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
     : C.muted;
@@ -662,7 +671,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
             {reaction.label}
           </div>
           <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-            {reaction.elapsedSec}s · par {reaction.parSec}s
+            {reaction.detail}
           </div>
         </div>
       )}
@@ -766,7 +775,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         </>
       )}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -947,7 +956,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
       )}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}}
-        onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won })}
+        onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1110,7 +1119,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
         Ranking by: {puzzle.metric}
       </div>
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1215,7 +1224,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1315,7 +1324,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -1404,7 +1413,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
   }, [selectedTerm, selectedDef]);
 
   if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs })}
+    streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs }, elapsedSec)}
     isNew7Day={streak===6} />;
 
   return (
@@ -1512,7 +1521,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
         </div>
       ))}
       <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} puzzleName={puzzle.name} publicId={puzzle.__publicId}
-        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers })}
+        streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
   );
@@ -2735,6 +2744,9 @@ export default function DailyChallenge() {
   // so the lobby always renders all 7 games even if Airtable is unreachable.
   const [livePuzzles,  setLivePuzzles]  = useState({});
   const [tipOfTheDay,  setTipOfTheDay]  = useState(null);
+  // FAR-388: per-game-type solve-time percentile bands, served alongside today's
+  // puzzles. null until resolved → Market Reaction band uses seed par times.
+  const [solveBands,   setSolveBands]   = useState(null);
 
   // Show the welcome splash once per browser. Runs on mount only, so it is
   // SSR-safe (localStorage is never touched during render).
@@ -2757,6 +2769,7 @@ export default function DailyChallenge() {
         if (cancelled || !data) return;
         if (data.puzzles && typeof data.puzzles === "object") setLivePuzzles(data.puzzles);
         if (data.tip) setTipOfTheDay(data.tip);
+        if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
       })
       .catch(() => { /* keep mock fallback */ });
     return () => { cancelled = true; };
@@ -2991,7 +3004,7 @@ export default function DailyChallenge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function onGameComplete(score, puzzleSnapshot, result) {
+  function onGameComplete(score, puzzleSnapshot, solveSeconds) {
     const playedGame = activeGame;
     setLastScore(score);
     // Record locally for one-play enforcement + replay state
@@ -3025,6 +3038,13 @@ export default function DailyChallenge() {
         const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${playedGame}`) || "0", 10);
         if (!Number.isNaN(v)) hintsUsed = Math.max(0, Math.min(3, v));
       } catch { /* storage disabled */ }
+      // FAR-388: elapsed solve time (seconds), analytics-only. Persisted additively
+      // by complete-puzzle; feeds the Market Reaction Speed band's percentile
+      // recompute. Only forwarded when it's a usable positive number.
+      const solveSecondsOut =
+        typeof solveSeconds === "number" && Number.isFinite(solveSeconds) && solveSeconds > 0
+          ? solveSeconds
+          : null;
       // Authoritative score write — enforces one-attempt-per-day + leaderboard_daily.
       fetch(`/api/score`, {
         method: "POST",
@@ -3035,6 +3055,7 @@ export default function DailyChallenge() {
           score,
           result: "win",
           hintsUsed,
+          ...(solveSecondsOut !== null ? { solveSeconds: solveSecondsOut } : {}),
         }),
       })
         .then(r => r.json())
@@ -3359,7 +3380,9 @@ export default function DailyChallenge() {
                 // tiles/order/shuffled-defs from the mock puzzle never re-run,
                 // leaving stale tiles while the title/hints/scoring use the live
                 // puzzle. Falls back to a per-game key when there is no publicId.
-                <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                <SolveBandsContext.Provider value={solveBands}>
+                  <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                </SolveBandsContext.Provider>
               )}
             </div>
           );
