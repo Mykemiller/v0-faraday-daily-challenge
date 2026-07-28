@@ -25,6 +25,23 @@ The **storefront / brand site + the other 7 products stay on `faraday-intelligen
 - `vercel.json` rewrite (`/` on `(www.)?faradaydailychallenge.com` → `/daily-challenge`)
   is retained — the branded apex opens the lobby.
 
+## ⚠️ League Office auth kill-switch (owner-requested, 2026-07-28)
+
+The League Office staff gate can be fully **disabled** with one env var:
+`NEXT_PUBLIC_LEAGUE_OFFICE_OPEN=1` (or `true`). When set, both the client
+`StaffGate` and the server `requireStaff()` bypass all session/allowlist checks and
+grant commissioner access to **anyone** with the URL — on the public production
+domain. This exposes player PII and the destructive Tier 2 actions (reset season
+scoring, pause accounts, …). A red "Authorization is DISABLED" banner renders while
+it's open, and any audited write is attributed to `auth-disabled@league-office.local`.
+
+- **Default (env unset) = gate fully enforced** (mykemiller@gmail.com only), exactly
+  as before. Merging the code alone changes nothing.
+- **Open it:** set the env in Vercel + redeploy. **Restore it:** delete the env +
+  redeploy (`NEXT_PUBLIC_` is inlined at build, so a redeploy is required either way).
+- One `NEXT_PUBLIC_` flag drives both layers, so you can't open one and forget the
+  other. Helper: `isLeagueOfficeOpen()` in `src/lib/league-office/constants.ts`.
+
 ## Intelligence Readiness rewards (FAR-393, claude/intelligence-readiness-streak-lsaa9m, 2026-07-28)
 
 The daily play **streak** is reframed subscriber-side as **"Intelligence Readiness"**
