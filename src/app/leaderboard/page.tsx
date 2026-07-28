@@ -267,7 +267,7 @@ export default function LeaderboardPage() {
 
   async function share() {
     if (!you) return;
-    const text = `${you.total_points.toLocaleString()} pts · #${you.rank} on the Faraday season leaderboard — faraday-intelligence.ai/leaderboard`;
+    const text = `${you.total_points.toLocaleString()} pts · #${you.rank} on the Faraday season leaderboard — faradaydailychallenge.com/leaderboard`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try { await navigator.share({ text }); } catch { /* cancelled */ }
     } else {

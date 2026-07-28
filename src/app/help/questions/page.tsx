@@ -3,7 +3,7 @@ import SiteHeaderNav from "@/components/SiteHeaderNav";
 
 export const metadata = {
   title: "Questions · Faraday Daily Challenge",
-  description: "Frequently asked questions about scoring, streaks, teams, and the daily rotation.",
+  description: "Frequently asked questions about scoring, Intelligence Readiness, teams, and the daily rotation.",
 };
 
 // Help & Feedback → Questions. Static FAQ using native <details> so it works
@@ -28,9 +28,9 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
       <Link href="/help/hints" className="text-forest underline hover:text-gold">hints guide</Link> for details.</>,
   },
   {
-    q: "What is a streak?",
-    a: <>Your streak counts consecutive days you&rsquo;ve played. Miss a day and it resets. Streaks
-      are about showing up — they&rsquo;re shown on your <Link href="/account" className="text-forest underline hover:text-gold">account</Link>.</>,
+    q: "What is Intelligence Readiness?",
+    a: <>Intelligence Readiness counts consecutive days you&rsquo;ve played. Miss a day and it resets.
+      It&rsquo;s about showing up — it&rsquo;s shown on your <Link href="/account" className="text-forest underline hover:text-gold">account</Link>.</>,
   },
   {
     q: "How do teams work?",
@@ -48,12 +48,12 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "How do I stop playing without losing my history?",
     a: <>Use <strong>Leave the game</strong> on your <Link href="/account" className="text-forest underline hover:text-gold">account</Link>.
-      It&rsquo;s a soft opt-out: your streak and history are kept, you&rsquo;re hidden from leaderboards,
+      It&rsquo;s a soft opt-out: your Intelligence Readiness and history are kept, you&rsquo;re hidden from leaderboards,
       and you can rejoin anytime. Nothing is deleted.</>,
   },
   {
     q: "Do I need an account to play?",
-    a: <>No — you can play anonymously. Signing in lets you keep your streak across devices, join teams,
+    a: <>No — you can play anonymously. Signing in lets you keep your Intelligence Readiness across devices, join teams,
       appear on the leaderboard, and unlock answers for puzzles you&rsquo;ve completed.</>,
   },
 ];
@@ -66,7 +66,7 @@ export default function QuestionsPage() {
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Questions</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">
-          The short answers to how the Daily Challenge works — scoring, streaks, teams, and the daily
+          The short answers to how the Daily Challenge works — scoring, Intelligence Readiness, teams, and the daily
           rotation.
         </p>
 
