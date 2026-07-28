@@ -471,37 +471,6 @@ export default function LeaderboardPage() {
             </div>
           )}
         </section>
-
-        {/* Admin testing utilities */}
-        <section className="mt-10 border-t border-red-200 pt-6">
-          <p className="mb-3 text-[11px] uppercase tracking-wide text-red-400">Admin · Testing Only</p>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={async () => {
-                if (!confirm("Reset ALL player scores? Cannot be undone.")) return;
-                const res = await fetch("/api/admin/reset-scores", { method: "POST" });
-                if (res.ok) { alert("All scores reset."); activeTab === "global" ? loadGlobal() : loadTeam(activeTab); }
-                else { const d = await res.json().catch(() => ({})); alert(`Reset failed: ${(d as {error?: string}).error ?? res.status}`); }
-              }}
-              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
-              className="rounded px-4 py-2 text-sm font-mono"
-            >
-              ⚠ Reset All Scores
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm("Delete all subscribers except 'myke'? Cannot be undone.")) return;
-                const res = await fetch("/api/admin/clear-subscribers", { method: "POST" });
-                if (res.ok) { alert("Subscribers cleared (myke preserved)."); loadGlobal(); }
-                else { const d = await res.json().catch(() => ({})); alert(`Clear failed: ${(d as {error?: string}).error ?? res.status}`); }
-              }}
-              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
-              className="rounded px-4 py-2 text-sm font-mono"
-            >
-              ⚠ Clear All Subscribers
-            </button>
-          </div>
-        </section>
       </main>
     </div>
   );

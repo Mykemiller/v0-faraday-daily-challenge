@@ -292,7 +292,7 @@ Myke reviewed the blockers and decided:
   from the ticket).
 
 ### What was built (this branch)
-- **`supabase/migrations/20260728000001_faraday_token_wallet.sql`** (additive,
+- **`supabase/migrations/20260728000002_faraday_token_wallet.sql`** (additive,
   reversible, **un-applied — apply at promotion**): the generic Faraday Token wallet,
   keyed to `dc_subscribers.id` (the identity behind every `dc_session`, so it sidesteps
   blocker B3 entirely — no `subscribers` bridge needed).
@@ -317,7 +317,7 @@ Myke reviewed the blockers and decided:
   reward ladder; no new tiers invented).
 
 ### Gated promotion steps (NOT done here — Supabase MCP was disconnected this session)
-1. Apply `20260728000001_faraday_token_wallet.sql` to `ycadmmngkdhvpcsrcuaq`.
+1. Apply `20260728000002_faraday_token_wallet.sql` to `ycadmmngkdhvpcsrcuaq`.
 2. Deploy the updated `complete-puzzle` edge fn (**after** step 1 — it calls the RPC).
 3. Run `get_advisors(security)` and diff against the baseline table above — confirm no
    new RLS gaps (the two new tables carry the intended `rls_enabled_no_policy` INFO

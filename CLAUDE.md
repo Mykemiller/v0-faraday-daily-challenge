@@ -19,7 +19,7 @@ no cron). Full Phase 0 investigation + blockers:
   `DailyChallenge.jsx`, no wallet write); **5-day = one generic Faraday Token**
   (Myke's 2026-07-28 call — usable at any Faraday storefront); **10-day = deferred**
   (no DC brief-access model; "Mach Eigen" is a byline persona, not a product).
-- **Faraday Token wallet** (`supabase/migrations/20260728000001_faraday_token_wallet.sql`,
+- **Faraday Token wallet** (`supabase/migrations/20260728000002_faraday_token_wallet.sql`,
   **additive/reversible, UN-APPLIED — apply at promotion**): a NEW generic wallet keyed
   to `dc_subscribers.id` — deliberately NOT the JW `token_transactions` (FK'd to the
   empty `subscribers` table; `tokens_burned>=0` + `kind` CHECKs) and NOT
