@@ -184,6 +184,9 @@ export async function POST(request: Request) {
     runningDailyTotal,
     playStreak: completionResult.playStreak ?? null,
     fullSetJustCompleted: completionResult.fullSetJustCompleted ?? false,
+    // FAR-393: forward the Intelligence Readiness reward (present only when a
+    // milestone paid out this completion). { ok, reason, amount, balance, ... }.
+    readinessReward: completionResult.readinessReward ?? null,
   });
 }
 

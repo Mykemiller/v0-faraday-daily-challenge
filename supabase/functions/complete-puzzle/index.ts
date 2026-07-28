@@ -162,11 +162,34 @@ Deno.serve(async (req: Request) => {
     });
     if (badgeErr) console.error("Badge assignment failed:", badgeErr);
 
+    // FAR-393 — Intelligence Readiness reward. On a FRESH 5-day readiness streak,
+    // grant one generic Faraday Token. The RPC is the financial guard: it re-reads
+    // dc_subscribers.play_streak and is idempotent + 30-day capped, so this call is
+    // safe to make unconditionally at the milestone and never trusts a client value.
+    // Fail-soft — a grant error must never fail the puzzle completion.
+    let readinessReward: Record<string, unknown> | null = null;
+    if (playIncrementingDay && newPlayStreak === 5) {
+      try {
+        const { data: grant, error: grantErr } = await sb.rpc("faraday_token_grant_streak", {
+          p_subscriber: session.subscriber_id,
+          p_streak: newPlayStreak,
+          p_play_date: puzzleDate,
+        });
+        if (grantErr) console.error("Readiness token grant failed:", grantErr);
+        else readinessReward = grant as Record<string, unknown>;
+      } catch (e) {
+        console.error("Readiness token grant threw:", e);
+      }
+    }
+
     return json({
       ok: true,
       fullSetJustCompleted,
       playStreak: newPlayStreak,
       fullSetStreak: newFullSetStreak,
+      // FAR-393: present only when a readiness milestone paid out this completion.
+      // { ok, reason, amount, balance, milestone, ref_id } — see faraday_token_grant_streak.
+      readinessReward,
     });
   } catch (e) {
     console.error("Unhandled error:", e);

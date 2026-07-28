@@ -80,6 +80,18 @@ function getStreakMultiplier(streak) {
   return STREAK_MULTIPLIERS[0];
 }
 
+// FAR-393 — Intelligence Readiness tier label (display only). Breakpoints match
+// the reward ladder (3/5/10); the 5-day tier pays out a Faraday Token server-side
+// (see faraday_token_grant_streak), the 3-day tier is recognition only, and the
+// 10-day tier is deferred. No new breakpoints — do not add tiers without a
+// decision (FAR-393 guardrail).
+function readinessTier(streak) {
+  if (streak >= 10) return "Readiness: Peak";
+  if (streak >= 5)  return "Readiness: Established";
+  if (streak >= 3)  return "Readiness: Building";
+  return null;
+}
+
 function calcScore({ basePoints, maxPoints, timeElapsed, timeLimit, perfect, streak }) {
   const accuracy = maxPoints > 0 ? (basePoints / maxPoints) : 1;
   let score = Math.round(accuracy * BASE_SCORE);
@@ -647,6 +659,11 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
           <div style={{ fontSize:"16px", fontWeight:700, color:C.gold, ...sans }}>{streak}</div>
           <div style={{ fontSize:"11px", color:C.muted, ...mono }}>day readiness</div>
         </div>
+        {readinessTier(streak) && (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:"11px", fontWeight:600, color:C.forest, ...mono }}>{readinessTier(streak)}</div>
+          </div>
+        )}
       </div>
       <div style={{ display:"flex", gap:"10px" }}>
         <Btn onClick={handleShare} variant="ghost" small>{shareLabel}</Btn>

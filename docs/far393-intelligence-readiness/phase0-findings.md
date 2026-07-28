@@ -279,6 +279,65 @@ The rename half changes no schema, so it introduces no advisor delta. Re-run
 `get_advisors(security)` after any grant-path DDL and confirm these counts do not
 grow.
 
+---
+
+## Phase 1 — build (per Myke's 2026-07-28 decisions)
+
+Myke reviewed the blockers and decided:
+- **5-day reward → a generic "Faraday Token" usable at any Faraday storefront** (not
+  the JW token, not literally a Live Agent token — a new cross-storefront currency).
+- **10-day reward → deferred** (no DC brief-access model exists; "Mach Eigen" is a
+  byline persona, not a product).
+- **3-day tier → display-only** ("Readiness: Building"), no wallet write (unchanged
+  from the ticket).
+
+### What was built (this branch)
+- **`supabase/migrations/20260728000001_faraday_token_wallet.sql`** (additive,
+  reversible, **un-applied — apply at promotion**): the generic Faraday Token wallet,
+  keyed to `dc_subscribers.id` (the identity behind every `dc_session`, so it sidesteps
+  blocker B3 entirely — no `subscribers` bridge needed).
+  - `faraday_token_ledger` (per-subscriber balance; earned, no monthly reset).
+  - `faraday_token_transactions` (append-only audit; `delta`>0 credit / <0 spend;
+    `kind IN ('streak_grant','spend','adjustment')`; unique `(subscriber_id, ref_id)`
+    for idempotency). **Note:** this is a *new* table, deliberately NOT the JW
+    `token_transactions` — so blockers B1/B2 (that table's `tokens_burned>=0` and
+    `kind` CHECKs) do not apply here.
+  - `faraday_token_grant_streak(p_subscriber, p_streak, p_play_date, p_amount=1)` —
+    SECURITY DEFINER, the financial guard: re-reads `dc_subscribers.play_streak` +
+    `play_streak_last_day` (rejects a stale or client-faked streak), idempotent
+    (`ref_id`), and **30-day capped** for the 5-day milestone. Only the 5-day tier
+    grants today; other values return `no_milestone`.
+  - `faraday_token_balance(p_subscriber)` read helper. RLS deny-all / service-role only.
+- **`complete-puzzle` edge fn:** on a **fresh** `newPlayStreak === 5`, calls
+  `faraday_token_grant_streak` (fail-soft — a grant error never fails the completion).
+  Returns `readinessReward` in the response.
+- **`/api/score`:** forwards `readinessReward` to the client.
+- **`DailyChallenge.jsx`:** `readinessTier()` renders the display-only tier label
+  ("Readiness: Building" at 3, "Established" at 5, "Peak" at 10 — breakpoints match the
+  reward ladder; no new tiers invented).
+
+### Gated promotion steps (NOT done here — Supabase MCP was disconnected this session)
+1. Apply `20260728000001_faraday_token_wallet.sql` to `ycadmmngkdhvpcsrcuaq`.
+2. Deploy the updated `complete-puzzle` edge fn (**after** step 1 — it calls the RPC).
+3. Run `get_advisors(security)` and diff against the baseline table above — confirm no
+   new RLS gaps (the two new tables carry the intended `rls_enabled_no_policy` INFO
+   deny-all posture; service role bypasses RLS).
+4. End-to-end validation: drive a subscriber to a fresh 5-day streak → confirm one
+   `faraday_token_transactions` (`kind='streak_grant'`) row + a `faraday_token_ledger`
+   balance increase; re-trigger within 30 days → `capped` (no duplicate).
+
+### Explicit follow-ons (out of FAR-393 scope)
+- **Cross-storefront redemption (spend):** the schema is spend-ready (negative `delta`,
+  `kind='spend'`, `product_key`) but no redeem RPC / storefront integration exists yet.
+- **Win-screen "token earned" celebration:** `readinessReward` is plumbed to the client;
+  a richer earned-token UI (beyond the tier label) is a small follow-on, kept minimal
+  here out of FAR-46 caution (do not publish meter/balance values).
+- **AC wording:** acceptance criterion 2's "`live_agent_token_ledger.balance` increase"
+  is superseded — the grant lands in `faraday_token_ledger` (the generic wallet), per
+  Myke's decision. Verify against that table.
+
+---
+
 ## Retired MW points — re-confirmed clean
 
 No subscriber-facing `mw_total` / `mw_balance` / `my_mw` columns. The MW currency

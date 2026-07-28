@@ -1,5 +1,39 @@
 @AGENTS.md
 
+## Intelligence Readiness + Faraday Token wallet (FAR-393, claude/intelligence-readiness-streak-i83sb3, 2026-07-28)
+
+Streaks are reframed as **"Intelligence Readiness"** and milestones pay out real
+intelligence value. **Streak SoT is `dc_subscribers.play_streak`** (written by
+`complete-puzzle`; `leaderboard_daily.streak` is only a mirror) on an
+**America/Chicago** day boundary with **lazy reset** (recomputed at next completion,
+no cron). Full Phase 0 investigation + blockers:
+`docs/far393-intelligence-readiness/phase0-findings.md`.
+
+- **Rename (shipped):** all subscriber-facing "streak" copy → "Intelligence
+  Readiness" (flame emoji dropped). Display only — the `play_streak` column,
+  `playStreak` API field, `streak` React prop, and the streak scoring multiplier are
+  untouched. The `notification_preferences` category id `streak_at_risk` is a fixed
+  contract key (label/description changed only). League Office admin surfaces keep
+  "streak" wording (internal, not subscriber-facing).
+- **Reward ladder:** 3-day = display-only "Readiness: Building" (`readinessTier()` in
+  `DailyChallenge.jsx`, no wallet write); **5-day = one generic Faraday Token**
+  (Myke's 2026-07-28 call — usable at any Faraday storefront); **10-day = deferred**
+  (no DC brief-access model; "Mach Eigen" is a byline persona, not a product).
+- **Faraday Token wallet** (`supabase/migrations/20260728000001_faraday_token_wallet.sql`,
+  **additive/reversible, UN-APPLIED — apply at promotion**): a NEW generic wallet keyed
+  to `dc_subscribers.id` — deliberately NOT the JW `token_transactions` (FK'd to the
+  empty `subscribers` table; `tokens_burned>=0` + `kind` CHECKs) and NOT
+  `live_agent_token_ledger` (Live-Agent-specific). Tables `faraday_token_ledger`
+  (balance) + `faraday_token_transactions` (append-only audit). Grant RPC
+  `faraday_token_grant_streak()` is the financial guard: re-reads
+  `dc_subscribers.play_streak`/`play_streak_last_day` (never trusts the client),
+  idempotent by `ref_id`, 30-day capped for the 5-day tier. RLS deny-all/service-role.
+- **Wiring:** `complete-puzzle` calls the grant RPC on a **fresh** `play_streak === 5`
+  (fail-soft — never fails the completion) and returns `readinessReward`; `/api/score`
+  forwards it. **Gated (Supabase MCP was down this session):** apply migration → deploy
+  `complete-puzzle` (in that order) → `get_advisors` → e2e-verify a grant. Cross-storefront
+  **redemption/spend** is spend-ready in schema but a separate ticket.
+
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
