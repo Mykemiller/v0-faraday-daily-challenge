@@ -410,7 +410,7 @@ export default function AccountPage() {
 
         {/* ── STREAK ─────────────────────────────────────────────────────── */}
         <Card>
-          <SL>Streak</SL>
+          <SL>Intelligence Readiness</SL>
           <div className="flex items-baseline gap-1.5">
             <span className="font-serif text-3xl font-bold text-forest">{subState?.playStreak ?? "—"}</span>
             <span className="font-mono text-[13px] text-near-black/50">days</span>
@@ -518,13 +518,13 @@ export default function AccountPage() {
           {optedOut ? (
             <>
               <p className="mb-1 text-[14px] text-near-black">You&apos;ve left the game.</p>
-              <p className="mb-4 font-mono text-[12px] text-near-black/50">Your streak and history are kept. Rejoin anytime.</p>
+              <p className="mb-4 font-mono text-[12px] text-near-black/50">Your readiness and history are kept. Rejoin anytime.</p>
               <LightBtn disabled={busy} onClick={() => setOptOut(false)}>Rejoin the game</LightBtn>
             </>
           ) : !confirmLeave ? (
             <>
               <p className="mb-4 font-mono text-[12px] text-near-black/50">
-                Leaving stops streak accrual and hides you from leaderboards. <strong className="text-near-black">Nothing is deleted.</strong>
+                Leaving stops readiness accrual and hides you from leaderboards. <strong className="text-near-black">Nothing is deleted.</strong>
               </p>
               <LightBtn variant="danger" disabled={busy} onClick={() => setConfirmLeave(true)}>Leave the game</LightBtn>
             </>

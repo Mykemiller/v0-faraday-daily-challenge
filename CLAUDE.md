@@ -31,6 +31,89 @@ FAR-389 ticket. Full spec: **`docs/far389-faradays-take.md`**.
   (else fallback). No AI auto-drafting (out of scope). Tests: `npm run test:take`
   (9). `npm run build` green.
 
+## Daily Challenge domain = faradaydailychallenge.com (claude/dc-canonical-domain, 2026-07-28)
+
+**The Daily Challenge is canonical on `faradaydailychallenge.com` (+ `www`).** Every
+subscriber-facing DC link now uses it: the in-game share card + team invite
+(`SITE_URL`/`DC_URL`/`SHARE_URL` in `DailyChallenge.jsx`), the `/share` hub, the
+`/leaderboard` share text, and the **auth magic-link base** (`MAGIC_LINK_BASE` in
+`supabase/functions/register-with-magic-link` → `…/auth`, so the session is set on
+the same origin the player uses). This **amends the FAR-119 invariant** that had
+`faradaydailychallenge.com` 301-ing to `faraday-intelligence.ai/daily-challenge`.
+The **storefront / brand site + the other 7 products stay on `faraday-intelligence.ai`**
+— only DC-facing URLs moved.
+
+- **Two operational prerequisites, both outside the repo:**
+  1. **Vercel:** `faradaydailychallenge.com` (+ `www`) must be attached to the
+     **`v0-faraday-daily-challenge-n2u5`** project and **follow current production**.
+     It was found (2026-07-28) pinned to a stale pre-#101 deployment
+     (`dpl_AHvf9Hkq…`) — which is why the domain showed the old "Coming soon"
+     glossary while `faraday-intelligence.ai` served the finished page. Repoint /
+     un-pin it in the Vercel dashboard.
+  2. **Supabase:** redeploy `register-with-magic-link` so the new `MAGIC_LINK_BASE`
+     takes effect (merging the code alone does nothing — edge fns deploy separately).
+     One-time: subscribers who authed on the old origin will re-auth on the new one.
+- `vercel.json` rewrite (`/` on `(www.)?faradaydailychallenge.com` → `/daily-challenge`)
+  is retained — the branded apex opens the lobby.
+
+## ⚠️ League Office auth kill-switch (owner-requested, 2026-07-28)
+
+The League Office staff gate can be fully **disabled** with one env var:
+`NEXT_PUBLIC_LEAGUE_OFFICE_OPEN=1` (or `true`). When set, both the client
+`StaffGate` and the server `requireStaff()` bypass all session/allowlist checks and
+grant commissioner access to **anyone** with the URL — on the public production
+domain. This exposes player PII and the destructive Tier 2 actions (reset season
+scoring, pause accounts, …). A red "Authorization is DISABLED" banner renders while
+it's open, and any audited write is attributed to `auth-disabled@league-office.local`.
+
+- **Default (env unset) = gate fully enforced** (mykemiller@gmail.com only), exactly
+  as before. Merging the code alone changes nothing.
+- **Open it:** set the env in Vercel + redeploy. **Restore it:** delete the env +
+  redeploy (`NEXT_PUBLIC_` is inlined at build, so a redeploy is required either way).
+- One `NEXT_PUBLIC_` flag drives both layers, so you can't open one and forget the
+  other. Helper: `isLeagueOfficeOpen()` in `src/lib/league-office/constants.ts`.
+
+## Intelligence Readiness rewards (FAR-393, claude/intelligence-readiness-streak-lsaa9m, 2026-07-28)
+
+The daily play **streak** is reframed subscriber-side as **"Intelligence Readiness"**
+and now pays out **real Faraday tokens** at milestones. Rename + reward layer only —
+the streak counter and its scoring multiplier (`calcScore`/`getStreakMultiplier`,
+`dc_subscribers.play_streak` written by `complete-puzzle`) are **unchanged**. Phase-0
+investigation + final design: `docs/far393-intelligence-readiness/PHASE-0-FINDINGS.md`.
+
+- **Source of truth = `dc_subscribers.play_streak`** (NOT `leaderboard_daily.streak`,
+  which is a denormalized mirror). Timezone anchor = `America/Chicago` (server-computed).
+- **One Faraday wallet = `live_agent_token_ledger`**, keyed to `dc_subscribers.id`.
+  Migration `20260728120000_far393_readiness_rewards.sql` (**APPLIED to prod
+  2026-07-28**) adds a **durable `bonus_balance`** (survives the monthly plan reset;
+  spent before plan balance; **spendable by the free tier** — so earned tokens buy real
+  Live-Agent answers). `token_transactions` is NOT used: its FK points at the empty
+  `subscribers` table, so it can't key a DC player (and its `CHECK`s reject
+  `tokens_burned<0` / `kind='streak_grant'`).
+- **Grant path = `dc_grant_readiness_reward(subscriber, threshold)`** (SECURITY DEFINER,
+  the ONLY sanctioned write). Server-verifies `play_streak` against the DB (never trusts
+  the client), enforces **no pre-ship backfill** (`run start = last_day−(streak−1) ≥
+  epoch 2026-07-28`) and **abuse caps**, credits `bonus_balance`, logs to
+  **`dc_streak_grants`** (RLS deny-all; audit + idempotency). `/api/score` calls it after
+  `complete-puzzle` when the new `playStreak` is exactly 5 or 10, and returns
+  `readinessReward` only when a grant fired.
+- **Ladder:** 3-day = cosmetic "Readiness: Building" (no wallet write); **5-day = +1
+  token** (cap 1 / rolling 30 days); **10-day = +3 tokens** (cap 1 / calendar week — the
+  FAR-393 "Friday brief" tier was **descoped** to a token grant, no brief-unlock model
+  exists). Token amounts (1/3) provisional.
+- **`live_agent_debit` rewritten** to spend `bonus_balance` first and let any tier spend
+  it; monthly reset still only touches the plan `balance`. No edge-fn deploy (it's a
+  Postgres RPC via PostgREST).
+- **Copy rename** across `DailyChallenge.jsx`, `/account`, `/account/notifications`
+  (label only — `streak_at_risk` key is a fixed contract), `/challenge/answers`,
+  `/help/[topic]`, `/merch`, `OTPGate`, `teasers` — no subscriber-facing "streak" wording
+  remains. `league-office/*` (internal admin) intentionally unchanged.
+- **Validated live** (throwaway subscriber, cleaned up): 5→+1, 30-day dup blocked,
+  real-fn pre-ship blocked, 10→+3, weekly dup blocked, free-tier bonus debit + idempotent
+  replay + drain-to-`not_entitled`. `get_advisors` (security): only the intended
+  `rls_enabled_no_policy` INFO on `dc_streak_grants`; both new fns set `search_path`; **no
+  new RLS gaps**. `npm run build` green.
+
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:

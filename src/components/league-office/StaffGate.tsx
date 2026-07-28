@@ -9,15 +9,20 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SESSION_STORAGE_KEY } from "@/lib/supabase";
+import { isLeagueOfficeOpen } from "@/lib/league-office/constants";
 
 type Phase = "checking" | "ok" | "anon" | "denied" | "unconfigured";
 
 export default function StaffGate({ children }: { children: React.ReactNode }) {
-  const [phase, setPhase] = useState<Phase>("checking");
+  const open = isLeagueOfficeOpen();
+  // ⚠️ Kill-switch: gate disabled → start (and stay) "ok" so the console renders
+  // for everyone, no session. Derived at init so the effect never setState's it.
+  const [phase, setPhase] = useState<Phase>(open ? "ok" : "checking");
   const refreshed = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
+    if (isLeagueOfficeOpen()) return; // gate disabled — nothing to verify
     let token: string | null = null;
     try {
       token = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -49,7 +54,33 @@ export default function StaffGate({ children }: { children: React.ReactNode }) {
       .catch(() => setPhase("unconfigured"));
   }, [router]);
 
-  if (phase === "ok") return <>{children}</>;
+  if (phase === "ok") {
+    if (open) {
+      return (
+        <>
+          <div
+            role="alert"
+            style={{
+              background: "rgba(156,59,46,.12)",
+              border: "1px solid rgba(156,59,46,.3)",
+              color: "#9c3b2e",
+              borderRadius: 8,
+              padding: "8px 14px",
+              margin: "0 0 16px",
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
+            ⚠️ Authorization is DISABLED — this console is open to anyone with the
+            URL. Unset <code style={{ fontSize: 11.5 }}>NEXT_PUBLIC_LEAGUE_OFFICE_OPEN</code>{" "}
+            to restore the staff gate.
+          </div>
+          {children}
+        </>
+      );
+    }
+    return <>{children}</>;
+  }
 
   return (
     <div style={{ display: "grid", placeItems: "center", minHeight: "60vh", padding: 24 }}>

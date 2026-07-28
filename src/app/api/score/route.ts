@@ -85,6 +85,10 @@ export async function POST(request: Request) {
   // complete-puzzle, which normalizes and writes dc_completions.hints_used.
   // Never an input to score math here.
   const hintsUsed = typeof body.hintsUsed === "number" ? body.hintsUsed : null;
+  // FAR-388: elapsed solve time in seconds (client-timed). Forwarded verbatim to
+  // complete-puzzle, which normalizes (clamps/caps) and writes
+  // dc_completions.solve_seconds. Analytics/presentation only — never score math.
+  const solveSeconds = typeof body.solveSeconds === "number" ? body.solveSeconds : null;
 
   const subscriberId = await resolveSubscriber(s, token);
   if (!subscriberId)
@@ -128,6 +132,7 @@ export async function POST(request: Request) {
         score,
         ...(publicId ? { publicId } : {}),
         ...(hintsUsed !== null ? { hintsUsed } : {}),
+        ...(solveSeconds !== null ? { solveSeconds } : {}),
       }),
     });
     if (cpRes.ok) {
@@ -178,13 +183,51 @@ export async function POST(request: Request) {
 
   const runningDailyTotal = await getDailyTotal(s, subscriberId, playDate);
 
+  // FAR-393: Intelligence Readiness rewards. When the play streak crosses a
+  // wallet-granting milestone (5 or 10 days), grant Faraday tokens SERVER-SIDE.
+  // The RPC re-verifies the streak against dc_subscribers (it never trusts this
+  // value), enforces the no-backfill epoch + abuse caps, and is idempotent per
+  // window — so a duplicate/late call cannot double-grant. The 3-day tier is
+  // cosmetic (client-only) and is intentionally not granted here.
+  const playStreakNum =
+    typeof completionResult.playStreak === "number" ? completionResult.playStreak : null;
+  let readinessReward: Record<string, unknown> | null = null;
+  if (playStreakNum === 5 || playStreakNum === 10) {
+    readinessReward = await grantReadinessReward(s, subscriberId, playStreakNum);
+  }
+
   return Response.json({
     ok: true,
     alreadyPlayed: false,
     runningDailyTotal,
     playStreak: completionResult.playStreak ?? null,
     fullSetJustCompleted: completionResult.fullSetJustCompleted ?? false,
+    // Non-null only when a milestone token grant actually fired this completion.
+    readinessReward: readinessReward?.ok ? readinessReward : null,
   });
+}
+
+// FAR-393: the ONLY client-reachable trigger of a streak-reward grant, and it is
+// still fully server-verified — this route holds the service role, and the RPC
+// re-checks the streak in the DB before crediting the single Faraday wallet
+// (live_agent_token_ledger.bonus_balance). Never grants from a client-reported streak.
+async function grantReadinessReward(
+  s: Svc,
+  subscriberId: string,
+  threshold: number
+): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await fetch(`${s.base}/rpc/dc_grant_readiness_reward`, {
+      method: "POST",
+      headers: s.headers,
+      body: JSON.stringify({ p_subscriber: subscriberId, p_threshold: threshold }),
+    });
+    if (!r.ok) return null;
+    const out = await r.json().catch(() => null);
+    return out && typeof out === "object" ? (out as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function upsertLeaderboardDaily(

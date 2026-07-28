@@ -51,6 +51,17 @@ function normalizeHintsUsed(v: unknown): number {
   return n;
 }
 
+// FAR-388: normalize the optional, additive solve-time capture (seconds).
+// Missing / non-finite / non-positive → null (the completion simply has no
+// Velocity read, and the UI hides the band). Capped at 1h to drop idle/abandoned
+// outliers that would skew the per-game-type percentile terciles. Rounded to 0.1s.
+// Analytics/presentation ONLY — never read by the scoring/streak logic below.
+const SOLVE_SECONDS_CAP = 3600;
+function normalizeSolveSeconds(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return null;
+  return Math.round(Math.min(v, SOLVE_SECONDS_CAP) * 10) / 10;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -69,6 +80,8 @@ Deno.serve(async (req: Request) => {
     const hintsUsed = normalizeHintsUsed((body ?? {}).hintsUsed);
     const rawPublicId = (body ?? {}).publicId;
     const publicId = typeof rawPublicId === "string" && rawPublicId.trim() !== "" ? rawPublicId.trim() : null;
+    // FAR-388: elapsed solve time (seconds). Additive, nullable, analytics-only.
+    const solveSeconds = normalizeSolveSeconds((body ?? {}).solveSeconds);
 
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -96,6 +109,8 @@ Deno.serve(async (req: Request) => {
       // Analytics-only columns (Puzzle Bank V2). Never inputs to scoring.
       hints_used: hintsUsed,
       puzzle_public_id: publicId,
+      // FAR-388: Market Reaction Speed capture (nullable). Analytics-only.
+      solve_seconds: solveSeconds,
     });
 
     if (insErr) {

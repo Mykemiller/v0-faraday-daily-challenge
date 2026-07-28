@@ -83,12 +83,45 @@ async function fetchTodaysTakes() {
   }
 }
 
+// FAR-388: per-game-type solve-time percentile bands (terciles) from
+// dc_solve_time_bands, so the client's Market Reaction Speed band can score
+// against real data once it accumulates. Returns { [gameType]: { p33Sec, p67Sec,
+// sampleSize } }. Fails soft to {} — the band falls back to seed par times, so
+// the lobby never hard-fails on this. Read server-side (service role) because the
+// table is deny-all/service-role only (not exposed to PostgREST anon).
+async function fetchSolveBands() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) return {};
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/dc_solve_time_bands?select=game_type,p33_sec,p67_sec,sample_size`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
+    );
+    if (!res.ok) return {};
+    const rows = await res.json().catch(() => null);
+    if (!Array.isArray(rows)) return {};
+    const out = {};
+    for (const r of rows) {
+      if (!r || typeof r.game_type !== "string") continue;
+      const p33 = Number(r.p33_sec);
+      const p67 = Number(r.p67_sec);
+      const n = Number(r.sample_size);
+      if (!Number.isFinite(p33) || !Number.isFinite(p67) || !Number.isFinite(n)) continue;
+      out[r.game_type] = { p33Sec: p33, p67Sec: p67, sampleSize: n };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export async function GET() {
   try {
-    const [puzzles, tip, takes] = await Promise.all([
+    const [puzzles, tip, takes, solveBands] = await Promise.all([
       getLivePuzzles(),
       getTipOfTheDay(),
       fetchTodaysTakes(),
+      fetchSolveBands(),
     ]);
     // Attach the take to each puzzle by type (spoiler-safe: it is rendered only
     // on the completion screen, after the player has solved that puzzle).
@@ -98,9 +131,9 @@ export async function GET() {
         puzzles[type].take_byline = entry.byline;
       }
     }
-    return Response.json({ puzzles, tip }, { headers: NO_STORE });
+    return Response.json({ puzzles, tip, solveBands }, { headers: NO_STORE });
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
-    return Response.json({ puzzles: {}, tip: null }, { headers: NO_STORE });
+    return Response.json({ puzzles: {}, tip: null, solveBands: {} }, { headers: NO_STORE });
   }
 }
