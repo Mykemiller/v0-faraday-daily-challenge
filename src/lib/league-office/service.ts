@@ -13,7 +13,7 @@
 // SUPABASE_SERVICE_ROLE_KEY — without it every reader reports "not configured".
 
 import { cookies } from "next/headers";
-import { staffRole } from "./constants";
+import { staffRole, isLeagueOfficeOpen, OPEN_MODE_ACTOR } from "./constants";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -65,6 +65,12 @@ export type StaffContext =
 export async function requireStaff(): Promise<StaffContext> {
   const s = svc();
   if (!s) return { ok: false, reason: "unconfigured" };
+
+  // ⚠️ Kill-switch: when the gate is open, grant commissioner access with no
+  // session check. Still requires the service-role key (svc()) to read data.
+  if (isLeagueOfficeOpen()) {
+    return { ok: true, email: OPEN_MODE_ACTOR, role: "commissioner", s };
+  }
 
   const token = (await cookies()).get(LO_COOKIE)?.value;
   if (!token) return { ok: false, reason: "no-session" };
