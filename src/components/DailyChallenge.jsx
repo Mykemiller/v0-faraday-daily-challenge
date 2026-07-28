@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GameIconDefs, GAME_NEON } from "@/components/GameIcon";
+import GameIcon, { GameIconDefs, GAME_ACCENT } from "@/components/GameIcon";
 import { gameIconSvgString } from "@/components/gameIconSvg";
 import {
   EDGE_FUNCTIONS_BASE,
@@ -25,7 +25,12 @@ const C = {
   forestMid:"#244228",
   gold:    "#C4922A",
   goldLight:"#DAB050",
-  cream:   "#EEE6DA",
+  // FAR-394: DC surfaces standardized on Warm White #F8F5F0 (was Warm Cream
+  // #EEE6DA). `cream` is retained as an alias === `white` so the two
+  // near-identical off-whites no longer drift across the lobby + games. Warm
+  // Cream still lives in globals.css (--color-warm-cream) for the homepage
+  // editorial rule + League Office ramp, which are out of this ticket's scope.
+  cream:   "#F8F5F0",
   white:   "#F8F5F0",
   sage:    "#8CA68A",
   black:   "#141210",
@@ -121,10 +126,10 @@ const PUZZLE_DATA = {
     name: "The Power Stack",
     domain: "Power Architecture",
     groups: [
-      { label:"800V DC Transition",   color:"#1C3424", textColor:"#EEE6DA", items:["Bus bar", "DC-DC converter", "Power shelf", "OCP ORW"] },
+      { label:"800V DC Transition",   color:"#1C3424", textColor:"#F8F5F0", items:["Bus bar", "DC-DC converter", "Power shelf", "OCP ORW"] },
       { label:"Grid Access",          color:"#C4922A", textColor:"#141210", items:["Interconnect queue", "FERC Order", "Large-load study", "ISO/RTO"] },
-      { label:"BTM Generation",       color:"#2A5A3A", textColor:"#EEE6DA", items:["SMR offtake", "Gas peaker", "Solar+storage", "BYOG contract"] },
-      { label:"Cooling Architecture", color:"#5A4010", textColor:"#EEE6DA", items:["CDU", "Cold plate", "WUE", "Rear-door HX"] },
+      { label:"BTM Generation",       color:"#2A5A3A", textColor:"#F8F5F0", items:["SMR offtake", "Gas peaker", "Solar+storage", "BYOG contract"] },
+      { label:"Cooling Architecture", color:"#5A4010", textColor:"#F8F5F0", items:["CDU", "Cold plate", "WUE", "Rear-door HX"] },
     ],
   },
   "Signal Drop": {
@@ -2260,7 +2265,7 @@ const GAME_CONFIGS = [
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
 // the tile turns forest green with a gold border and a "✓ Played" badge.
 function GameTile({ config, onPlay, played, priorScore }) {
-  const glow = GAME_NEON[config.type]?.glow || "rgba(196,146,42,.3)";
+  const glow = GAME_ACCENT[config.type]?.glow || "rgba(196,146,42,.3)";
   return (
     <button type="button" onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
       "--glow": glow,

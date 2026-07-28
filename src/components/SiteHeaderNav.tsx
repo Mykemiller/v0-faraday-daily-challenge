@@ -16,7 +16,9 @@ import { useEffect, useRef, useState } from "react";
 const C = {
   forest: "#1C3424",
   gold:   "#C4922A",
-  cream:  "#EEE6DA",
+  // FAR-394: standardized on Warm White #F8F5F0 (was Warm Cream #EEE6DA);
+  // `cream` kept as an alias === `white` so the two off-whites don't drift.
+  cream:  "#F8F5F0",
   white:  "#F8F5F0",
   sage:   "#8CA68A",
 } as const;

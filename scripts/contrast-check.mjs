@@ -27,9 +27,21 @@ function over(fg, alpha, bg) {
 }
 
 const INGAME_BG = "#0D110E";
-const CREAM = "#EEE6DA";
-const WHITE = "#F8F5F0";
-const FOREST = "#1C3424";
+const CREAM = "#EEE6DA";           // legacy Warm Cream — homepage double-rule + League Office only
+const WHITE = "#F8F5F0";           // Warm White — the standardized DC surface (FAR-394)
+const FOREST = "#1C3424";          // Editorial Forest (also the darkest game-tile gradient stop)
+
+// FAR-394 per-game jewel tones (desaturated, editorial). Single source of truth
+// is GAME_ACCENT in src/components/GameIcon.jsx; mirrored here for the gate.
+const GAME_ACCENT = {
+  Rackl: "#2F9C8B",        // teal
+  "Signal Drop": "#C86A85", // garnet rose
+  "The Stack": "#A08A3A",   // citrine/bronze
+  Circuit: "#4C90BD",       // sapphire
+  "The Brief": "#7CA34A",   // olive
+  "Dark Fiber": "#9A74C0",  // amethyst
+  Frequency: "#C06A3C",     // rust/copper
+};
 
 // [foreground, background, label, minRatio]
 const CASES = [
@@ -42,21 +54,32 @@ const CASES = [
   ["#F59E0B", INGAME_BG, "in-game amber", 4.5],
   ["#F87171", INGAME_BG, "in-game red", 4.5],
   ["#DAB050", INGAME_BG, "in-game goldLight", 4.5],
-  // Lobby / cards (light)
-  ["#141210", CREAM, "lobby near-black", 4.5],
-  ["#1C3424", CREAM, "lobby forest", 4.5],
-  ["#94560A", CREAM, "lobby deepAmber", 4.5],
-  [over("#141210", 0.62, CREAM), CREAM, "lobby black/0.62", 4.5],
+  // Lobby / cards (light) — now Warm White #F8F5F0 (FAR-394 standardized surface)
+  ["#141210", WHITE, "lobby near-black", 4.5],
+  ["#1C3424", WHITE, "lobby forest", 4.5],
+  ["#94560A", WHITE, "lobby deepAmber", 4.5],
+  [over("#141210", 0.62, WHITE), WHITE, "lobby black/0.62", 4.5],
   ["#94560A", WHITE, "card deepAmber", 4.5],
   [over("#141210", 0.62, WHITE), WHITE, "card black/0.62", 4.5],
-  // Masthead / panels on forest
+  // Masthead / panels on forest — cream text now Warm White #F8F5F0
   ["#8CA68A", FOREST, "forest sage label", 4.5],
   ["#DAB050", FOREST, "forest goldLight", 4.5],
-  [over("#EEE6DA", 0.85, FOREST), FOREST, "forest cream/0.85", 4.5],
-  // Homepage specifics
+  [over("#F8F5F0", 0.85, FOREST), FOREST, "forest warm-white/0.85", 4.5],
+  ["#F8F5F0", FOREST, "forest warm-white text", 4.5],
+  // Homepage specifics (still on Warm Cream — out of FAR-394 scope, verified unchanged)
+  ["#94560A", CREAM, "home amber-dark on cream", 4.5],
+  ["#141210", CREAM, "home near-black on cream", 4.5],
   ["#94560A", WHITE, "home amber-dark (Open →)", 4.5],
   [over("#141210", 0.65, WHITE), WHITE, "home near-black/0.65", 4.5],
 ];
+
+// FAR-394 per-game jewel pictograms sit on the forest game-tile (darkest stop
+// #1C3424). They are decorative graphics (aria-hidden), so the WCAG bar is the
+// 3:1 non-text UI-component threshold, not 4.5:1. Validate every accent clears
+// it so no glyph gets lost once raw neon's luminance is gone.
+for (const [game, hex] of Object.entries(GAME_ACCENT)) {
+  CASES.push([hex, FOREST, `game accent ${game} on forest tile`, 3.0]);
+}
 
 let failed = 0;
 for (const [fg, bg, label, min] of CASES) {
@@ -66,8 +89,40 @@ for (const [fg, bg, label, min] of CASES) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${r.toFixed(2)}:1  (min ${min})  ${label}  [${fg} on ${bg}]`);
 }
 console.log(`\n${CASES.length - failed}/${CASES.length} passed`);
+
+// Distinguishability guard (FAR-394): each per-game jewel must be visually
+// separable from every other jewel AND from gold/sage. Uses a weighted sRGB
+// distance (a cheap ΔE proxy); ~40+ reads as clearly distinct to the eye.
+const REFS = { ...GAME_ACCENT, Gold: "#C4922A", Sage: "#8CA68A" };
+function dist(a, b) {
+  const px = (h) => [0, 2, 4].map((i) => parseInt(h.replace("#", "").slice(i, i + 2), 16));
+  const [r1, g1, b1] = px(a), [r2, g2, b2] = px(b);
+  const rm = (r1 + r2) / 2;
+  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db);
+}
+const DISTINCT_MIN = 40;
+const keys = Object.keys(REFS);
+let tooClose = 0;
+let minPair = { d: Infinity, a: "", b: "" };
+for (let i = 0; i < keys.length; i++) {
+  for (let j = i + 1; j < keys.length; j++) {
+    const d = dist(REFS[keys[i]], REFS[keys[j]]);
+    if (d < minPair.d) minPair = { d, a: keys[i], b: keys[j] };
+    if (d < DISTINCT_MIN) {
+      tooClose++;
+      console.log(`CLOSE  Δ${d.toFixed(0)} (min ${DISTINCT_MIN})  ${keys[i]} ↔ ${keys[j]}`);
+    }
+  }
+}
+console.log(`\nClosest jewel/accent pair: ${minPair.a} ↔ ${minPair.b} (Δ${minPair.d.toFixed(0)})`);
+
 if (failed) {
   console.error(`\n${failed} contrast failure(s) — readable text must clear WCAG AA.`);
   process.exit(1);
 }
-console.log("All readable pairings clear WCAG AA.");
+if (tooClose) {
+  console.error(`\n${tooClose} jewel/accent pair(s) below Δ${DISTINCT_MIN} — may be hard to tell apart.`);
+  process.exit(1);
+}
+console.log("All readable pairings clear WCAG AA; all per-game jewels are distinguishable.");
