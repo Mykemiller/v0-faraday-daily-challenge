@@ -9,7 +9,7 @@ import { useState } from "react";
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 
-const SITE = "https://www.faraday-intelligence.ai";
+const SITE = "https://www.faradaydailychallenge.com";
 const INVITE_URL = `${SITE}/challenge`;
 const INVITE_TEXT =
   "Play the Faraday Daily Challenge — seven quick games a day on the AI data center economy.";
