@@ -389,6 +389,57 @@ export async function getSeason(s: Svc, id: string): Promise<SeasonDetail> {
   return { season, standings, participants: new Set(state.map((x) => x.subscriber_id)).size };
 }
 
+// ── Scoring reset preview ────────────────────────────────────────────────────
+// Live per-table counts of the rows that resetSeasonScoring() would zero for the
+// ACTIVE season. Counts only "dirty" rows (a target column currently non-zero) so
+// the modal's numbers match exactly what the atomic RPC will change. Display-only;
+// the RPC recomputes the authoritative counts server-side at run time.
+export type ScoringResetPreview = {
+  season: Season | null;
+  counts: {
+    score_events: number;
+    dc_completions: number;
+    leaderboard_daily: number;
+    dc_season_state: number;
+  };
+  total: number;
+};
+
+export async function getScoringResetPreview(s: Svc): Promise<ScoringResetPreview> {
+  const zero = { score_events: 0, dc_completions: 0, leaderboard_daily: 0, dc_season_state: 0 };
+  const seasons = await loadSeasons(s);
+  const season = seasons.find((x) => x.status === "active") ?? null;
+  if (!season || !season.starts_on || !season.ends_on) {
+    return { season, counts: zero, total: 0 };
+  }
+  const [se, dc, lb, ss] = await Promise.all([
+    q<{ id: string }>(s, `score_events?season_id=eq.${season.id}&points=neq.0&select=id`),
+    q<{ id: string }>(
+      s,
+      `dc_completions?puzzle_date=gte.${season.starts_on}&puzzle_date=lte.${season.ends_on}&score=neq.0&select=id`
+    ),
+    q<{ subscriber_id: string }>(
+      s,
+      `leaderboard_daily?play_date=gte.${season.starts_on}&play_date=lte.${season.ends_on}&or=(score.neq.0,games_played.neq.0,total_time_secs.neq.0)&select=subscriber_id`
+    ),
+    q<{ subscriber_id: string }>(
+      s,
+      `dc_season_state?season_id=eq.${season.id}&or=(completed_signals.neq.0,dropped_signals.neq.0)&select=subscriber_id`
+    ),
+  ]);
+  const counts = {
+    score_events: se.length,
+    dc_completions: dc.length,
+    leaderboard_daily: lb.length,
+    dc_season_state: ss.length,
+  };
+  return {
+    season,
+    counts,
+    total: counts.score_events + counts.dc_completions + counts.leaderboard_daily + counts.dc_season_state,
+  };
+}
+
 // ── Puzzle & Hint calendar + IDF ranking ─────────────────────────────────────
 export type PuzzleDay = { date: string; cached: boolean; domain: string | null; synced: boolean };
 export type DomainRank = { code: string; name: string; num: number; emoji: string | null };
