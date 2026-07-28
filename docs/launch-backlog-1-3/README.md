@@ -28,13 +28,28 @@ because they all land in the same surface (`ScoreCard` in
   time is not persisted; this is display-only (follow-up: persist it).
 
 ## FAR-389 — Faraday's Take
+> Reconciled with the full FAR-389 ticket (2026-07-28). The first cut (this
+> commit) read the Airtable **`Answer Explanation`** field and rendered nothing
+> when absent. The ticket mandates a **dedicated `Faraday Take` field** (separate
+> from answer-justification), **voice-by-game-type**, and a **fallback** instead
+> of a blank. See `docs/far389-faradays-take.md` for the authoritative spec.
+
 - **`src/components/FaradaysTake.tsx`** — one shared component: the take in real
-  IBM Plex Serif Italic (via the `--font-take` seam), byline beneath (defaults to
-  Gilbert Faraday). Renders nothing when there's no take.
+  IBM Plex Serif Italic (via the `--font-take` seam), byline beneath. When there
+  is no authored take it renders the **plain (non-italic, unsigned) explanation
+  fallback**; only with neither take nor fallback does it render nothing.
+- **`src/lib/faradays-take.ts`** (pure, tested — `npm run test:take`): the
+  game-type voice map (Gilbert Faraday: Rackl/The Stack/Dark Fiber/Frequency ·
+  Mach Eigen: Circuit/The Brief/Signal Drop), `resolveTakeByline` (override →
+  voice → Gilbert), and `deriveTakeFallback` (joins the puzzle's own per-question
+  `explanation` strings).
 - Read path: `/api/challenge/today` enriches each puzzle with `faradays_take` /
   `take_byline` from `dc_daily_page_content` (the day-content sync reads the
-  Airtable `Answer Explanation` field by name). Airtable is never in the take's
-  hot path.
+  Airtable **`Faraday Take`** field by name — a name-keyed read, because the new
+  field has no stable field id yet). The **fallback** is derived client-side from
+  each puzzle's own content, so it works day one without the field or the store.
+- **Blocked on Myke:** add a `Faraday Take` (multilineText) field — and optional
+  `Take Byline` (singleLineText) — to the Puzzle Bank. Flagged, not written.
 
 ## Screenshots
 | State | Image |

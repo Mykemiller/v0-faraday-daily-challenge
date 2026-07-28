@@ -196,6 +196,24 @@ The Answers-Today page derives the correct answer per type from `Puzzle Content`
 The Phase-5 round-trip test feeds each generated `puzzle_content` through this exact path;
 a null/empty extraction means the schema is wrong.
 
+## Faraday's Take — win-screen field (FAR-389)
+
+Separate from `Puzzle Content`: author each puzzle's **`Faraday Take`** (a
+Puzzle Bank *field*, multilineText) — a ~2-sentence, editorially voiced verdict
+shown on that game's completion screen in italic serif, signed by the voice for
+its game type (Gilbert Faraday for Rackl / The Stack / Dark Fiber / Frequency;
+Mach Eigen for Circuit / The Brief / Signal Drop). Set the optional **`Take
+Byline`** field to override the voice on a specific row.
+
+- This is **one Take per puzzle**, distinct from the per-question `explanation`
+  keys inside `Puzzle Content` (those justify each answer; the Take is a single
+  whole-puzzle reaction). Do not fold one into the other.
+- When `Faraday Take` is empty, the win screen falls back to the puzzle's own
+  `explanation` text in plain/unsigned styling — so authoring a Take is an
+  ongoing editorial task, not a hard blocker.
+- Field add is **manual in Airtable** (write-approval gate). Full spec +
+  authoring workflow: `docs/far389-faradays-take.md`.
+
 ## Per-type counts & scoring dependencies (convention)
 
 | Type | Array size (convention) | Scoring input from content |

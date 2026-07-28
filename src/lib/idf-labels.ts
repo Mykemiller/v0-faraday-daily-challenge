@@ -2,9 +2,11 @@
 //
 // THE single source of truth that turns internal IDF codes into the
 // plain-language names a subscriber is allowed to see. No subscriber-facing
-// surface may ever render a raw D-code or T-code (enforced by the build guard
-// `scripts/no-idf-codes-check.mjs`, run via `npm run test:no-codes`); route the
-// value through the resolvers here instead.
+// surface may ever render a raw D-code or T-code: the build guard
+// `scripts/no-idf-codes-check.mjs` (run via `npm run test:no-codes`) fails the
+// build on any raw code in subscriber-facing source, and `idf-labels.test.ts`
+// proves these resolvers map/drop codes correctly. Route the value through the
+// resolvers here instead.
 //
 // DRIFT CAVEAT (FAR-387): these maps are a hardcoded snapshot of the live
 // Airtable registries — IDF Domain Registry `tbltFtmWgBYPuRLSc` (Domain ID →
