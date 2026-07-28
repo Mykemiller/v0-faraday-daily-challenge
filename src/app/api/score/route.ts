@@ -85,6 +85,10 @@ export async function POST(request: Request) {
   // complete-puzzle, which normalizes and writes dc_completions.hints_used.
   // Never an input to score math here.
   const hintsUsed = typeof body.hintsUsed === "number" ? body.hintsUsed : null;
+  // FAR-388: elapsed solve time in seconds (client-timed). Forwarded verbatim to
+  // complete-puzzle, which normalizes (clamps/caps) and writes
+  // dc_completions.solve_seconds. Analytics/presentation only — never score math.
+  const solveSeconds = typeof body.solveSeconds === "number" ? body.solveSeconds : null;
 
   const subscriberId = await resolveSubscriber(s, token);
   if (!subscriberId)
@@ -128,6 +132,7 @@ export async function POST(request: Request) {
         score,
         ...(publicId ? { publicId } : {}),
         ...(hintsUsed !== null ? { hintsUsed } : {}),
+        ...(solveSeconds !== null ? { solveSeconds } : {}),
       }),
     });
     if (cpRes.ok) {
