@@ -7,8 +7,8 @@ the Daily Challenge shell. The **existing** sidebar "Announcements" item (which 
 disabled with a `SOON` badge) is now live — **no second "Broadcast" nav entry**;
 "broadcast" stays internal/table/action vocabulary and the send-button verb.
 
-- **Schema** `20260729000002_lo_broadcasts.sql` (**NOT yet applied to prod** — apply
-  at promotion): `lo_broadcasts` (body_html/body_text/cta/severity/starts_at/
+- **Schema** `20260729000002_lo_broadcasts.sql` (**APPLIED to prod 2026-07-29**,
+  Myke-approved): `lo_broadcasts` (body_html/body_text/cta/severity/starts_at/
   expires_at/created_by_email/revoked_at) + `lo_broadcast_dismissals`
   (PK `(broadcast_id, subscriber_id)`). Both **RLS deny-all, no policies** — DC
   players hold no Supabase JWT (identity is the custom `dc_sessions` token), so an
@@ -40,6 +40,13 @@ disabled with a `SOON` badge) is now live — **no second "Broadcast" nav entry*
   what players see.
 - **Audience** = `dc_subscribers.active=true`, resolved at read time — **no
   fan-out table**, no per-team/per-season targeting (v1).
+- **Validated live 2026-07-29** (2 throwaway subscribers + 5 broadcasts, all cleaned
+  up — 0 rows left): 3 live candidates → **exactly 1 banner**, the newest (AC 8);
+  expired + revoked never returned (AC 4/5); **A's dismissal did not affect B**, and
+  a replayed dismiss stayed 1 row (AC 3); revoking what B still had showing dropped
+  B to the next live one (revoke is global). `severity` CHECK rejects off-list values;
+  **anon SELECT returns 0 rows** (deny-all holds). `get_advisors` (security): both new
+  tables raise ONLY the intended `rls_enabled_no_policy` INFO — no new ERROR/WARN.
 - Tests: `npm run test:broadcast` (28). `npm run build` green.
 
 ## DC serving: Airtable → Supabase (CC-DC-SUPABASE-SERVING-1.0, claude/dc-supabase-serving-migration-01yg02, 2026-07-29)

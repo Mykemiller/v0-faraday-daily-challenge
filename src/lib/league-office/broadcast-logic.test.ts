@@ -59,7 +59,7 @@ test("AC3 — this player's dismissals are excluded, and only theirs", () => {
   const b = "22222222-2222-4222-8222-222222222222";
 
   const forPlayerWithDismissals = buildLiveBroadcastFilters(NOW.toISOString(), [a, b]);
-  assert.ok(forPlayerWithDismissals.includes(`id=not.in.("${a}","${b}")`));
+  assert.ok(forPlayerWithDismissals.includes(`id=not.in.(${a},${b})`));
 
   // A player who has dismissed nothing gets NO exclusion clause — so one
   // player's dismissal can never suppress the banner for another.

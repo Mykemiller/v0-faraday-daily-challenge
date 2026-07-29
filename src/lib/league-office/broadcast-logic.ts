@@ -40,8 +40,9 @@ export function buildLiveBroadcastFilters(
     `starts_at=lte.${nowIso}`,
     `or=(expires_at.is.null,expires_at.gt.${nowIso})`,
   ];
-  if (dismissedIds.length > 0)
-    filters.push(`id=not.in.(${dismissedIds.map((id) => `"${id}"`).join(",")})`);
+  // Values are uuids straight out of lo_broadcast_dismissals.broadcast_id, so
+  // the bare PostgREST list form is unambiguous — no quoting needed.
+  if (dismissedIds.length > 0) filters.push(`id=not.in.(${dismissedIds.join(",")})`);
   return filters;
 }
 
