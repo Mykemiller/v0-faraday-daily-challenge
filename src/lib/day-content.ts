@@ -38,7 +38,8 @@ import {
   PUZZLE_TYPES,
 } from "@/lib/airtable-puzzle-bank";
 import { puzzleSource } from "@/lib/puzzle-bank";
-import { DOMAIN_LABELS } from "@/lib/idf-labels";
+import { DOMAIN_LABELS, resolveDomainName } from "@/lib/idf-labels";
+import type { SignalMatchTier } from "@/lib/signal-matcher";
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
@@ -46,6 +47,13 @@ const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 // stable domain code ("D2") + display name.
 const IDF_DOMAIN_REGISTRY_TABLE_ID =
   process.env.AIRTABLE_IDF_DOMAIN_TABLE_ID || "tbltFtmWgBYPuRLSc";
+
+// IDF Sub-Domain Registry — resolves the bank's "Sub-Domain" linked records to
+// a public display name (FAR-385 signal matching). The bank field is a FAR-178
+// Phase-1 prerequisite Myke adds in Airtable; absent field / unreadable
+// registry → null, never a sync failure (same posture as "Domain").
+const IDF_SUBDOMAIN_REGISTRY_TABLE_ID =
+  process.env.AIRTABLE_IDF_SUBDOMAIN_TABLE_ID || "tbla7rtRY9AaeoWhu";
 
 // Faraday Academy catalog (separate base). Courses are keyed by "School ID",
 // which equals the IDF Domain ID (e.g. "D2"). Same Airtable PAT — if its scope
@@ -84,7 +92,27 @@ export interface DayPuzzleEntry {
   faradays_take: string | null;
   take_byline: string | null; // optional voice override (FAR-389 D13); null → by game type
   domain_code: string | null; // IDF domain id ("D2"); null until FAR-178
+  // FAR-385: resolved PUBLIC labels for signal matching (never rendered raw;
+  // both null until Myke populates the bank's Domain / Sub-Domain links).
+  domain_name: string | null;
+  sub_domain: string | null;
   academy: AcademyCourseRef | null;
+  // FAR-385: Faraday Signal match, written by the sync route AFTER
+  // buildDayContentRow (the matcher needs the day's dc_daily_signal pool —
+  // a Supabase read that stays out of this Airtable gather module).
+  matched_signal_id: string | null;
+  signal_match_tier: SignalMatchTier;
+  signal: DaySignalPayload | null; // denormalized public fields, resolved at sync time
+}
+
+// Public-safe denormalized signal fields (FAR-385) — exactly what the win
+// screen renders; no matcher metadata, no ids beyond the audit column above.
+export interface DaySignalPayload {
+  headline: string;
+  body: string;
+  source_url: string | null;
+  source_label: string | null;
+  signal_date: string;
 }
 
 export interface AboutContent {
@@ -268,6 +296,19 @@ async function fetchDomainRecord(
   };
 }
 
+// Resolve one IDF Sub-Domain Registry linked record → public display name.
+// The registry's naming isn't finalized (FAR-205), so try the likely name
+// fields in order; anything unreadable resolves to null (fail-soft).
+async function fetchSubDomainName(recordId: string): Promise<string | null> {
+  const res = await airtableGet(
+    `${PUZZLE_BANK_BASE_ID}/${IDF_SUBDOMAIN_REGISTRY_TABLE_ID}/${recordId}`
+  );
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  const f = data?.fields || {};
+  return str(f["Sub-Domain Name"]) || str(f["Subdomain Name"]) || str(f["Name"]);
+}
+
 // Pick the day's Academy course for a domain: free-with-URL first (per FAR-287:
 // "prefer Is Free for the first recommendation shown"), then free, then any
 // with a URL, then any. Fails soft to null on any Airtable error.
@@ -385,7 +426,18 @@ async function buildDayContentRowFromStaging(dateISO: string): Promise<DayConten
       faradays_take: null, // no staging column yet — see gap note above
       take_byline: null,
       domain_code: domainCode,
+      // FAR-385 matcher labels: staging's domain is a D# code → canonical
+      // public label; its sub_domain is a D#.# code with no code→public-label
+      // map yet, so it stays null (cutover gap — matching upgrades when a
+      // sub-domain label source exists). Never emit raw codes as labels.
+      domain_name: resolveDomainName(domainCode),
+      sub_domain: null,
       academy,
+      // FAR-385 defaults — the sync route overwrites after matching, exactly
+      // as on the Airtable path.
+      matched_signal_id: null,
+      signal_match_tier: "none",
+      signal: null,
     });
   }
 
@@ -424,6 +476,7 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
 
   // Memoize linked-record + course lookups — the whole day usually shares one domain.
   const domainCache = new Map<string, Promise<{ code: string | null; name: string | null }>>();
+  const subDomainCache = new Map<string, Promise<string | null>>();
   const courseCache = new Map<string, Promise<AcademyCourseRef | null>>();
 
   const puzzles: DayPuzzleEntry[] = [];
@@ -444,10 +497,25 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
     // "Domain" is a linked-record field (may not exist yet — FAR-178).
     const domainLinks = record.fields["Domain"];
     let domainCode: string | null = null;
+    let domainName: string | null = null;
     if (Array.isArray(domainLinks) && typeof domainLinks[0] === "string") {
       const recId = domainLinks[0];
       if (!domainCache.has(recId)) domainCache.set(recId, fetchDomainRecord(recId));
-      domainCode = (await domainCache.get(recId)!).code;
+      const resolved = await domainCache.get(recId)!;
+      domainCode = resolved.code;
+      // Public label for signal matching: the registry's own name, else the
+      // canonical FAR-387 code→name map. Never a raw code.
+      domainName = resolved.name || resolveDomainName(domainCode);
+    }
+
+    // "Sub-Domain" is likewise a linked-record field (FAR-178 prerequisite;
+    // absent → null). Resolved to its PUBLIC label for signal matching.
+    const subDomainLinks = record.fields["Sub-Domain"];
+    let subDomainName: string | null = null;
+    if (Array.isArray(subDomainLinks) && typeof subDomainLinks[0] === "string") {
+      const recId = subDomainLinks[0];
+      if (!subDomainCache.has(recId)) subDomainCache.set(recId, fetchSubDomainName(recId));
+      subDomainName = await subDomainCache.get(recId)!;
     }
 
     let academy: AcademyCourseRef | null = null;
@@ -472,7 +540,15 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
       faradays_take: str(record.fields["Faraday Take"]),
       take_byline: str(record.fields["Take Byline"]),
       domain_code: domainCode,
+      domain_name: domainName,
+      sub_domain: subDomainName,
       academy,
+      // FAR-385 defaults — the sync route runs the signal matcher after this
+      // gather and overwrites these three per puzzle. A row written without
+      // the matcher (or a matcher failure) degrades to "no card", never blank.
+      matched_signal_id: null,
+      signal_match_tier: "none",
+      signal: null,
     });
   }
 
