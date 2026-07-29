@@ -12,7 +12,11 @@
 // Requires AIRTABLE_API_KEY (legacy FARADAY_AIRTABLE_API_KEY also honored) with
 // write access to the Puzzle Bank.
 
-import { rotateLiveSet } from "@/lib/airtable-puzzle-bank";
+// DC_PUZZLE_SOURCE selects airtable (default) or supabase — see puzzle-bank.js.
+// On the supabase source, promote+retire run in ONE transaction
+// (fn_dc_rotate_live_set), so the partial-failure mode this route's structured
+// logging was built for can no longer occur there.
+import { rotateLiveSet } from "@/lib/puzzle-bank";
 
 export const dynamic = "force-dynamic";
 
