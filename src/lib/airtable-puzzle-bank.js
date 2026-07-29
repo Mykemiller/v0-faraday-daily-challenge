@@ -19,7 +19,9 @@
 // Published rows whose Go Live Date is today (America/Chicago) to Live at
 // midnight Central, and retires the previous day's Live rows.
 
-import { toPublicSignalPuzzle, normalizeWord } from "@/lib/signal-drop";
+// Relative + extensioned so plain node scripts (scripts/dc-migrate/*) can
+// import this module directly — Next resolves it identically to @/lib/signal-drop.
+import { toPublicSignalPuzzle, normalizeWord } from "./signal-drop.js";
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
