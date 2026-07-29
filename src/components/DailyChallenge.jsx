@@ -3308,11 +3308,11 @@ export default function DailyChallenge() {
               padding:"28px 24px", margin:"28px 0 0" }}>
               <p style={{ ...sans, fontWeight:700, fontSize:"22px", lineHeight:1.35,
                 color:C.cream, margin:0 }}>
-                <span style={{ color:C.gold }}>1891 → 2080.</span> We read the signals and trajectory on a 189 year timescale. The news cycle operates on yesterday’s press announcement and next quarter’s chip forecast.
+                <span style={{ color:C.gold }}>1891 → 2080.</span> The news thinks in quarters. Faraday thinks in centuries.
               </p>
               <p style={{ ...sans, fontWeight:400, fontSize:"15px", lineHeight:1.7,
                 color:C.cream, opacity:0.85, margin:"16px 0 0" }}>
-                The oldest generators powering our grid came online in 1891, and are still working today. The water and load forecasts that are real constraints run to 2080. Faraday is actively tracking the whole span across more than twenty intelligence domains and aligned to jurisdiction — not the press release. The arc, and the collisions.
+                Generators built in 1891 still power the grid today. The forecasts that matter run to 2080. The Daily Challenge is just the front door — behind it, Faraday maps and models 189 years of signal, across twenty-plus intelligence domains, jurisdiction by jurisdiction.
               </p>
               <p style={{ ...serif, fontStyle:"italic", fontSize:"16px", color:C.gold,
                 margin:"20px 0 0", paddingTop:"16px",
