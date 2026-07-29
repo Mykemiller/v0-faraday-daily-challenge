@@ -42,14 +42,14 @@ function centralDate(d) {
   }).format(d);
 }
 
-// Faraday's Take (FAR-389): read today's take per puzzle type from
-// dc_daily_page_content — the canonical day-content store the sync populates
-// from the Airtable "Faraday Take" field (a dedicated editorial field, SEPARATE
-// from "Answer Explanation"; D12: dc_daily_page_content is THE read path so
-// Airtable is never in the take's hot path). Returns { [puzzleType]: { take,
-// byline } }. Fails soft to {} on any missing config / table / row so the lobby
-// never hard-fails on the take — the win screen then shows the explanation
-// fallback derived client-side from each puzzle's own content.
+// Faraday's Take (FAR-389) + Faraday Signal (FAR-385): read today's per-puzzle
+// editorial extras from dc_daily_page_content — the canonical day-content store
+// (D12: dc_daily_page_content is THE read path so Airtable / dc_daily_signal
+// are never in the hot path; the signal was matched + denormalized by the
+// sync-day-content cron). Returns { [puzzleType]: { take, byline, signal } }.
+// Fails soft to {} on any missing config / table / row so the lobby never
+// hard-fails — the win screen then shows the explanation fallback (take) and
+// no card (signal).
 async function fetchTodaysTakes() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) return {};
@@ -69,13 +69,34 @@ async function fetchTodaysTakes() {
       const take =
         typeof p.faradays_take === "string" && p.faradays_take.trim()
           ? p.faradays_take.trim()
-          : null;
-      if (!take) continue; // no authored take → fall back to the explanation (D14)
+          : null; // no authored take → fall back to the explanation (D14)
       const byline =
         typeof p.take_byline === "string" && p.take_byline.trim()
           ? p.take_byline.trim()
           : null; // null → the component defaults the byline by game type (D13)
-      out[p.puzzle_type] = { take, byline };
+
+      // FAR-385: the sync-time match, already resolved to public fields.
+      // tier "none" (or malformed data) → no signal key → no card, no frame.
+      let signal = null;
+      const tier = p.signal_match_tier;
+      const s = p.signal;
+      if (
+        (tier === "matched" || tier === "lead") &&
+        s && typeof s.headline === "string" && s.headline.trim() &&
+        typeof s.body === "string" && s.body.trim()
+      ) {
+        signal = {
+          tier,
+          headline: s.headline.trim(),
+          body: s.body.trim(),
+          source_url: typeof s.source_url === "string" && s.source_url.trim() ? s.source_url.trim() : null,
+          source_label: typeof s.source_label === "string" && s.source_label.trim() ? s.source_label.trim() : null,
+          signal_date: typeof s.signal_date === "string" ? s.signal_date : null,
+        };
+      }
+
+      if (!take && !signal) continue;
+      out[p.puzzle_type] = { take, byline, signal };
     }
     return out;
   } catch {
@@ -123,12 +144,16 @@ export async function GET() {
       fetchTodaysTakes(),
       fetchSolveBands(),
     ]);
-    // Attach the take to each puzzle by type (spoiler-safe: it is rendered only
-    // on the completion screen, after the player has solved that puzzle).
+    // Attach the take + signal to each puzzle by type (spoiler-safe: both are
+    // rendered only on the completion screen, after the player has solved that
+    // puzzle — and the signal carries no answer material by construction).
     for (const [type, entry] of Object.entries(takes)) {
       if (puzzles && puzzles[type]) {
-        puzzles[type].faradays_take = entry.take;
-        puzzles[type].take_byline = entry.byline;
+        if (entry.take) {
+          puzzles[type].faradays_take = entry.take;
+          puzzles[type].take_byline = entry.byline;
+        }
+        if (entry.signal) puzzles[type].signal = entry.signal;
       }
     }
     return Response.json({ puzzles, tip, solveBands }, { headers: NO_STORE });

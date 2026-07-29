@@ -1,5 +1,50 @@
 @AGENTS.md
 
+## Faraday Signal — Brief pilot (FAR-385, claude/faraday-signal-brief-pilot-393v91, 2026-07-29)
+
+Daily "Faraday Signal" items (headline + body + optional source link), authored
+**directly in Supabase** — table **`dc_daily_signal`** (migration
+`20260729120000…`, **APPLIED to prod 2026-07-29**; RLS deny-all like every
+`dc_*` table — NEVER add an anon/authed policy). No new Airtable coupling.
+Docs + QA screenshots: `docs/far385-faraday-signal/README.md`.
+
+- **Matching runs in the sync-day-content cron (05:10 UTC), never at request
+  time.** `src/lib/signal-matcher.ts` (`matchSignalsForDay`, pure,
+  `npm run test:signal-matcher`, 11 tests) scores per (puzzle, signal):
+  pin override (`pinned_for_date` [+ optional `pinned_puzzle_type`] wins
+  outright, latest `updated_at` on collision) · sub-domain +10 · domain +5 ·
+  tag +2 · recency tiebreak. Tiers: ≥10 → `matched` ("Related Signal");
+  else any published signal in the 3-day window (`signal_date` ∈
+  [serve−2, serve]) → `lead` ("Elsewhere in the Sector"); else `none` → no
+  card. **All 7 games get `matched_signal_id`/`signal_match_tier`/denormalized
+  `signal{…}` in `dc_daily_page_content.puzzles[*]`** (jsonb shape change only,
+  no migration; sync route decorates after `buildDayContentRow`, fail-soft to
+  tier `none` so day pages never lose their sync to the signal layer).
+- **Serve = the Take pattern:** `/api/challenge/today` `fetchTodaysTakes` now
+  also attaches `puzzles[type].signal` `{tier, headline, body, source_url,
+  source_label, signal_date}` — still one Supabase read, no client fetch. Like
+  the Take, it rides the pre-solve payload but is rendered ONLY on the
+  completion screen (non-spoiling by construction — no answer material).
+- **Render:** `TodaysSignalCard.tsx` (self-contained; FAR-394 accent passed as
+  prop) mounted in `ScoreCard` below `FaradaysTake`, gated by
+  **`SIGNAL_ENABLED_GAMES = new Set(["The Brief"])`** in `DailyChallenge.jsx` —
+  CC-FAR385-2 adds Signal Drop/Rackl by adding strings there. `none`/missing →
+  renders nothing (no placeholder). All 7 ScoreCard call sites pass
+  `signal={puzzle.signal}`.
+- **Metadata reality (2026-07-29):** CC-1 (Supabase serving) has NOT landed —
+  no `DC_PUZZLE_SOURCE`; sync source is Airtable. The bank's Domain/Sub-Domain
+  links are unpopulated (FAR-178, Myke), so puzzles carry only `topic` +
+  `puzzle_name`; the matcher accepts exact label-vs-topic matches meanwhile,
+  and structured `matched` is effectively pin-only until the links land.
+  `day-content.ts` now also gathers `domain_name`/`sub_domain` public labels
+  (fail-soft) so matching upgrades with no code change. Signal
+  `domain`/`sub_domain` are **IDF 4.0 public labels only, never D-codes**.
+- **Seeded 2026-07-28** (3 rows, `source_label='seed'`): live 07-28 row
+  decorated via the real matcher — Brief `matched` (pin), others `lead`;
+  anon-key read of `dc_daily_signal` = 0 rows; advisor: only the intended
+  `rls_enabled_no_policy` INFO. Playwright QA: matched/lead/none/other-game
+  states all correct. `npm run build` green.
+
 ## Daily Challenge editorial palette (FAR-394, claude/daily-challenge-editorial-palette-9tvxzv, 2026-07-28)
 
 Moved the DC from raw neon-on-dark toward Faraday's institutional editorial
