@@ -1,0 +1,986 @@
+{
+  "generated_for": "FAR-287 stopgap",
+  "approved": false,
+  "changes": [
+    {
+      "recordId": "reccMSn2B4Hbd7gWn",
+      "puzzleType": "Rackl",
+      "puzzleName": "Chips and Racks",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recSO89CmKta1TAyW",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "CURTAILMENT",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recMYYS7kMWaQKtPX",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Hyperscalers by 2026 Guided Capex",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recG6wG4Slteio69P",
+      "puzzleType": "Circuit",
+      "puzzleName": "New Entrants True/False Sprint #1",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recK4O1xV3dUy8Rg7",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Interconnection Queue Crisis",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recAdncSR7IizQfFm",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Orchestration Terms #1",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recRD2eiRFwjAijjq",
+      "puzzleType": "Frequency",
+      "puzzleName": "Grid & Regulatory Quiz #1",
+      "originalDate": "2026-06-14",
+      "newDate": "2026-08-01",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reclwLBzOxf80suJ0",
+      "puzzleType": "Rackl",
+      "puzzleName": "Follow the Money",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recWle4cFbOsfGIfS",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "TOKENOMICS",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recMULtDblrTT89mP",
+      "puzzleType": "Circuit",
+      "puzzleName": "M&A & Capital Markets True/False Sprint #1",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recIFNEx4M5dEftWe",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Networking & Interconnect Terms #1",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recYZtxlkkceBhkrA",
+      "puzzleType": "Frequency",
+      "puzzleName": "Orchestration & Control Plane Quiz #1",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recKzFgs3XSTACIjb",
+      "puzzleType": "The Brief",
+      "puzzleName": "The 800V DC Transition",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recV6ozlxUiUB2hwl",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank GPU Generations: Hopper → Blackwell → Vera Rubin → Feynman",
+      "originalDate": "2026-06-15",
+      "newDate": "2026-08-02",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reco5GjvSy7z8NLOv",
+      "puzzleType": "Rackl",
+      "puzzleName": "The Cooling Ladder",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reckjWtYQrHw2YrK9",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "DIELECTRIC",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recVMOT0C3CIXZyrg",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank DC Tiers by Uptime: Tier I → Tier II → Tier III → Tier IV",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recUu8LXbaYMdg9nQ",
+      "puzzleType": "Circuit",
+      "puzzleName": "Grid & Regulatory True/False Sprint #1",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recNIpKy6PbHYKzMm",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Rise of the Neocloud",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recKmpJ5XVq6HDvRq",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "New Entrants Terms #1",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recaYa5JysLqCo6Gh",
+      "puzzleType": "Frequency",
+      "puzzleName": "Chips & Density Quiz #1",
+      "originalDate": "2026-06-16",
+      "newDate": "2026-08-03",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recy9Z2N6Fr3GjwqQ",
+      "puzzleType": "Rackl",
+      "puzzleName": "Grid Anatomy",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recntkC1R7dUG3BRr",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "ENTITLEMENT",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recclNWUJJPe9HQqf",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Interconnection Queue Steps in Order",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recbMYdK61ySwkG2f",
+      "puzzleType": "Circuit",
+      "puzzleName": "Cooling & Water True/False Sprint #1",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recXM6bQll8wg6Cxo",
+      "puzzleType": "The Brief",
+      "puzzleName": "Hyperscaler Capex: What $660B Buys",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recMCyGygGo0qZyDQ",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Hyperscaler Activity Terms #1",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recfTSUMx0c75TgOO",
+      "puzzleType": "Frequency",
+      "puzzleName": "People & Signals Quiz #1",
+      "originalDate": "2026-06-17",
+      "newDate": "2026-08-04",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reczNFouDkGualtm5",
+      "puzzleType": "Rackl",
+      "puzzleName": "State of Play",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recwlJY09lmFm3qLc",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "HYPERSCALER",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recmdnacebNzm8oUt",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank DC Build Phases in Order: Land → Grid → Shell → Fit-Out",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reclQleZ6vt8hXSxc",
+      "puzzleType": "Circuit",
+      "puzzleName": "Chips & Density True/False Sprint #1",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recabTZjhAjyUgduL",
+      "puzzleType": "The Brief",
+      "puzzleName": "Export Controls and the AI Chip Supply Chain",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recVJggRtblhnGbfD",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Cooling & Water Terms #1",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recg2yrTKBG7DRX0e",
+      "puzzleType": "Frequency",
+      "puzzleName": "Cooling & Water Technology Quiz #1",
+      "originalDate": "2026-06-18",
+      "newDate": "2026-08-05",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "reczSLAKsQbN2Pvyn",
+      "puzzleType": "Rackl",
+      "puzzleName": "Alphabet Soup",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recxpWNvDPU6mYUIv",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "NEOCLOUD",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recmsKt4RgQWSENFt",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Rack Densities Lowest → Highest: 5kW → 20kW → 60kW → 120kW",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recsAXFvJv0YNv54e",
+      "puzzleType": "Circuit",
+      "puzzleName": "Orchestration True/False Sprint #1",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recj5mpSnvjx1GQL4",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Nuclear Bet: Why Hyperscalers Want Reactors",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recivlOXNjg3NxFoF",
+      "puzzleType": "Frequency",
+      "puzzleName": "Hyperscaler Activity Quiz #1",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recXKrZjc0Yk6q8in",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Power Architecture Terms #1",
+      "originalDate": "2026-06-19",
+      "newDate": "2026-08-06",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recs3vaXWqWfND2Nc",
+      "puzzleType": "Rackl",
+      "puzzleName": "Chips & Accelerators",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recyy0OHvR9lUljza",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "CDU",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recUtzrromjq8Ec5O",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Silicon Terms",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recJfrsQSLSL9ZqI6",
+      "puzzleType": "Frequency",
+      "puzzleName": "Chips & Density Quiz",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recoo7NJQq7krAn5T",
+      "puzzleType": "Circuit",
+      "puzzleName": "Chips True/False Sprint",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "recP2gWygOe9egXfP",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank by Voltage Class",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "rec9k9E1iPPKYmJx3",
+      "puzzleType": "The Brief",
+      "puzzleName": "Behind-the-Meter Generation",
+      "originalDate": "2026-06-21",
+      "newDate": "2026-08-07",
+      "publishedFrom": "Published",
+      "publishedTo": "Published",
+      "repeat": false
+    },
+    {
+      "recordId": "rec5NeUP1MZJCN08i",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank the GPU Generations: Hopper → Blackwell → Vera Rubin → Feynman",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec42ytW55eeNBDvo",
+      "puzzleType": "Circuit",
+      "puzzleName": "People & Signals True/False Sprint #1",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec5OpXMA6iASNQXz",
+      "puzzleType": "The Brief",
+      "puzzleName": "The 800V DC Transition",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec0skhQCvM8bqprz",
+      "puzzleType": "Frequency",
+      "puzzleName": "New Entrants Quiz #1",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec3Me5nOqBcImzMX",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Know Your Facility",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec2pN9gzrJflRv67",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "BUSBAR",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recOjdqvFPGwVOgbf",
+      "puzzleType": "Rackl",
+      "puzzleName": "The Power Stack",
+      "originalDate": "2026-06-10",
+      "newDate": "2026-08-08",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recS371owQoUY4DGX",
+      "puzzleType": "Rackl",
+      "puzzleName": "The Neocloud Era",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec362F3HOvqHhjzM",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "BUSBAR",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec7kCJcixTj2NxLJ",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Cooling Methods by Water Consumption (Low → High)",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec9g80mVTHTgLWPe",
+      "puzzleType": "Circuit",
+      "puzzleName": "Hyperscaler Activity True/False Sprint #1",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec8Mdp2z3WYPLzE9",
+      "puzzleType": "The Brief",
+      "puzzleName": "Liquid Cooling: From Air to Immersion",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec4f98Iy56e6ckZM",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Chips & Density Terms #1",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec4VzfAmpLqw8wxa",
+      "puzzleType": "Frequency",
+      "puzzleName": "M&A & Capital Markets Quiz #1",
+      "originalDate": "2026-06-11",
+      "newDate": "2026-08-09",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recZqhTSGN4wpEoO6",
+      "puzzleType": "Rackl",
+      "puzzleName": "The Power Stack",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recEdAeFX52HpZlBO",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "ENERGIZATION",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec9vAkfpiFkTzb1t",
+      "puzzleType": "Circuit",
+      "puzzleName": "Cross-Domain True/False Sprint #1",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec9WgBoBj03CYNn1",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Density Dividend Explained",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec8v3t5GMAhHcnYP",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Power Architecture Terms #1",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recASOdyZz9jMUoXF",
+      "puzzleType": "The Stack",
+      "puzzleName": "Heat Hierarchy",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec5Jf5AriXHujwVX",
+      "puzzleType": "Frequency",
+      "puzzleName": "Power Architecture Quiz #1",
+      "originalDate": "2026-06-12",
+      "newDate": "2026-08-10",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "reccIP8LV0BaRGeqT",
+      "puzzleType": "Rackl",
+      "puzzleName": "Real Estate Fundamentals",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recIEFXwT34btbLP3",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "SWITCHGEAR",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recGsaEP2FB1jw5qf",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Power Sources by Carbon Intensity (Low → High)",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recAyZ6aWxy78nMya",
+      "puzzleType": "The Brief",
+      "puzzleName": "Sovereign AI: Infrastructure as National Strategy",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recA3vAFszxVyINig",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Cross-Domain Terms #1",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recQQuI4Hxud6AgFx",
+      "puzzleType": "Frequency",
+      "puzzleName": "Cross-Domain Knowledge Quiz #1",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recANiv7VLVLC3YtY",
+      "puzzleType": "Circuit",
+      "puzzleName": "Power Architecture True/False Sprint #1",
+      "originalDate": "2026-06-13",
+      "newDate": "2026-08-11",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recDpdd9wuBvLkLb2",
+      "puzzleType": "Rackl",
+      "puzzleName": "Cooling Lineup",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec0SZTXDLRvTGp5S",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "BUSWAY",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recLP5I7zWOoevrd7",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Power Vocabulary",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "reczl09yosNN1ban9",
+      "puzzleType": "Frequency",
+      "puzzleName": "Power Architecture Quiz",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recnnCST186oZfr88",
+      "puzzleType": "Circuit",
+      "puzzleName": "Power True/False Sprint",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recd8wyIyBOgI0Anc",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank GPUs by TDP",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recZiESY2ydEVJPRQ",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Interconnection Queue Crunch",
+      "originalDate": "2026-06-20",
+      "newDate": "2026-08-12",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recD9Zds7pm0APIno",
+      "puzzleType": "Rackl",
+      "puzzleName": "Power Players",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec1aFmVc8jpZ2s4p",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "HBM",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recaZN5LhAF00AqxY",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Thermal Terms",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recMHVWTmJThP568T",
+      "puzzleType": "Frequency",
+      "puzzleName": "Grid & Regulatory Quiz",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recUDh0MxmTJxdbag",
+      "puzzleType": "Circuit",
+      "puzzleName": "Grid True/False Sprint",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recgOk6SKiz0HuVd1",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank Cooling by Density",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec7LdM9QotUaQg0z",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Liquid Cooling Inflection",
+      "originalDate": "2026-06-22",
+      "newDate": "2026-08-13",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recKL9eHrYneXcMrK",
+      "puzzleType": "Rackl",
+      "puzzleName": "Hyperscaler Map",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recMH4lbS22j7tNWX",
+      "puzzleType": "Signal Drop",
+      "puzzleName": "CURTAILMENT",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec9hBcTJRpflW9G3",
+      "puzzleType": "Dark Fiber",
+      "puzzleName": "Grid Terms",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recC5au5HJhnONYiG",
+      "puzzleType": "Frequency",
+      "puzzleName": "Cooling & Water Quiz",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recx8QjreixnkUhV9",
+      "puzzleType": "Circuit",
+      "puzzleName": "Cooling True/False Sprint",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "rec8W5TiNxiJGwprc",
+      "puzzleType": "The Stack",
+      "puzzleName": "Rank US ISOs by Peak Demand",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    },
+    {
+      "recordId": "recOxbe4kN7OiZq2o",
+      "puzzleType": "The Brief",
+      "puzzleName": "The Memory Wall",
+      "originalDate": "2026-06-23",
+      "newDate": "2026-08-14",
+      "publishedFrom": "Retired",
+      "publishedTo": "Published",
+      "repeat": true
+    }
+  ]
+}
