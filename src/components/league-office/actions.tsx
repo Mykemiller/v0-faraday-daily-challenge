@@ -51,6 +51,7 @@ type Payload = {
   membershipId?: string;
   teamId?: string;
   auditId?: string;
+  broadcastId?: string;
 };
 
 export function ActionButton({

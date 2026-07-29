@@ -21,7 +21,7 @@ const PRIMARY: Item[] = [
 ];
 const TOOLS: Item[] = [
   { icon: "⇄", label: "Trading & Free Agency" },
-  { icon: "⚑", label: "Announcements" },
+  { icon: "⚑", label: "Announcements", href: "/league-office/announcements" },
   { icon: "☲", label: "Audit Log", href: "/league-office/audit" },
   { icon: "⚠", label: "Disputes & Flags" },
   { icon: "⚙", label: "Staff & Permissions" },

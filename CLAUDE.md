@@ -1,5 +1,54 @@
 @AGENTS.md
 
+## League Office Announcements → in-app player banner (claude/new-session-ilg5cd, 2026-07-29)
+
+Commissioner-authored **rich-text broadcasts** rendered as a dismissible banner in
+the Daily Challenge shell. The **existing** sidebar "Announcements" item (which was
+disabled with a `SOON` badge) is now live — **no second "Broadcast" nav entry**;
+"broadcast" stays internal/table/action vocabulary and the send-button verb.
+
+- **Schema** `20260729000002_lo_broadcasts.sql` (**APPLIED to prod 2026-07-29**,
+  Myke-approved): `lo_broadcasts` (body_html/body_text/cta/severity/starts_at/
+  expires_at/created_by_email/revoked_at) + `lo_broadcast_dismissals`
+  (PK `(broadcast_id, subscriber_id)`). Both **RLS deny-all, no policies** — DC
+  players hold no Supabase JWT (identity is the custom `dc_sessions` token), so an
+  `auth.uid()` policy could never fire and an anon SELECT would leak staged rows.
+  Approved 2026-07-29; visibility is enforced in the route instead.
+- **Sanitizing is server-side at WRITE time, non-negotiable.**
+  `src/lib/league-office/sanitize-html.ts` (hand-rolled — **zero new deps**; the
+  repo ships only next/react/react-dom). Allowlist `p,br,strong,b,em,i,u,ul,ol,li,a`
+  + `a[href,title]`, href schemes **https:/mailto: only**; disallowed tags are
+  stripped (content kept) except script/style/iframe/svg/… whose content is dropped
+  too; entities are decoded before the scheme check (kills `&#106;avascript:`);
+  raw payloads >2,000 chars rejected. **`lo_broadcasts.body_html` always holds the
+  sanitized output — the raw payload is never stored**, and `body_text` is derived
+  from the sanitized html. The composer's live preview re-runs the same pure module
+  client-side for PRESENTATION only (never the security boundary).
+- **Write path = the existing Tier 2 funnel**: `broadcast.send` / `broadcast.revoke`
+  cases in `executeAction` → one `lo_audit_log` row each (`domain='comms'`,
+  `after` carries the sanitized body + recipient count, `reversible=true`; revoke
+  writes `reverts_id`=send row **and** stamps `reverted_by` back on it so the Audit
+  Log shows "Reverted" instead of a dead Revert button). A Revert clicked on a send
+  row routes to the same revoke. Non-staff → 403 from `/api/league-office/action`.
+- **Player path** `/api/broadcast`: GET returns the single most recent live,
+  non-dismissed broadcast (`order=starts_at.desc&limit=1` — **query rule, not a DB
+  constraint**, so a future-dated one can be staged); POST writes one dismissal row
+  keyed to the **session-resolved** subscriber_id, never a body-supplied one.
+  No token → no banner and no write. `BroadcastBanner` mounts between the masthead
+  and `<main>` in `DailyChallenge.jsx` (`/challenge` only, per scope);
+  `BroadcastBannerView` is shared with the composer preview so staff see exactly
+  what players see.
+- **Audience** = `dc_subscribers.active=true`, resolved at read time — **no
+  fan-out table**, no per-team/per-season targeting (v1).
+- **Validated live 2026-07-29** (2 throwaway subscribers + 5 broadcasts, all cleaned
+  up — 0 rows left): 3 live candidates → **exactly 1 banner**, the newest (AC 8);
+  expired + revoked never returned (AC 4/5); **A's dismissal did not affect B**, and
+  a replayed dismiss stayed 1 row (AC 3); revoking what B still had showing dropped
+  B to the next live one (revoke is global). `severity` CHECK rejects off-list values;
+  **anon SELECT returns 0 rows** (deny-all holds). `get_advisors` (security): both new
+  tables raise ONLY the intended `rls_enabled_no_policy` INFO — no new ERROR/WARN.
+- Tests: `npm run test:broadcast` (28). `npm run build` green.
+
 ## Faraday Signal — Brief pilot (FAR-385, claude/faraday-signal-brief-pilot-393v91, 2026-07-29)
 
 Daily "Faraday Signal" items (headline + body + optional source link), authored

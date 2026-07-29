@@ -13,6 +13,7 @@ import {
   SUBSCRIBER_ID_KEY,
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
+import BroadcastBanner from "@/components/BroadcastBanner";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
 import { deriveTakeFallback } from "@/lib/faradays-take";
@@ -3236,6 +3237,11 @@ export default function DailyChallenge() {
         </div>
       </header>
       <div style={{ height:"2px", background:C.gold }} />
+
+      {/* League Office announcement — the single most recent live broadcast this
+          player hasn't dismissed. Renders nothing when signed out. In-flow (not
+          fixed) so it sits above the game surface without overlaying it. */}
+      <BroadcastBanner sessionToken={sessionToken} tokens={C} />
 
       {/* ── BODY ── */}
       <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
