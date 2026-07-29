@@ -1,6 +1,11 @@
-# FAR-287 stopgap — re-date plan for the Airtable Puzzle Bank (PREPARED, NOT APPLIED)
+# FAR-287 stopgap — re-date plan for the Airtable Puzzle Bank (APPLIED)
 
-**Status: awaiting Myke's approval. Nothing has been written to Airtable.**
+**Status: Option A approved by Myke and APPLIED to the live Puzzle Bank 2026-07-29
+(~02:35 UTC) via the Airtable MCP — all 98 records in `redate-plan.csv`, two batches
+(50 + 48), zero failures.** Post-write verification: 119 `Published` rows total
+(21 for 07-29..31 + the 98 re-dated), each date 2026-08-01 → 2026-08-14 carries a
+full 7-type set, and no past-dated stranded `Published` rows remain. Rollback data
+(original date + Published value per record) is retained in `redate-plan.csv`.
 
 The live bank has no serve-set after **2026-07-31** (verified 2026-07-29 against the
 canonical bank `appxfti7VuoHYUeu6` / `tbliJaRmctbIWJC43`: Live = 7 rows @ 07-28,
