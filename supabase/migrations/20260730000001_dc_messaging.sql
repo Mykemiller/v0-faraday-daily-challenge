@@ -5,7 +5,7 @@
 -- the posture of every dc_* table (players hold no Supabase JWT — identity is the
 -- custom dc_sessions token — so an auth.uid() policy could never fire and an anon
 -- policy would leak private messages). All access is server-side service-role.
--- Applied to prod ycadmmngkdhvpcsrcuaq <date>
+-- Applied to prod ycadmmngkdhvpcsrcuaq 2026-07-29 (Myke-approved).
 
 -- ---------------------------------------------------------------------------
 -- dc_conversations — one row per thread. Two shapes, enforced by CHECK:
