@@ -22,7 +22,8 @@
 // server-side for an hour (`next: { revalidate: 3600 }` in the puzzle-bank
 // helper), so `no-store` costs a route execution, not an upstream fetch.
 
-import { getLivePuzzles, getTipOfTheDay } from "@/lib/airtable-puzzle-bank";
+// DC_PUZZLE_SOURCE selects airtable (default) or supabase — see puzzle-bank.js.
+import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";

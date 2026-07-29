@@ -1,5 +1,40 @@
 @AGENTS.md
 
+## DC serving: Airtable → Supabase (CC-DC-SUPABASE-SERVING-1.0, claude/dc-supabase-serving-migration-01yg02, 2026-07-29)
+
+The Daily Challenge serving path is being repointed onto
+**`dc_puzzle_bank_staging`**, behind **`DC_PUZZLE_SOURCE`** = `airtable`
+(default) | `supabase` — the facade `src/lib/puzzle-bank.js` picks per call;
+the 3 routes (today/guess/rotate) and the day-content sync all switch together.
+Full runbook + phase status: **`docs/dc-supabase-serving/README.md`**.
+
+- **Schema (migration `20260729000001…`, APPLIED to prod 2026-07-29):**
+  `public_id` (unique; minted by `trg_dc_assign_public_id` ONLY on the first
+  transition into Published/Live/Retired — drafts never carry one; format
+  `TYPE4-YY-MM-DD-NNNNN`, GLOBAL `dc_public_id_seq` seeded at 365 = Airtable
+  max 00364 + 1), `approved_by/approved_at`, `(published, go_live_date)` index.
+  `theme_date`/`hint_*`/`answer_key` are now nullable ONLY for imported rows
+  (`airtable_record_id` set) — the `dc_staging_import_or_complete` CHECK still
+  requires them for generated rows (synthetic dc_daily_theme rows were rejected:
+  theme copy is subscriber-facing).
+- **Rotation = `fn_dc_rotate_live_set(date)`** — ONE transaction, exact
+  AUTO-128 semantics (promote Published+today first, retire Live+strictly-before),
+  idempotent; the Airtable rotator's partial-failure mode no longer exists.
+  **Approval = `fn_dc_approve_puzzles(date[], actor)`** — the ONLY
+  Unpublished→Published path; nothing auto-publishes. Both RPCs service-role
+  only. RLS stays deny-all — NEVER add an anon policy (rows carry answers).
+- **`src/lib/supabase-puzzle-bank.js`** mirrors airtable-puzzle-bank's 4 exports
+  exactly; `puzzle_content` is jsonb (never JSON.parse); `answer_key` is never
+  selected on the serve path; Signal Drop still routes through
+  `toPublicSignalPuzzle`. Tests: `npm run test:puzzle-bank` (10).
+- **State (2026-07-29):** flag unset in prod (= airtable, behavior unchanged).
+  Today's 7 Live rows pilot-imported to staging; parity verified deep-equal on
+  all 7 types (jsonb key reordering is the one accepted delta class). Full
+  373-row backfill (`scripts/dc-migrate/backfill-airtable-to-staging.mjs`,
+  dry-run default) + flag flip + Airtable-path deletion are the remaining
+  Phase-5 ops steps — run the runbook in order. CC-2 (fill the bank) sequences
+  first.
+
 ## Daily Challenge editorial palette (FAR-394, claude/daily-challenge-editorial-palette-9tvxzv, 2026-07-28)
 
 Moved the DC from raw neon-on-dark toward Faraday's institutional editorial

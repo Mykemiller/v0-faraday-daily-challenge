@@ -37,6 +37,8 @@ import {
   PUZZLE_BANK_TABLE_ID,
   PUZZLE_TYPES,
 } from "@/lib/airtable-puzzle-bank";
+import { puzzleSource } from "@/lib/puzzle-bank";
+import { DOMAIN_LABELS } from "@/lib/idf-labels";
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
@@ -310,9 +312,110 @@ async function fetchAcademyCourse(schoolId: string): Promise<AcademyCourseRef | 
   }
 }
 
+// ── Supabase staging gather (CC-DC-SUPABASE-SERVING, D8) ─────────────────────
+// When DC_PUZZLE_SOURCE=supabase, the sync gathers from dc_puzzle_bank_staging
+// instead of Airtable. Domain/Sub-Domain are plain D#/D#.# columns there, so
+// the Airtable IDF-registry round-trip disappears — names resolve through the
+// canonical DOMAIN_LABELS map (FAR-387). Known gap, flagged for cutover:
+// staging carries no Faraday Take / Take Byline columns yet (neither does
+// Airtable today — FAR-389 authoring is still blocked on Myke), so the staging
+// path emits null takes and the win screen keeps its explanation fallback.
+async function fetchStagingLiveRows(): Promise<
+  Array<Record<string, unknown>>
+> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is not set — required to read dc_puzzle_bank_staging."
+    );
+  }
+  const supabaseUrl =
+    process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/dc_puzzle_bank_staging` +
+      `?published=eq.Live&select=puzzle_type,puzzle_name,public_id,puzzle_content,` +
+      `hint_1,hint_2,hint_3,answer_explanation,domain,sub_domain&order=go_live_date.desc`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Staging read failed (${res.status}): ${body.slice(0, 300)}`);
+  }
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function buildDayContentRowFromStaging(dateISO: string): Promise<DayContentRow> {
+  const rows = await fetchStagingLiveRows();
+  const courseCache = new Map<string, Promise<AcademyCourseRef | null>>();
+
+  const puzzles: DayPuzzleEntry[] = [];
+  const seenTypes = new Set<string>();
+
+  for (const row of rows) {
+    const type = str(row["puzzle_type"]);
+    if (!type || !PUZZLE_TYPES.includes(type) || seenTypes.has(type)) continue;
+    seenTypes.add(type);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const content: any =
+      row["puzzle_content"] && typeof row["puzzle_content"] === "object"
+        ? row["puzzle_content"]
+        : null;
+
+    // Staging's domain column is a plain D# code (no linked-record resolution).
+    const domainCode = str(row["domain"]);
+
+    let academy: AcademyCourseRef | null = null;
+    if (domainCode) {
+      if (!courseCache.has(domainCode)) courseCache.set(domainCode, fetchAcademyCourse(domainCode));
+      academy = await courseCache.get(domainCode)!;
+    }
+
+    puzzles.push({
+      puzzle_type: type,
+      public_id: str(row["public_id"]),
+      puzzle_name: str(row["puzzle_name"]) || str(content?.name),
+      topic: str(content?.domain),
+      hints: [row["hint_1"], row["hint_2"], row["hint_3"]]
+        .map(str)
+        .filter((h): h is string => !!h),
+      answer: extractAnswer(type, content),
+      answer_explanation: str(row["answer_explanation"]),
+      faradays_take: null, // no staging column yet — see gap note above
+      take_byline: null,
+      domain_code: domainCode,
+      academy,
+    });
+  }
+
+  puzzles.sort((a, b) => PUZZLE_TYPES.indexOf(a.puzzle_type) - PUZZLE_TYPES.indexOf(b.puzzle_type));
+
+  const codes = puzzles.map((p) => p.domain_code).filter((c): c is string => !!c);
+  const dayDomainCode = codes.length
+    ? [...codes].sort((a, b) =>
+        codes.filter((c) => c === b).length - codes.filter((c) => c === a).length
+      )[0]
+    : null;
+  const dayDomainName = dayDomainCode ? DOMAIN_LABELS[dayDomainCode] ?? null : null;
+
+  return {
+    puzzle_date: dateISO,
+    domain_code: dayDomainCode,
+    about_content: buildAboutContent(dateISO, puzzles, { code: dayDomainCode, name: dayDomainName }),
+    puzzles,
+    generator_version: GENERATOR_VERSION,
+    synced_at: new Date().toISOString(),
+  };
+}
+
 // Gather everything for one serve day and shape the dc_daily_page_content row.
 // Idempotent: same bank state in → same row out (modulo synced_at).
+// Source-switched by DC_PUZZLE_SOURCE (D8): airtable (default) or supabase.
 export async function buildDayContentRow(dateISO: string): Promise<DayContentRow> {
+  if (puzzleSource() === "supabase") {
+    return buildDayContentRowFromStaging(dateISO);
+  }
   const records = await fetchRecordsByName(
     PUZZLE_BANK_BASE_ID,
     PUZZLE_BANK_TABLE_ID,

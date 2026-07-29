@@ -21,7 +21,8 @@
 // max guesses have been submitted). Score/streak/leaderboard are handled
 // separately by /api/score and are out of scope here.
 
-import { getSignalDropAnswer } from "@/lib/airtable-puzzle-bank";
+// DC_PUZZLE_SOURCE selects airtable (default) or supabase — see puzzle-bank.js.
+import { getSignalDropAnswer } from "@/lib/puzzle-bank";
 import { resolveGuesses, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 
 export const dynamic = "force-dynamic";
