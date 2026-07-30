@@ -1,5 +1,6 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
+import SiteFooter from "@/components/SiteFooter";
 import LiveAgent from "@/components/LiveAgent";
 
 export const metadata = { title: "Live Agent — Faraday" };
@@ -61,6 +62,7 @@ export default function Page() {
           Metered for Faraday subscribers · grounded answers only.
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }

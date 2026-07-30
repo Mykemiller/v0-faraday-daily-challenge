@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 // Leaderboard — Global + per-team tabs backed by /api/leaderboard/season.
@@ -472,6 +473,7 @@ export default function LeaderboardPage() {
           )}
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }

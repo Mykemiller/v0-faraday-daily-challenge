@@ -130,7 +130,7 @@ export function buildSiteMenus({
       { label: "Faraday Merchandise",        href: "/merch" },
       { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
-      { label: "Terms / Privacy",            href: "/legal" },
+      { label: "Terms / Privacy",            href: "/terms" },
     ]},
   ];
 }

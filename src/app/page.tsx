@@ -239,6 +239,16 @@ export default function Home() {
           <BrandMark size={16} />
           <span><b className="font-display text-[13px] font-bold not-italic text-near-black">Faraday Intelligence.</b> <i className="font-serif text-near-black/75">Your unfair advantage.</i></span>
         </div>
+        {/* Legal attribution — same notice the shared SiteFooter carries on the
+            Daily Challenge surfaces, kept inline here so the storefront's
+            brand-tagline footer stays intact above it. */}
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 border-t border-warm-gray/40 px-5 py-4 font-mono text-[11px] text-near-black/65">
+          <span>&copy; 2026 Faraday Intelligence LLC. All rights reserved.</span>
+          <span aria-hidden className="text-near-black/30">&middot;</span>
+          <Link href="/terms" className="underline underline-offset-2 hover:text-forest">Terms</Link>
+          <span aria-hidden className="text-near-black/30">&middot;</span>
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-forest">Privacy</Link>
+        </div>
       </footer>
     </div>
   );

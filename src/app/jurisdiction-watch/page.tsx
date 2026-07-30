@@ -1,5 +1,6 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
+import SiteFooter from "@/components/SiteFooter";
 import JurisdictionWatchMap from "@/components/JurisdictionWatchMap";
 
 export const metadata = { title: "Jurisdiction Watch — Faraday" };
@@ -42,6 +43,7 @@ export default function Page() {
           <JurisdictionWatchMap />
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

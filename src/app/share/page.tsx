@@ -8,6 +8,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 
 const SITE = "https://www.faradaydailychallenge.com";
 const INVITE_URL = `${SITE}/challenge`;
@@ -129,6 +130,7 @@ export default function SharePage() {
           <Link href="/challenge" className="underline hover:text-forest">← Back to the Daily Challenge</Link>
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }
