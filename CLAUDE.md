@@ -1,5 +1,80 @@
 @AGENTS.md
 
+## League Office Game Library (CC-LO-GAME-LIBRARY-1.0, 2026-07-30)
+
+`/league-office/game-library` — the extensible game catalog: status board, lifecycle
+control, and which games are configured for which season. Ops note:
+**`ops/2026-07-30-lo-game-library.md`**; Phase 0 investigation:
+`docs/lo-game-library/PHASE-0-FINDINGS.md`.
+
+- **⚠️ LIFECYCLE ≠ SEASON ASSIGNMENT (D1) — do not collapse them.** `game_catalog.
+  lifecycle_state` (enum `game_lifecycle_state`: `new_idea → in_test → live → retired`)
+  is **ONE state per game**. "Assigned to a season" is a **many-to-many relationship** in
+  `season_games`, always **derived** for display, never stored as a state. All 7 live
+  games are simultaneously Live *and* assigned to 4 seasons — a single-state model
+  cannot represent that. Allowed transitions (server-enforced in `checkTransition`):
+  `new_idea→in_test`, `in_test→live|new_idea`, `live→retired`, `retired→live`. There is
+  deliberately **no `new_idea→live`**. Every transition requires a reason.
+- **⚠️ THE SEASON SLATE IS ADVISORY (D4) — it does NOT gate serving.**
+  `/api/challenge/today` selects on publish state alone (`published='Live'`) and keys
+  games by the free-text name; it never reads `season_config`/`season_games`. Toggling a
+  game here changes what the console *says*, not what subscribers get. Enforcement is a
+  later phase behind the `DC_PUZZLE_SOURCE` cutover (CC-DC-SUPABASE-SERVING-1.0, PR #115
+  — merged, flag unset in prod). **`npm run test:advisory-only` (6) is the guard**: it
+  asserts the served set is identical before/after a slate toggle AND that no serving
+  module mentions `season_games`/`season_config`/`game_catalog`. If you deliberately wire
+  enforcement, update D4, the page copy and these docs in the same change — do not just
+  delete the test.
+- **⚠️ `short_code` and the Public ID prefix are TWO LIVE SYSTEMS (D8) — never derive one
+  from the other.** `game_catalog.short_code` = RKL/SGD/STK/CIR/DKF/FRQ/BRF;
+  `game_catalog.public_id_prefix` = RACK/SGNL/STAK/CIRC/FIBR/FREQ/BRIF, matching the
+  `public_id` values `trg_dc_assign_public_id` mints. **Share links in the wild use the
+  prefix.** Both are stored; neither is computed.
+- **`runtime_key` is the join key the runtime actually uses (D3).** The serving path keys
+  games by display name as free text (`dc_completions.puzzle_type`,
+  `dc_daily_attempts.game_type`, `dc_solve_time_bands.game_type`,
+  `dc_puzzle_bank_staging.puzzle_type`), while `game_key` is a snake_case slug **nothing
+  joins on**. `runtime_key` names that orphan join so it is testable. Unique (partial
+  index); a CHECK requires it for `live`. **`game_key` is never editable; `runtime_key`
+  freezes once live** — both enforced by the `sanitizeCatalogPatch` whitelist and again in
+  `updateGame`.
+- **Editing a season's slate reuses the PR #120 state machine (D5).** `draft`/`scheduled`
+  are written in place; **`active` is cloned + promoted** (`season_config_clone` → edit the
+  draft → `season_config_promote`), which yields v+1 active with the prior version
+  superseded. **Do NOT insert a second row already in state `active`** — that trips
+  `season_config_one_active_uq` (recorded as "defect 3" for migration 20260730000001).
+  `closed`/`superseded`/`cancelled`/locked seasons are refused.
+- **⚠️ Every config ships `games_per_day = 7` against exactly 7 enabled games, so ANY
+  unassign trips the `games_per_day_exceeds_slate` validator** and blocks promotion. The
+  write path validates *before* promoting, discards the orphan clone, and reports the real
+  finding. Lowering `games_per_day` belongs to the **season config editor** — this surface
+  deliberately does not rewrite it as a side effect of a slate toggle.
+- **D9 is a database trigger, not UI validation:** `trg_season_games_assignable` rejects
+  assigning any game whose lifecycle is not `live`/`in_test`. It fires on INSERT and on
+  UPDATE **only when `game_id` changes**, so retiring a game does not brick edits to its
+  existing rows. Because `saveConfigBundle` replaces a slate by DELETE + INSERT, retiring
+  an assigned game would make that slate unsaveable — so `checkTransition` refuses to
+  retire while assignments exist and tells staff to unassign first.
+- **Writes** go through the existing Tier 2 funnel: `executeAction` cases `game.create`,
+  `game.lifecycle_change`, `game.update`, `game.reorder`, `game.season_assign`,
+  `game.season_unassign` → `game-library-write.ts`, one `lo_audit_log` row each
+  (`domain='game_library'`, populated `before`/`after`). A versioned assignment also writes
+  `season.config_version_created` (target_type `season_config`). **`season_config_promote`
+  self-logs — do not double-log it.**
+- **Migrations `20260730000002` (lifecycle + trigger) and `20260730000003` (11-concept
+  backlog seed) — APPLIED to prod 2026-07-30 (Myke-approved).** Both carry in-migration
+  verification gates that raise and roll back on an unexpected count. Catalog is now **18
+  rows: 7 `live` + 11 `new_idea`**; `season_games` unchanged at **28**. Seeded concepts are
+  `is_active=false` so `loadGameCatalog()`'s default filter keeps them out of the season
+  slate editor. `category` gained a new value **`spatial`** (Grid Lock, Mesh) — there is no
+  CHECK constraint on `category`, so nothing needed extending.
+- **RLS untouched (D10).** `game_catalog`, `season_games`, `season_config`,
+  `season_difficulty_mix` all have **RLS disabled**; every read is server-side service-role
+  (5 call sites, no anon/authenticated path). Logged as a separate security item — do not
+  enable RLS as a side effect of this surface.
+- Tests: `npm run test:game-library` (26) · `npm run test:advisory-only` (6).
+  `npm run build` green.
+
 ## League Office season configuration (CC-LO-SEASON-CONFIG-1.0, PR #120, 2026-07-30)
 
 Commissioner-facing season config: create a season end-to-end without SQL, edit a
