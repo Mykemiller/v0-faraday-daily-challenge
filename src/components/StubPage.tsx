@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import BrandMark from "@/components/BrandMark";
+import SiteFooter from "@/components/SiteFooter";
 
 // Shared layout for the stubbed storefront product pages. Deliberately framed as
 // a preview so a stub is never mistaken for a finished page. Brand tokens from
@@ -69,6 +70,7 @@ export default function StubPage({ title, tagline, status, children, cta, metere
           </a>
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }

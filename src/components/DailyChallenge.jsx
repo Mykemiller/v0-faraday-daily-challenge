@@ -2621,7 +2621,7 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       { label: "Faraday Merchandise",        href: "/merch" },
       { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
-      { label: "Terms / Privacy",            href: "/legal" },
+      { label: "Terms / Privacy",            href: "/terms" },
     ]},
   ];
 }
@@ -3440,6 +3440,30 @@ export default function DailyChallenge() {
           />
         )}
       </main>
+
+      {/* ── LEGAL FOOTER ── Reaches every in-app screen (lobby, all 7 games,
+          account, gate) because the shell wraps them all. Token-matched twin of
+          the shared <SiteFooter/> used by the standalone routes; it lives here
+          rather than importing that component because this surface styles from
+          the `C` object, not the Tailwind @theme, and flips light/dark by
+          screen. */}
+      <footer style={{
+        marginTop:"48px",
+        borderTop:`1px solid ${(screen === "lobby" || screen === "account") ? "rgba(20,18,16,0.12)" : C.border}`,
+      }}>
+        <div style={{
+          maxWidth:"820px", margin:"0 auto", padding:"18px 20px",
+          display:"flex", flexWrap:"wrap", alignItems:"center", gap:"8px",
+          ...mono, fontSize:"11px", lineHeight:1.6,
+          color:(screen === "lobby" || screen === "account") ? "rgba(20,18,16,0.65)" : C.muted,
+        }}>
+          <span>&copy; 2026 Faraday Intelligence LLC. All rights reserved.</span>
+          <span aria-hidden style={{ opacity:0.5 }}>&middot;</span>
+          <a href="/terms" style={{ color:"inherit", textDecoration:"underline" }}>Terms</a>
+          <span aria-hidden style={{ opacity:0.5 }}>&middot;</span>
+          <a href="/privacy" style={{ color:"inherit", textDecoration:"underline" }}>Privacy</a>
+        </div>
+      </footer>
     </div>
   );
 }

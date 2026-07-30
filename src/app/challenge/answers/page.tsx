@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 interface AnswerGroups { kind: "groups"; groups: Array<{ label: string; items: string[] }> }
@@ -263,6 +264,7 @@ export default function AnswersTodayPage() {
           <a href="/challenge" className="underline hover:text-forest">← Back to the Daily Challenge</a>
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import OTPGate from "@/components/OTPGate";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -257,6 +258,7 @@ export default function NotificationsPage() {
             <div key={i} className="h-24 rounded-lg bg-warm-cream" />
           ))}
         </main>
+        <SiteFooter />
       </div>
     );
   }
@@ -291,6 +293,7 @@ export default function NotificationsPage() {
             />
           </div>
         </main>
+        <SiteFooter />
       </div>
     );
   }
@@ -406,6 +409,7 @@ export default function NotificationsPage() {
           </>
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }

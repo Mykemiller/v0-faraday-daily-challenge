@@ -1,20 +1,10 @@
-import DcStubPage from "@/components/DcStubPage";
+import { permanentRedirect } from "next/navigation";
 
-export const metadata = { title: "Terms / Privacy · Faraday Intelligence" };
-
-// More Faraday → Terms / Privacy stub. One page for both documents until
-// counsel-reviewed copy exists; split into /terms and /privacy then if needed.
+// The combined "Terms / Privacy — coming soon" placeholder is retired. The real
+// documents live at /terms and /privacy (CC-DC-LEGAL-1.0). This route is kept as
+// a permanent redirect to /terms — which carries a prominent link to /privacy —
+// so old bookmarks and any external link to /legal never 404.
 
 export default function LegalPage() {
-  return (
-    <DcStubPage
-      title="Terms / Privacy"
-      blurb="The terms of service and privacy policy for Faraday Intelligence and the Daily Challenge."
-    >
-      <p>
-        Final terms of service and privacy policy are being prepared and will be published
-        here. Until then, questions about your data can go through the Feedback page.
-      </p>
-    </DcStubPage>
-  );
+  permanentRedirect("/terms");
 }

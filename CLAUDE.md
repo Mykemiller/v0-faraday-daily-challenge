@@ -1,5 +1,58 @@
 @AGENTS.md
 
+## Legal pages · LLC footer · signup clickwrap (CC-DC-LEGAL-1.0, claude/legal-terms-privacy-footer-05ytxi, 2026-07-30)
+
+**Operating entity = `Faraday Intelligence LLC`, a Minnesota limited liability
+company.** That exact string is the attribution everywhere — footer notice and
+both documents. Product names carry ™ in legal copy: Faraday Intelligence™,
+Faraday Daily Challenge™, Jurisdiction Watch™.
+
+- **Routes: `/terms` and `/privacy`** — two separate pages, both **static site
+  content with the copy inline in the page component** (no CMS, no Airtable, no
+  Supabase, **no new dependency** — the repo still ships only next/react/react-dom).
+  The old combined `/legal` placeholder is now a **`permanentRedirect("/terms")`**
+  (D1: replaced-with-`/terms`, chosen over an index page because only two nav
+  links pointed at it). Keep `/legal` as a redirect — do not delete it.
+- **Effective-date convention:** one `effectiveDate` literal per page component,
+  currently **July 30, 2026**. ToS §7 / Privacy §10 promise that a material change
+  is signalled by bumping it — so **edit the literal in the page, never a shared
+  constant**, and bump it whenever the text changes materially.
+- **Shell** `src/components/LegalDocument.tsx` — SiteHeaderNav + title + effective
+  date + sibling cross-link, with the section/paragraph/list typography applied
+  once via arbitrary-variant classes. Contact route is the **Feedback page**
+  (`/help/feedback`), never a raw email address.
+- **Footer** `src/components/SiteFooter.tsx` — `© 2026 Faraday Intelligence LLC.
+  All rights reserved. · Terms · Privacy`. Baked into `DcStubPage` + `StubPage`
+  (so every stub inherits it) and added per-page to the 18 `SiteHeaderNav` routes,
+  `/live-agent`, `/jurisdiction-watch`. Three surfaces carry a **hand-rolled twin**
+  instead, because they don't style from the Tailwind `@theme`: the dark in-app
+  shell at the bottom of `DailyChallenge.jsx` (covers lobby + all 7 games +
+  account + gate; flips light/dark by `screen`), the storefront `/` footer, and
+  the two `/library` forest footers. **Edit all four when the notice changes.**
+  Not reached, deliberately: `/league-office/*` (staff-only internal), `/auth`
+  (transient verify screen), the pure redirects (`/legal`, `/notifications`,
+  `/academy`, the 7 per-game routes), and `/api/*`.
+- **Clickwrap** — "By continuing you agree to the Terms of Service and Privacy
+  Policy." rendered **immediately under the submit button** in
+  `src/components/OTPGate.jsx` (the live registration flow: email → `send-otp` →
+  `verify-otp`; mounted by `DailyChallenge.jsx`, `/account`,
+  `/account/notifications`). D4: adjacent assent, **no checkbox**. Links open in a
+  new tab so an in-progress sign-up is never lost. `src/components/SocialGate.tsx`
+  (the `register-with-magic-link` caller) got the same line, but note it is
+  **imported by nothing** — dead code kept in tree. **No auth logic, edge
+  function, schema, or RLS was touched.**
+- **No cookie-consent banner (D6), and that is a verified finding, not an
+  assumption:** the repo has zero third-party analytics/ad trackers — no gtag,
+  GTM, `@vercel/analytics`, PostHog, Segment, Plausible, or pixel. If one is ever
+  added, the banner question reopens.
+- **Verified:** `npm run build` green · `npm run test:contrast` 29/29 · headless
+  pass over `/terms /privacy /legal /challenge /account /leaderboard
+  /help/feedback` — footer on all 7, clickwrap on the `/account` gate, `/legal`
+  308s to `/terms`, **no console errors from these routes** (the only console
+  noise is the sandbox's blocked Google Fonts + the 500s from unset local
+  Airtable/Supabase env). ESLint unchanged: same 2 pre-existing errors before
+  and after.
+
 ## League Office Announcements → in-app player banner (claude/new-session-ilg5cd, 2026-07-29)
 
 Commissioner-authored **rich-text broadcasts** rendered as a dismissible banner in
@@ -304,7 +357,8 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
 - **More Faraday** = About (`/about` stub) / Who is Faraday (`/who-is-faraday`
   stub) / Share / Invite (`/share` stub) / Notifications (`/notifications` stub) /
   Faraday Merchandise (`/merch` stub) / **Faraday Academy — disabled/grayed, no
-  link (reserved for a later phase, do NOT wire)** / Terms-Privacy (`/legal` stub).
+  link (reserved for a later phase, do NOT wire)** / Terms-Privacy (**now `/terms`,
+  a real page — see the Legal pages section at the top; `/legal` redirects there**).
   Other Faraday products (Jurisdiction Watch, Signal Room, …) deliberately NOT in
   this menu. No "Sign Up" in the gear menu by design.
 - Stub pages share `src/components/DcStubPage.tsx` (DC masthead + "Coming soon"
@@ -326,7 +380,8 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
   pass (Myke-confirmed "retire live/mw/streak flame").
 - Placeholder links to flag: Leaderboard Today/Season both →/leaderboard (no
   time-range views yet); every `/help/*`, `/about`, `/who-is-faraday`, `/share`,
-  `/notifications`, `/merch`, `/free-agency`, `/legal` link lands on a stub.
+  `/notifications`, `/merch`, `/free-agency` link lands on a stub (`/legal` no
+  longer does — it redirects to the real `/terms`).
   Repoint in `buildHeaderMenus` / `buildSiteMenus` when real pages exist.
 - **Standalone Next routes** (`/account`, `/leaderboard`, …) use the twin
   component `src/components/SiteHeaderNav.tsx` — same icon-dropdown look/behavior

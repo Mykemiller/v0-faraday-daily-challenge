@@ -310,6 +310,14 @@ export default function ReadingRoom() {
         <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: 13.5, color: "#8CA68A" }}>
           Curated with Conviction. Cultivated for Depth.
         </div>
+        {/* Legal attribution — dark-surface twin of the shared SiteFooter. */}
+        <div style={{ flexBasis: "100%", borderTop: "1px solid rgba(140,166,138,0.25)", paddingTop: 12, fontFamily: "var(--font-mono)", fontSize: 11, color: "#8CA68A" }}>
+          &copy; 2026 Faraday Intelligence LLC. All rights reserved.{" "}
+          <span aria-hidden style={{ opacity: 0.5 }}>&middot;</span>{" "}
+          <Link href="/terms" style={{ color: "#8CA68A", textDecoration: "underline" }}>Terms</Link>{" "}
+          <span aria-hidden style={{ opacity: 0.5 }}>&middot;</span>{" "}
+          <Link href="/privacy" style={{ color: "#8CA68A", textDecoration: "underline" }}>Privacy</Link>
+        </div>
       </div>
     </div>
   );

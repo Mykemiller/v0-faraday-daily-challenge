@@ -251,6 +251,15 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
       <Btn onClick={sendOTP} disabled={loading || !email}>
         {loading ? "…" : "Send my access code"}
       </Btn>
+      {/* Clickwrap — affirmative assent at the point of email submission. Sits
+          immediately under the submit action so agreement is unambiguous. The
+          documents open in a new tab so an in-progress sign-up is never lost. */}
+      <div style={{ fontSize: "11px", lineHeight: 1.55, color: C.muted, ...mono }}>
+        By continuing you agree to the{" "}
+        <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "underline" }}>Terms of Service</a>
+        {" "}and{" "}
+        <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "underline" }}>Privacy Policy</a>.
+      </div>
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
         <div style={{ flex: 1, height: "1px", background: C.border }} />
         <span style={{ fontSize: "11px", color: C.muted, ...mono }}>OR</span>

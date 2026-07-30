@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 interface RosterMember {
@@ -283,6 +284,7 @@ export default function TeamPage() {
           />
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }
