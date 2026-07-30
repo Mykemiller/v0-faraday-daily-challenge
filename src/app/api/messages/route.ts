@@ -233,8 +233,10 @@ async function getThread(
 
   // Latest page, returned oldest → newest. Author handle comes from the
   // embedded subscriber row — handle or email local-part, NEVER the email.
+  // The FK hint is required: dc_messages has TWO FKs to dc_subscribers
+  // (author_id, deleted_by), and an unhinted embed is ambiguous → PostgREST 300.
   const mR = await fetch(
-    `${SUPABASE_URL}/rest/v1/dc_messages?conversation_id=eq.${encodeURIComponent(convo.id)}&deleted_at=is.null&select=id,conversation_id,author_id,body,created_at,deleted_at,dc_subscribers(handle,email)&order=created_at.desc&limit=${THREAD_PAGE}`,
+    `${SUPABASE_URL}/rest/v1/dc_messages?conversation_id=eq.${encodeURIComponent(convo.id)}&deleted_at=is.null&select=id,conversation_id,author_id,body,created_at,deleted_at,dc_subscribers!dc_messages_author_id_fkey(handle,email)&order=created_at.desc&limit=${THREAD_PAGE}`,
     { headers: h, cache: 'no-store' }
   );
   const raw: MessageRow[] = mR.ok ? await mR.json().catch(() => []) : [];
