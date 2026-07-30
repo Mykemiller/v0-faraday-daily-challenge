@@ -38,8 +38,8 @@ export async function POST(request: Request) {
     tz: body.tz,
     starts_on: body.starts_on,
     ends_on: body.ends_on,
-    free_agency_start: body.free_agency_start ?? null,
-    free_agency_notice_start: body.free_agency_notice_start ?? null,
+    // free_agency_* are GENERATED ALWAYS on `seasons` (ends_on − 3 / − 7) and
+    // are intentionally not forwarded, even if a client sends them.
     roster_lock_on: body.roster_lock_on ?? null,
     scope: body.scope ?? { mode: "platform" },
     startingPoint: body.startingPoint ?? { mode: "defaults" },

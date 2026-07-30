@@ -22,7 +22,8 @@ import {
 } from "./seasons";
 import {
   countOverCap, defaultDifficultyMix, defaultThemeMix, editability,
-  normalizeDayMask, round2, sanitizeConfigPatch, slugify,
+  findOverlappingSeason, normalizeDayMask, round2, sanitizeConfigPatch, slugify,
+  type SeasonRange,
 } from "./season-config-logic";
 
 const SUPABASE_URL =
@@ -45,6 +46,56 @@ async function rq(s: Svc, path: string, init: RequestInit): Promise<unknown[] | 
 }
 const insert = (s: Svc, table: string, body: unknown) =>
   rq(s, table, { method: "POST", body: JSON.stringify(body) });
+
+/** Like `insert`, but PRESERVES the upstream PostgREST error instead of
+ *  flattening it to null. A schema-level refusal (generated column, exclusion
+ *  constraint, check) carries the only information that can tell a commissioner
+ *  what to change — swallowing it turns every distinct failure into the same
+ *  useless "nothing was written". */
+async function insertOrError(
+  s: Svc,
+  table: string,
+  body: unknown
+): Promise<{ ok: true; rows: unknown[] } | { ok: false; status: number; message: string }> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: "POST",
+      headers: { ...s.headers, Prefer: "return=representation" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      const detail =
+        j && typeof j === "object"
+          ? [
+              (j as Record<string, unknown>).message,
+              (j as Record<string, unknown>).details,
+              (j as Record<string, unknown>).hint,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "";
+      return { ok: false, status: r.status === 409 ? 409 : 400, message: detail || `Insert into ${table} failed (${r.status}).` };
+    }
+    return { ok: true, rows: Array.isArray(j) ? j : [] };
+  } catch {
+    return { ok: false, status: 500, message: "Network error — nothing was written." };
+  }
+}
+
+/** Turn the `seasons` schema's refusals into something actionable. */
+function seasonWriteMessage(raw: string): string {
+  if (/seasons_no_overlap|exclusion constraint/i.test(raw))
+    return "Those dates overlap an existing season. Seasons cannot overlap — pick a different window.";
+  if (/seasons_slug_key|duplicate key/i.test(raw))
+    return "That slug is already taken. Choose a different name or edit the slug.";
+  if (/seasons_check/i.test(raw))
+    return "The end date must be on or after the start date.";
+  if (/generated column|428C9/i.test(raw))
+    return "Free agency dates are derived from the end date and cannot be set directly. This is a bug — please report it.";
+  return `Creating the season failed — nothing was written. (${raw})`;
+}
 const patch = (s: Svc, table: string, filter: string, body: Record<string, unknown>) =>
   rq(s, `${table}?${filter}`, { method: "PATCH", body: JSON.stringify(body) });
 const del = (s: Svc, table: string, filter: string) =>
@@ -117,8 +168,8 @@ export type CreateSeasonInput = {
   tz?: string;
   starts_on: string;
   ends_on: string;
-  free_agency_start?: string | null;
-  free_agency_notice_start?: string | null;
+  /** free_agency_start / free_agency_notice_start are NOT accepted — they are
+   *  GENERATED ALWAYS from ends_on (−3 / −7) and cannot be written. */
   roster_lock_on?: string | null;
   scope: WizardScope;
   startingPoint: { mode: "copy"; sourceSeasonId: string } | { mode: "defaults" };
@@ -145,17 +196,32 @@ export async function createSeason(
   const clash = await getOne<{ id: string }>(s, `seasons?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`);
   if (clash) return err(409, `The slug “${slug}” is already taken. Choose a different name or edit the slug.`);
 
-  const created = await insert(s, "seasons", {
+  // `seasons_no_overlap` EXCLUDEs overlapping daterange(starts_on, ends_on, '[]').
+  // Pre-checked so the message can NAME the clashing season; the constraint
+  // mapping below still covers the race where one is created concurrently.
+  const existing = await fetchJson<SeasonRange[]>(s, `seasons?select=id,name,starts_on,ends_on`);
+  const overlap = findOverlappingSeason(input.starts_on, input.ends_on, existing ?? []);
+  if (overlap)
+    return err(
+      409,
+      `Those dates overlap “${overlap.name}” (${overlap.starts_on} → ${overlap.ends_on}). Seasons cannot overlap — pick a window outside it.`
+    );
+
+  // NOTE: free_agency_start / free_agency_notice_start are GENERATED ALWAYS
+  // (ends_on − 3 / ends_on − 7). Sending them — even as NULL — makes Postgres
+  // reject the whole INSERT with 428C9, which is what made every season
+  // creation fail. They are derived; never write them.
+  const created = await insertOrError(s, "seasons", {
     slug,
     name,
     starts_on: input.starts_on,
     ends_on: input.ends_on,
     status: "upcoming",
     tz: (input.tz || "America/Chicago").trim(),
-    free_agency_start: input.free_agency_start || null,
-    free_agency_notice_start: input.free_agency_notice_start || null,
   });
-  const seasonId = (created?.[0] as { id?: string } | undefined)?.id;
+  if (!created.ok) return err(created.status, seasonWriteMessage(created.message));
+
+  const seasonId = (created.rows[0] as { id?: string } | undefined)?.id;
   if (!seasonId) return err(500, "Creating the season failed — nothing was written.");
 
   await writeScopeRows(s, seasonId, input.scope);
@@ -728,9 +794,11 @@ export async function cancelConfigVersion(
 
 // ── season row edits (name / dates / status / lock) ───────────────────────────
 
+// free_agency_start / free_agency_notice_start are GENERATED ALWAYS and are
+// deliberately ABSENT: Postgres rejects any write to them (428C9), so including
+// them here would make every season PATCH that touched them fail outright.
 const SEASON_FIELDS = [
   "name", "starts_on", "ends_on", "status", "tz",
-  "free_agency_start", "free_agency_notice_start",
 ] as const;
 
 export type SeasonPatchInput = {

@@ -9,6 +9,7 @@ import {
   windowSummary, validateWindow, curvePoints, canonicalJson, fingerprint,
   configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
   diffConfigs, promoteIntent, countOverCap, THEATERS,
+  derivedFreeAgency, findOverlappingSeason,
 } from "./season-config-logic.ts";
 
 // ── editability ──────────────────────────────────────────────────────────────
@@ -124,6 +125,50 @@ test("validateWindow enforces ordering and containment", () => {
   }).some((e) => /notice must come on or before/i.test(e)));
 
   assert.ok(validateWindow({}).length >= 2); // both dates required
+});
+
+// ── generated free-agency dates ──────────────────────────────────────────────
+test("derivedFreeAgency mirrors the GENERATED ALWAYS columns (ends_on −3 / −7)", () => {
+  // matches the live rows: Season 1 ends 2026-07-10 → FA 07-07, notice 07-03
+  assert.deepEqual(derivedFreeAgency("2026-07-10"), { start: "2026-07-07", notice: "2026-07-03" });
+  // Season 2 ends 2027-01-06 → 2027-01-03 / 2026-12-30 (crosses a year boundary)
+  assert.deepEqual(derivedFreeAgency("2027-01-06"), { start: "2027-01-03", notice: "2026-12-30" });
+  // crosses a month boundary
+  assert.deepEqual(derivedFreeAgency("2026-09-04"), { start: "2026-09-01", notice: "2026-08-28" });
+
+  assert.deepEqual(derivedFreeAgency(null), { start: null, notice: null });
+  assert.deepEqual(derivedFreeAgency(""), { start: null, notice: null });
+  assert.deepEqual(derivedFreeAgency("nonsense"), { start: null, notice: null });
+});
+
+// ── seasons_no_overlap ───────────────────────────────────────────────────────
+const LIVE_SEASONS = [
+  { id: "s1", name: "Season 1", starts_on: "2026-06-13", ends_on: "2026-07-10" },
+  { id: "s2", name: "Season 2", starts_on: "2026-07-11", ends_on: "2027-01-06" },
+  { id: "s3", name: "Season 3", starts_on: "2027-01-07", ends_on: "2027-03-14" },
+];
+
+test("findOverlappingSeason enforces the inclusive daterange EXCLUDE rule", () => {
+  // the exact window from the failing screenshot — sits inside Season 2
+  assert.equal(findOverlappingSeason("2026-08-03", "2026-09-04", LIVE_SEASONS)?.name, "Season 2");
+
+  // touching an endpoint counts: the constraint uses '[]' (inclusive both ends)
+  assert.equal(findOverlappingSeason("2027-03-14", "2027-04-01", LIVE_SEASONS)?.name, "Season 3");
+  assert.equal(findOverlappingSeason("2026-05-01", "2026-06-13", LIVE_SEASONS)?.name, "Season 1");
+
+  // fully containing an existing season also overlaps
+  assert.equal(findOverlappingSeason("2026-01-01", "2028-01-01", LIVE_SEASONS)?.name, "Season 1");
+
+  // genuinely free windows
+  assert.equal(findOverlappingSeason("2027-03-15", "2027-05-17", LIVE_SEASONS), null);
+  assert.equal(findOverlappingSeason("2026-01-01", "2026-06-12", LIVE_SEASONS), null);
+
+  // editing a season must not collide with itself
+  assert.equal(findOverlappingSeason("2026-07-11", "2027-01-06", LIVE_SEASONS, "s2"), null);
+
+  // incomplete input is not an overlap claim
+  assert.equal(findOverlappingSeason(null, "2026-09-04", LIVE_SEASONS), null);
+  assert.equal(findOverlappingSeason("2026-08-03", "2026-09-04", []), null);
 });
 
 // ── curve preview ────────────────────────────────────────────────────────────

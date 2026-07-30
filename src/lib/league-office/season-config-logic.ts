@@ -193,6 +193,56 @@ function parseIsoDate(s: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** `seasons.free_agency_start` and `free_agency_notice_start` are
+ *  **GENERATED ALWAYS** columns — `ends_on - 3` and `ends_on - 7`. Postgres
+ *  rejects ANY value written to them, including NULL (`428C9`), so they must
+ *  never appear in an INSERT or PATCH body. Mirrored here for DISPLAY only, so
+ *  the wizard can show what the dates will be instead of pretending they are
+ *  editable. If the generation expression ever changes, change it here too. */
+export const FREE_AGENCY_OFFSET_DAYS = 3;
+export const FREE_AGENCY_NOTICE_OFFSET_DAYS = 7;
+
+export function derivedFreeAgency(endsOn: string | null | undefined): {
+  start: string | null;
+  notice: string | null;
+} {
+  const end = parseIsoDate(endsOn);
+  if (!end) return { start: null, notice: null };
+  const shift = (days: number) =>
+    new Date(end.getTime() - days * 86400000).toISOString().slice(0, 10);
+  return {
+    start: shift(FREE_AGENCY_OFFSET_DAYS),
+    notice: shift(FREE_AGENCY_NOTICE_OFFSET_DAYS),
+  };
+}
+
+export type SeasonRange = { id?: string; name: string; starts_on: string; ends_on: string };
+
+/** `seasons_no_overlap` is an EXCLUDE constraint over
+ *  `daterange(starts_on, ends_on, '[]')` — seasons may not overlap, inclusive of
+ *  both endpoints. Checked here so the wizard can warn at the Window step and
+ *  name the clashing season, rather than failing at submit with a raw 23P01. */
+export function findOverlappingSeason(
+  startsOn: string | null | undefined,
+  endsOn: string | null | undefined,
+  existing: SeasonRange[],
+  ignoreId?: string
+): SeasonRange | null {
+  const a = parseIsoDate(startsOn);
+  const b = parseIsoDate(endsOn);
+  if (!a || !b) return null;
+
+  for (const s of existing) {
+    if (ignoreId && s.id === ignoreId) continue;
+    const c = parseIsoDate(s.starts_on);
+    const d = parseIsoDate(s.ends_on);
+    if (!c || !d) continue;
+    // inclusive-inclusive overlap
+    if (a <= d && b >= c) return s;
+  }
+  return null;
+}
+
 export type WindowInput = {
   starts_on?: string | null;
   ends_on?: string | null;
