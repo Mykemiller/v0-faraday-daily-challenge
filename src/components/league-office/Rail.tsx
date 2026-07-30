@@ -18,6 +18,7 @@ const PRIMARY: Item[] = [
   { icon: "◷", label: "Seasons", href: "/league-office/seasons" },
   { icon: "⧗", label: "Scoring", href: "/league-office/scoring" },
   { icon: "✎", label: "Puzzle & Hint Admin", href: "/league-office/puzzles" },
+  { icon: "◲", label: "Game Library", href: "/league-office/game-library" },
 ];
 const TOOLS: Item[] = [
   { icon: "⇄", label: "Trading & Free Agency" },
