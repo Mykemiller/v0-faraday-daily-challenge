@@ -10,8 +10,8 @@
 //   none / missing data → render NOTHING. No placeholder, no empty frame.
 //
 // Styling mirrors FaradaysTake's left-rule treatment but keyed to the game's
-// FAR-394 jewel accent (passed in — this component never imports GAME_ACCENT,
-// staying self-contained across the .jsx/.tsx boundary like FaradaysTake).
+// accent (passed in — this component never imports GAME_ACCENT, staying
+// self-contained across the .jsx/.tsx boundary like FaradaysTake).
 
 import React from "react";
 
@@ -31,7 +31,7 @@ export interface TodaysSignalPayload {
 
 export interface TodaysSignalCardProps {
   signal?: TodaysSignalPayload | null;
-  /** The game's FAR-394 jewel accent (GAME_ACCENT[type].accent). */
+  /** The game's per-game accent (GAME_ACCENT[type].accent). */
   accent?: string | null;
 }
 
