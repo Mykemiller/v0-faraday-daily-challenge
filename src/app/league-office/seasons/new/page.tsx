@@ -26,7 +26,14 @@ export default async function NewSeasonPage({
   return (
     <SeasonWizard
       scopeOptions={scopeOptions}
-      seasons={seasons.map((s) => ({ id: s.id, name: s.name, slug: s.slug }))}
+      seasons={seasons.map((s) => ({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        // carried for the wizard's seasons_no_overlap pre-check
+        starts_on: s.starts_on ?? "",
+        ends_on: s.ends_on ?? "",
+      }))}
       existingSlugs={seasons.map((s) => String(s.slug).toLowerCase())}
       initialCopyFrom={sp?.copyFrom}
     />
