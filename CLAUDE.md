@@ -1,5 +1,64 @@
 @AGENTS.md
 
+## League Office season configuration (CC-LO-SEASON-CONFIG-1.0, PR #120, 2026-07-30)
+
+Commissioner-facing season config: create a season end-to-end without SQL, edit a
+versioned **effective-dated** config, schedule a change for a future date, and read a
+diffable version history. Full runbook: **`docs/lo-season-config/README.md`**.
+
+- **Routes:** `/league-office/seasons` (index + scope/slate/version columns + row menu)
+  · `/seasons/new` (4-step wizard — **nothing is written until step 4 submits**) ·
+  `/seasons/[id]` (version timeline · effective-now · two-version diff · action bar) ·
+  `/seasons/[id]/config/[configId]` (the editor, sections A–I). **11 `/api/lo/*` routes**,
+  each independently re-verifying staff; every mutation writes ONE `lo_audit_log` row
+  (`domain='seasons'`) with a mandatory reason. `season_config_promote` self-logs — do
+  NOT double-log it.
+- **⚠️ Migration `20260730000001_season_config_effective_dating_fix.sql` — APPLIED to
+  prod 2026-07-30 (Myke-approved).** It repairs **four defects in the already-applied
+  season_config_* functions**, found by exercising the real RPCs: (1) `promote()` ALWAYS
+  threw — `set state = case … end` yields `text` and Postgres won't implicitly cast to
+  the `season_config_state` enum (`42804`); (2) scheduling superseded the incumbent
+  immediately, leaving the season with **no config in force** until the effective date;
+  (3) `apply_due()` demoted + promoted in ONE statement via data-modifying CTEs, tripping
+  `season_config_one_active_uq` (`23505`); (4) superseding at the same instant a version
+  took effect violated `effective_to > effective_from`. **Defects 1 and 2 masked each
+  other** — nothing could ever be promoted, so the scheduling path was never reached.
+  Also hardened: two overdue scheduled versions → **latest wins**, older superseded.
+  **Do NOT "simplify" `apply_due()` back into a single statement** — that is defect 3.
+- **Editing rule (enforced at the API, not just the UI):** `draft`/`scheduled` are
+  writable; **`active` is READ-ONLY and cloning is the only path** — that is what makes
+  the version history trustworthy. A locked season (`seasons.locked_at`) rejects every
+  config mutation with `423`. `sanitizeConfigPatch` is whitelist-only, so a client can
+  never promote itself by PATCHing `state`.
+- **Optimistic concurrency is a FINGERPRINT, not `updated_at`** — that column does not
+  exist on `season_config`, and the child rows (games, mixes) carry no timestamps at all,
+  so a row-timestamp guard could not detect a slate edit even in principle. The editor
+  round-trips a hash over the config **and** its children; a concurrent write moves it →
+  `409` + reload prompt.
+- **Cross-season copy is NOT `season_config_clone()`.** That RPC resolves its source from
+  its own `p_season_id` and writes back into the **same** season — aiming it at a source
+  season would add a stray draft there and return an id for the wrong season. Same-season
+  versioning still uses the RPC. The source pick also cannot be a PostgREST `order`:
+  sorting by the enum puts `draft` **first** and would copy a stale draft over the live
+  config (use `pickFocusConfig`).
+- **Catalog-driven slate:** rendered from `game_catalog` merged with `season_games`, so
+  an 8th puzzle type appears with **zero code change**. Theme hierarchy comes from live
+  `dc_daily_theme` — public labels only, never D-codes.
+- **Cron** `/api/cron/season-config-apply` hourly at **:05** → `season_config_apply_due()`.
+  An audit row is written ONLY when something actually flipped.
+- **Verified:** 17-assertion harness (promote-now · schedule · incumbent stays live during
+  the wait · cron flip · exactly-one-active · idempotent re-run · validation refusal ·
+  two-overdue) all PASS — run pre-apply AND again against the **deployed** functions,
+  inside `BEGIN … ROLLBACK` (0 test rows persisted; 4 seasons / 4 configs / 1 active
+  unchanged). Advisor: **no new findings** — the `function_search_path_mutable` WARN and
+  the `season_config` `rls_disabled_in_public` ERROR are pre-existing (the untouched
+  `season_config_clone`/`_validate` carry the same WARN). `npm run test:season-config` (22).
+- **Known gaps:** child writes are **not transactional** (PostgREST cannot do
+  multi-statement transactions — a mid-sequence failure returns an explicit "reload before
+  editing further" rather than pretending atomicity); `conferences` is empty so the
+  conference scope option is disabled; Thread-level theme allocation is stored/read but the
+  editor exposes Theater + Sector.
+
 ## Legal pages · LLC footer · signup clickwrap (CC-DC-LEGAL-1.0, claude/legal-terms-privacy-footer-05ytxi, 2026-07-30)
 
 **Operating entity = `Faraday Intelligence LLC`, a Minnesota limited liability
