@@ -47,6 +47,9 @@ export type Season = {
   starts_on: string | null;
   ends_on: string | null;
   status: string;
+  /** Season-local timezone (default America/Chicago) — the clock the config
+   *  editor's effective-dating fields are read against. */
+  tz: string;
   locked_at: string | null;
   free_agency_start: string | null;
   free_agency_notice_start: string | null;
@@ -64,7 +67,7 @@ export type Subscriber = {
 
 const teamCols = "id,name,season,group_type,parent_id,captain_id";
 const seasonCols =
-  "id,slug,name,starts_on,ends_on,status,locked_at,free_agency_start,free_agency_notice_start";
+  "id,slug,name,starts_on,ends_on,status,tz,locked_at,free_agency_start,free_agency_notice_start";
 const subCols =
   "id,email,handle,active,play_streak,full_set_streak,last_seen_at,created_at";
 
