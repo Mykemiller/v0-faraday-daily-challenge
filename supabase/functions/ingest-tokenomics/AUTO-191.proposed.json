@@ -1,0 +1,15 @@
+{
+  "_governance": "PROPOSED — NOT YET RESERVED. Reserve this row in the Airtable Automation Registry (base appxfti7VuoHYUeu6 / table tbl1ef6FgxUc3Uevg) before go-live. In-repo AUTO ceiling was AUTO-178; memory shows AUTO-184 (FEMA) and AUTO-190 (EIA, provisional) reserved in sibling repos, so AUTO-191 is the next safe integer — VERIFY against the live registry and bump if 191 is taken. The whitespace block AUTO-137–175 is reserved/Designed; do not reuse.",
+  "auto_id": "AUTO-191",
+  "name": "Tokenomics Scoreboard Ingest",
+  "status": "Designed",
+  "crawler_id": "ingest-tokenomics_v1.0",
+  "function": "supabase/functions/ingest-tokenomics",
+  "cadence": "Daily (live: aipricing.guru, Azure Retail, futures status, grid fusion); manual-capture sources on publisher cadence",
+  "domains": "Tokenomics Scoreboard groups A (token/inference pricing) · B (GPU rental) · C (futures) · D (demand-context + fusion)",
+  "destination_table": "tokenomics_metrics (append-only)",
+  "idempotency": "content_hash; vintage key (metric_id, as_of, source, content_hash)",
+  "health_log": "automation_health_log (one row per source per run; source in notes)",
+  "secrets_required": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY", "TOKENOMICS_INGEST_SECRET (optional)"],
+  "notes": "Third-party constructed indices (Tokenix/ACPI, TPI, Ornn OTPI/OCPI, Silicon Data) are INGEST-ONLY (display_allowed=false) until licensing sign-off — the snapshot API withholds their values. Flag for legal before any index value ships. FAR ticket: <assign>."
+}
