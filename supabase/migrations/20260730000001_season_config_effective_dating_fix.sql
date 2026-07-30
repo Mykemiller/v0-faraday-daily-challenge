@@ -1,8 +1,8 @@
 -- CC-LO-SEASON-CONFIG-1.0 — repair the season-config effective-dating functions.
 --
--- ⚠️ NOT YET APPLIED to prod (ycadmmngkdhvpcsrcuaq). Apply at promotion.
---    Until it is applied, "Promote now" / "Schedule" in the League Office
---    Season Config editor CANNOT work — see defect 1 below.
+-- ✅ APPLIED to prod (ycadmmngkdhvpcsrcuaq) 2026-07-30, Myke-approved.
+--    "Promote now" / "Schedule" in the League Office Season Config editor work
+--    from this point on; before it, every promote threw (defect 1 below).
 --
 -- These two functions shipped with the season_config_* migrations. Four defects
 -- were found by exercising the real RPCs end-to-end (in a rolled-back
@@ -42,10 +42,20 @@
 -- (e.g. the cron missed a run), the LATEST wins and the overtaken one is marked
 -- superseded rather than being promoted next hour and flip-flopping the season.
 --
--- Verified 2026-07-30 by a 15-assertion harness (promote-now · schedule ·
+-- Verified 2026-07-30 by a 17-assertion harness (promote-now · schedule ·
 -- incumbent stays live during the wait · cron flip · exactly-one-active
 -- invariant · idempotent re-run · blocking-validation refusal · two-overdue
--- resolution), all PASS, run inside BEGIN/ROLLBACK so prod was never mutated.
+-- resolution), all PASS, run inside BEGIN/ROLLBACK so no test rows persisted.
+-- Run twice: once against a draft of this file before applying, and again
+-- against the DEPLOYED functions after applying. Post-apply state confirmed
+-- unchanged (4 seasons, 4 configs, 1 active, 28 season_games, 0 test rows), and
+-- a real season_config_apply_due() call returned 0 (correct no-op).
+--
+-- Security advisor after apply: no NEW findings. Both functions carry a
+-- function_search_path_mutable WARN, but so do the untouched season_config_clone
+-- and season_config_validate — it is a pre-existing property of the original
+-- migration that CREATE OR REPLACE preserved, not something introduced here.
+-- Worth hardening separately; deliberately not folded into a bug fix.
 
 -- ── 1. promote / schedule ────────────────────────────────────────────────────
 create or replace function public.season_config_promote(

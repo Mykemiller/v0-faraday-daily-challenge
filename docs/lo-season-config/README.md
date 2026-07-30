@@ -15,11 +15,14 @@ Routes:
 
 ---
 
-## ⚠️ Blocking prerequisite: migration `20260730000001`
+## Migration `20260730000001` — APPLIED 2026-07-30
 
 **`supabase/migrations/20260730000001_season_config_effective_dating_fix.sql`
-is NOT applied.** Until it is, **Promote and Schedule cannot work** — the
-shipped `season_config_promote()` throws on every call.
+is applied to prod** (Myke-approved). Promote and Schedule work.
+
+Keep the write-up below: it is the record of why these functions look the way
+they do, and the reason not to "simplify" `season_config_apply_due()` back into
+a single statement.
 
 Four defects were found in the already-applied season-config functions by
 exercising the real RPCs end-to-end. Defects 1 and 2 masked each other, which
@@ -45,14 +48,24 @@ Also hardened: if two scheduled versions for one season are both overdue (a
 missed cron run), the **latest wins** and the overtaken one is marked
 superseded, instead of being promoted next hour and flip-flopping the season.
 
-**Verification:** a 15-assertion harness — promote-now · schedule · incumbent
+**Verification:** a 17-assertion harness — promote-now · schedule · incumbent
 stays live during the wait · cron flip · exactly-one-active invariant ·
 idempotent re-run · blocking-validation refusal · two-overdue resolution — all
-PASS, run against prod inside `BEGIN … ROLLBACK` so **nothing was mutated**
-(confirmed afterwards: 0 leftover rows, 4 seasons, functions still original).
+PASS, run inside `BEGIN … ROLLBACK` so no test rows persisted. Run **twice**:
+once before applying, and again against the **deployed** functions afterwards.
+Post-apply state confirmed unchanged (4 seasons, 4 configs, 1 active, 28
+`season_games`, 0 test rows); a real `season_config_apply_due()` returned `0`.
 
-Until the migration is applied, the Promote button returns a named, actionable
-message rather than a raw SQLSTATE (`promoteErrorMessage` in `season-write.ts`).
+**Security advisor after apply: no new findings.** Both functions carry a
+`function_search_path_mutable` WARN — but so do the untouched
+`season_config_clone` and `season_config_validate`, so it is a pre-existing
+property of the original migration that `CREATE OR REPLACE` preserved, not
+something this change introduced. Same for the `rls_disabled_in_public` ERROR on
+`season_config`. Both are worth hardening on their own ticket.
+
+`promoteErrorMessage` in `season-write.ts` still maps the pre-fix SQLSTATE to a
+named, actionable message — kept as a safety net for any environment where the
+migration has not been applied.
 
 ---
 
