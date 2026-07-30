@@ -13,6 +13,13 @@ import {
   resetSuccessMessage,
 } from "./scoring-reset-logic.mjs";
 import { countActivePlayers, isSeverity } from "./broadcasts";
+import {
+  createGame,
+  changeLifecycle,
+  updateGame,
+  setSeasonAssignment,
+  type LogFn as GameLogFn,
+} from "./game-library-write";
 import { htmlToText, safeHref, sanitizeBroadcastBody, sanitizeHtml } from "./sanitize-html";
 
 const SUPABASE_URL =
@@ -104,6 +111,14 @@ export type ActionInput = {
   ctaUrl?: string;
   severity?: string;
   expiresAt?: string;
+  // Game Library (domain 'game_library')
+  gameId?: string;
+  seasonId?: string;
+  lifecycleTo?: string;
+  displayName?: string;
+  category?: string;
+  description?: string;
+  patch?: unknown;
 };
 
 /** Cap on the CTA button label — it renders inside a single banner row. */
@@ -231,6 +246,36 @@ export async function executeAction(
 
     case "audit.revert":
       return revertAction(s, staffEmail, input.auditId, reason);
+
+    // ── Game Library (CC-LO-GAME-LIBRARY-1.0) ────────────────────────────────
+    // Each case delegates to game-library-write.ts but keeps the audit row here,
+    // via the same `log` closure every other action uses — so the mandatory
+    // reason, the staff email and the one-row-per-write rule are identical.
+    case "game.create":
+    case "game.lifecycle_change":
+    case "game.update":
+    case "game.reorder":
+    case "game.season_assign":
+    case "game.season_unassign": {
+      const gameLog: GameLogFn = (action, targetId, before, after, reversible, targetType) =>
+        log("game_library", action, targetType ?? "game", targetId, before, after, reversible);
+
+      switch (input.action) {
+        case "game.create":
+          return createGame(s, gameLog, input);
+        case "game.lifecycle_change":
+          return changeLifecycle(s, gameLog, { ...input, reason });
+        case "game.update":
+        case "game.reorder":
+          return updateGame(s, gameLog, { ...input, action: input.action });
+        default:
+          return setSeasonAssignment(s, gameLog, staffEmail, {
+            ...input,
+            reason,
+            assign: input.action === "game.season_assign",
+          });
+      }
+    }
 
     default:
       return { ok: false, message: `Unknown action: ${input.action}` };
