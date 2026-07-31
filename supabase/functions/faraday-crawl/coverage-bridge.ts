@@ -57,7 +57,10 @@ export const TIER1_ACTIVATION: AutoDef[] = [
     queries: ["HBM4 HBM4E supply SK Hynix Samsung Micron 2026", "high bandwidth memory data center GPU shortage allocation", "CXL PIM memory bandwidth inference cost 2026"] },
   { auto_id: "AUTO-061", source_type: "web_news", ifs_domains: ["D1.5"],
     queries: ["Groq Cerebras SambaNova Etched inference chip 2026", "inference silicon TCO per token latency economics", "inference accelerator deployment hyperscaler 2026"] },
-  { auto_id: "AUTO-062", source_type: "web_news", ifs_domains: ["D1.7"],
+  // DUAL-TAG (Myke, 2026-07-31): custom-silicon artifacts are simultaneously a
+  // D1.7 accelerator story and a D5.2 hyperscaler-strategy story. Both codes are
+  // emitted; D1.7 routing is unchanged. splitIfsTags derives parents D1 + D5.
+  { auto_id: "AUTO-062", source_type: "web_news", ifs_domains: ["D1.7", "D5.2"],
     queries: ["AWS Trainium Inferentia Google TPU Meta MTIA Microsoft Maia 2026", "hyperscaler custom AI silicon announcement", "custom accelerator tape-out roadmap data center"] },
   { auto_id: "AUTO-063", source_type: "web_news", ifs_domains: ["D1.8"],
     queries: ["TSMC CoWoS advanced packaging capacity 2026", "SoIC Foveros substrate Ibiden Shinko supply", "advanced packaging constraint AI accelerator 2026"] },
@@ -121,7 +124,10 @@ export const TIER2_ACTIVATION: AutoDef[] = [
     queries: ["data center land price per acre acquisition 2026", "industrial land cost data center site purchase", "land banking data center developer acquisition record"] },
   { auto_id: "AUTO-089", source_type: "regulatory", ifs_domains: ["D14.6"],
     queries: ["data center site certification entitlement shovel-ready 2026", "entitled land data center zoning approval", "site readiness certification program data center"] },
-  { auto_id: "AUTO-090", source_type: "web_news", ifs_domains: ["D15.2"],
+  // DUAL-TAG (Myke, 2026-07-31): sovereign-AI programmes are simultaneously a
+  // D15.2 geopolitics story and a D6.2 national-compute story. Both codes are
+  // emitted; D15.2 routing is unchanged. splitIfsTags derives parents D15 + D6.
+  { auto_id: "AUTO-090", source_type: "web_news", ifs_domains: ["D15.2", "D6.2"],
     queries: ["sovereign AI national compute strategy investment 2026", "national AI compute capacity government program", "sovereign cloud national data center initiative"] },
   { auto_id: "AUTO-091", source_type: "web_news", ifs_domains: ["D15.3"],
     queries: ["AI diplomacy bilateral agreement compute chips 2026", "AI cooperation treaty technology export country", "bilateral AI infrastructure agreement government"] },
