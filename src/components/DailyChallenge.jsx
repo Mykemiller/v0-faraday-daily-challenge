@@ -2590,7 +2590,7 @@ function HeaderIconNav({ menus }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (

@@ -63,6 +63,11 @@ const DOCK_CSS = `
   @keyframes dcDockUp { from { transform:translateY(0); opacity:1; }
     to { transform:translateY(-14px); opacity:0; } }
   @media (max-width:639px){ .dc-msgdock-panel { left:0; right:0; width:auto; border-radius:0; } }
+  /* The 6th trigger squeezes the wordmark on narrow phones ("DAILY CHALLENGE"
+     wraps, masthead grows). When the dock is mounted (signed-in only), tighten
+     the icon row so the header keeps its one-line height. Sibling-scoped so
+     signed-out spacing is untouched. */
+  @media (max-width:430px){ .dc-msgdock ~ .dc-iconrow { gap:12px !important; } }
   @media (prefers-reduced-motion: reduce){
     .dc-msgdock-panel, .dc-msgdock-panel.closing { animation:none; }
   }
