@@ -196,6 +196,32 @@ test("AC4: no payload field ever carries faraday-intelligence.ai", () => {
   }
 });
 
+// ── Canonical path override (generic deep links, e.g. team join) ─────────────
+
+test("generic share may target a validated canonical path (team join link)", () => {
+  const p = buildShare({
+    kind: "generic",
+    surface: "team-page",
+    headline: 'Join "Grid Lock" on the Faraday Daily Challenge',
+    path: "/leaderboard/join/6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  });
+  assert.ok(
+    p.url.startsWith(
+      "https://www.faradaydailychallenge.com/leaderboard/join/6f9619ff-8b86-4d01-b42d-00c04fc964ff?utm_source=share&utm_medium=team-page"
+    )
+  );
+});
+
+test("path override cannot leave the canonical origin", () => {
+  for (const bad of ["//evil.com/x", "https://evil.com", "http://evil.com", "/a/../b", "leaderboard", "/x?y=1", "/x#f", null, 42]) {
+    const p = buildShare({ kind: "generic", surface: "s", path: bad });
+    assert.ok(p.url.startsWith("https://www.faradaydailychallenge.com/?"), `accepted: ${bad}`);
+  }
+  // game shares never take a path override
+  const g = buildShare({ surface: "s", puzzleType: "Rackl", path: "/leaderboard" });
+  assert.ok(g.url.startsWith("https://www.faradaydailychallenge.com/?g=rackl"));
+});
+
 // ── encodeGrid ───────────────────────────────────────────────────────────────
 
 test("encodeGrid emits the compact states-only grammar", () => {

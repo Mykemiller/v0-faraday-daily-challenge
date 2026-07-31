@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GAME_ACCENT, gameShareIconSrc } from "@/components/GameIcon";
+import GameIcon, { GAME_ACCENT } from "@/components/GameIcon";
+import ShareButton from "@/components/ShareButton";
+import { TYPE_BY_SLUG } from "@/lib/share/manifest";
 import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
@@ -546,58 +548,23 @@ function NavPill({ icon, letter, label, onClick, active, hideLabel, size = 40, b
   );
 }
 
-// ── Viral share — generated score card + device share/copy/download ───────────
-// The Daily Challenge is canonical on faradaydailychallenge.com — every
-// subscriber-facing DC link (share cards, team invites, deep links) uses it.
-const SITE_URL = "https://www.faradaydailychallenge.com";
-const DC_URL = SITE_URL;
-// Public-facing share domain — the short, memorable URL we hand to recipients.
-const SHARE_URL = "https://www.faradaydailychallenge.com";
-
-// The share image (NYT-Connections style: the score + Public ID ride in the share
-// text, not baked into the image). Since the 2026-07-30 art refresh this is a
-// pre-rendered 640² asset — the labeled frame, so the shared card names the game
-// even where the accompanying text is stripped. Fetched rather than rasterised on
-// a canvas: the asset is already the exact size and format we want, which removes
-// the canvas-taint and toBlob-availability failure modes entirely.
-// Returns null on any fetch failure so a missing icon never blocks the card.
-async function buildShareIconBlob(puzzleType) {
-  try {
-    const src = gameShareIconSrc(puzzleType);
-    if (!src || typeof fetch === "undefined") return null;
-    const res = await fetch(src);
-    if (!res.ok) return null;
-    return await res.blob();
-  } catch { return null; }
-}
-
-// Device share cascade: Web Share w/ image → Web Share text → clipboard → download.
-// Returns a short status word ("Shared" | "Copied" | "Saved" | "idle") for UI feedback.
-async function shareViaDevice({ title, text, url, blob, filename }) {
-  const full = url ? `${text} ${url}` : text;
-  try {
-    if (blob && typeof File !== "undefined" && navigator.canShare) {
-      const file = new File([blob], filename || "faraday.png", { type: "image/png" });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title, text: full });
-        return "Shared";
-      }
-    }
-    if (navigator.share) { await navigator.share({ title, text, url }); return "Shared"; }
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(full); return "Copied"; }
-  } catch (e) {
-    if (e && e.name === "AbortError") return "idle"; // user cancelled the sheet
-  }
-  try {
-    if (blob) {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = filename || "faraday.png";
-      a.click(); URL.revokeObjectURL(a.href);
-      return "Saved";
-    }
-  } catch { /* noop */ }
-  return "idle";
-}
+// ── Viral share (CC-DC-SHARE-1.0) ─────────────────────────────────────────────
+// Every share on this surface goes through <ShareButton/> + buildShare — the
+// single payload path (D4). The old per-surface cascade (buildShareIconBlob /
+// shareViaDevice) was deleted in Phase 3; do not reintroduce a second one.
+// Shared ghost styling so ShareButton matches the in-app Btn ghost/small look.
+const SHARE_BTN_STYLE = {
+  background: "rgba(255,255,255,0.04)",
+  border: `1px solid ${C.border}`,
+  color: C.muted,
+  borderRadius: "6px",
+  padding: "6px 14px",
+  fontSize: "11px",
+  cursor: "pointer",
+  letterSpacing: "0.08em",
+  transition: "all 0.15s",
+  ...mono,
+};
 
 // ── Score display ─────────────────────────────────────────────────────────────
 // FAR-388: per-game-type solve-time percentile bands (from /api/challenge/today),
@@ -612,7 +579,7 @@ const SolveBandsContext = createContext(null);
 // game is adding its type string here (CC-FAR385-2 adds Signal Drop, Rackl).
 const SIGNAL_ENABLED_GAMES = new Set(["The Brief"]);
 
-function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline, takeFallback, signal }) {
+function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline, takeFallback, signal, outcome }) {
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
@@ -622,27 +589,19 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   const reactionColor = reaction
     ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
     : C.muted;
-  const [shareLabel, setShareLabel] = useState("↑ Share Result");
-  async function handleShare() {
-    setShareLabel("…");
-    const blob = await buildShareIconBlob(puzzleType);
-    // Deep-link back to the game so the receiver can play; carry the puzzle's
-    // unique Public ID (when set) so the share points at this exact puzzle.
-    const url = `${SHARE_URL}?game=${encodeURIComponent(puzzleType)}${publicId ? `&p=${encodeURIComponent(publicId)}` : ""}`;
-    // Simple NYT-Connections-style headline: game + score, Public ID on its own
-    // line. The neon-icon image carries the brand; no stats baked into the copy.
-    const text = `Faraday Daily Challenge - ${puzzleType} Score - ${score}${publicId ? `\n${publicId}` : ""}`;
-    const status = await shareViaDevice({
-      title: "Faraday Daily Challenge", text, url, blob,
-      filename: `faraday-${puzzleType.toLowerCase().replace(/\s+/g, "-")}.png`,
-    });
-    onShare?.();
-    setShareLabel(
-      status === "Shared" ? "Shared ✓" : status === "Copied" ? "Link copied ✓" :
-      status === "Saved" ? "Saved ✓" : "↑ Share Result"
-    );
-    if (status !== "idle") setTimeout(() => setShareLabel("↑ Share Result"), 2500);
-  }
+  // CC-DC-SHARE-1.0 (D5): the share input carries puzzleType/publicId/score and
+  // the OUTCOME SHAPE only — never puzzleName (for Signal Drop it IS the answer
+  // post-completion) and never content. buildShare resolves the display name
+  // from its manifest and ignores everything outside its whitelist.
+  const shareInput = {
+    surface: "scorecard",
+    puzzleType,
+    publicId,
+    score,
+    elapsedSec,
+    bandLabel: reaction?.label ?? null,
+    outcome,
+  };
   return (
     <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"20px" }}>
       {/* FAR-389: Faraday's Take sits above the score summary. Voiced take when
@@ -691,7 +650,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         </div>
       </div>
       <div style={{ display:"flex", gap:"10px" }}>
-        <Btn onClick={handleShare} variant="ghost" small>{shareLabel}</Btn>
+        <ShareButton share={shareInput} label="↑ Share Result" style={SHARE_BTN_STYLE} onShared={onShare} />
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
@@ -778,7 +737,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
           ))}
         </>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Rackl" outcome={{ solved: Math.floor(solved.length / 4), mistakes }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { solvedGroups: puzzle.groups.map(g => g.label), mistakes }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -958,7 +917,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
           The word was <span style={{ color:C.text, fontWeight:700 }}>{revealed}</span>
         </div>
       )}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} takeFallback={deriveTakeFallback(puzzle)} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Signal Drop" outcome={{ rows: results }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} takeFallback={deriveTakeFallback(puzzle)} puzzleName={revealed || puzzle.name} publicId={puzzle.__publicId}
         streak={streak} onShare={()=>{}}
         onNext={()=>onComplete(scoreVal, { guesses, results, word: revealed || localWord || "", won }, elapsedSec)}
         isNew7Day={streak===6} />
@@ -1122,7 +1081,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
       <div style={{ fontSize:"11px", color:C.muted, ...mono, textAlign:"center" }}>
         Ranking by: {puzzle.metric}
       </div>
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Stack" outcome={{ ok: order.map((itemIdx, rankIdx) => puzzle.correctOrder.indexOf(itemIdx) === rankIdx) }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { finalOrder: order, correctOrder: puzzle.correctOrder, items: puzzle.items, values: puzzle.values, metric: puzzle.metric }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1227,7 +1186,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{a.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Circuit" outcome={{ ok: answers.map((a) => !!a.ok) }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1327,7 +1286,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="The Brief" outcome={{ ok: answers.map((a) => !!a.ok) }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -1416,7 +1375,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
     }
   }, [selectedTerm, selectedDef]);
 
-  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+  if (done) return <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Dark Fiber" outcome={{ pairs: puzzle.pairs.length, mistakes }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
     streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { pairs: puzzle.pairs }, elapsedSec)}
     isNew7Day={streak===6} />;
 
@@ -1524,7 +1483,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
           <div style={{ fontSize:"12px", color:C.muted, marginTop:"4px", lineHeight:1.5, ...mono }}>{q.explanation}</div>
         </div>
       ))}
-      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
+      <ScoreCard score={scoreVal} dailyTotal={(dailyTotal || 0) + scoreVal} puzzleType="Frequency" outcome={{ ok: answers.map((a) => !!a.ok) }} domain={puzzle.domain} elapsedSec={elapsedSec} take={puzzle.faradays_take} takeByline={puzzle.take_byline} signal={puzzle.signal} puzzleName={puzzle.name} publicId={puzzle.__publicId} takeFallback={deriveTakeFallback(puzzle)}
         streak={streak} onShare={()=>{}} onNext={()=>onComplete(scoreVal, { answers }, elapsedSec)}
         isNew7Day={streak===6} />
     </div>
@@ -2337,17 +2296,7 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
   const [mode, setMode] = useState(null); // null | "create" | "join"
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
-  const [inviteLabel, setInviteLabel] = useState("Invite teammates");
   const rows = Array.isArray(leaderboard) ? leaderboard : [];
-
-  async function handleInvite() {
-    if (!myTeam) return;
-    setInviteLabel("…");
-    const text = `Join my team "${myTeam.name}" on the Faraday Daily Challenge — team code ${myTeam.code}.`;
-    const status = await shareViaDevice({ title: "Join my Faraday team", text, url: DC_URL });
-    setInviteLabel(status === "Shared" ? "Shared ✓" : status === "Copied" ? "Invite copied ✓" : "Invite teammates");
-    if (status !== "idle") setTimeout(() => setInviteLabel("Invite teammates"), 2500);
-  }
 
   const ghostBtn = { ...mono, fontSize:"11px", color:C.forest, background:"transparent",
     border:`1px solid ${C.gray}`, borderRadius:"6px", padding:"7px 12px",
@@ -2400,7 +2349,17 @@ function TeamLeaderboard({ leaderboard, myTeam, signedIn, busy, error, onCreate,
             <span style={{ ...mono, fontSize:"11px", color:C.forest }}>
               On <b>{myTeam.name}</b> · code <b>{myTeam.code}</b>
             </span>
-            <button onClick={handleInvite} disabled={busy} style={ghostBtn}>{inviteLabel}</button>
+            <ShareButton
+              share={{
+                kind: "generic",
+                surface: "team-invite",
+                headline: `Join my team "${myTeam.name}" on the Faraday Daily Challenge`,
+                detail: `Team code ${myTeam.code}`,
+              }}
+              label="Invite teammates"
+              copiedLabel="Invite copied ✓"
+              style={ghostBtn}
+            />
             <button onClick={onLeave} disabled={busy} style={ghostBtn}>Leave team</button>
           </div>
         ) : mode === null ? (
@@ -2997,11 +2956,16 @@ export default function DailyChallenge() {
     setScreen("lobby");
   }
 
-  // Deep-link: /daily-challenge?game=<type> opens that puzzle directly (from the
-  // homepage neon icons) instead of landing on the lobby. Runs once on mount.
+  // Deep-link: ?g=<slug> (the D6 share-link param) or the legacy ?game=<type>
+  // (header nav + links already in the wild) opens that puzzle directly instead
+  // of landing on the lobby. Runs once on mount.
   useEffect(() => {
     let g = null;
-    try { g = new URLSearchParams(window.location.search).get("game"); } catch { /* no search */ }
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      const slug = qs.get("g");
+      g = (slug && TYPE_BY_SLUG[slug]) || qs.get("game");
+    } catch { /* no search */ }
     if (!g) return;
     const match = GAME_CONFIGS.find(c => c.type.toLowerCase() === g.toLowerCase());
     if (match) startGame(match.type);
