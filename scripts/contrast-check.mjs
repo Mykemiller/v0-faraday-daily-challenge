@@ -31,16 +31,17 @@ const CREAM = "#EEE6DA";           // legacy Warm Cream — homepage double-rule
 const WHITE = "#F8F5F0";           // Warm White — the standardized DC surface (FAR-394)
 const FOREST = "#1C3424";          // Editorial Forest (also the darkest game-tile gradient stop)
 
-// FAR-394 per-game jewel tones (desaturated, editorial). Single source of truth
-// is GAME_ACCENT in src/components/GameIcon.jsx; mirrored here for the gate.
+// Per-game accents, sampled from the 2026-07-30 raster art refresh (supersedes
+// the FAR-394 jewel tones). Single source of truth is GAME_ACCENT in
+// src/components/GameIcon.jsx; mirrored here for the gate.
 const GAME_ACCENT = {
-  Rackl: "#2F9C8B",        // teal
-  "Signal Drop": "#C86A85", // garnet rose
-  "The Stack": "#A08A3A",   // citrine/bronze
-  Circuit: "#4C90BD",       // sapphire
-  "The Brief": "#7CA34A",   // olive
-  "Dark Fiber": "#9A74C0",  // amethyst
-  Frequency: "#C06A3C",     // rust/copper
+  Rackl: "#48FF54",         // LED green
+  "Signal Drop": "#FF6B7D", // red waveform
+  "The Stack": "#D6FF18",   // yellow-green bars
+  Circuit: "#48FEFE",       // cyan medallion
+  "The Brief": "#F58CF5",   // magenta highlights
+  "Dark Fiber": "#A855FF",  // violet halo
+  Frequency: "#FF7C52",     // orange pulse
 };
 
 // [foreground, background, label, minRatio]

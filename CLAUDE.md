@@ -134,6 +134,61 @@ diffable version history. Full runbook: **`docs/lo-season-config/README.md`**.
   conference scope option is disabled; Thread-level theme allocation is stored/read but the
   editor exposes Theater + Sector.
 
+## Game icon art refresh (CC-DC-ICON-REFRESH-1.0, feat/dc-icon-refresh, 2026-07-30)
+
+**One-time upgrade, and it supersedes FAR-394's per-game color decision.** The
+seven game icons were hand-drawn inline SVG (Ch.09b geometry, recolored to jewel
+tones by FAR-394 two days earlier). They are now **raster art**, authored outside
+the repo. The "do not recreate the icons" rule in the cosmetic-buff section still
+stands for everything after this pass.
+
+- **Art is a build artifact, not code.** `scripts/build-game-icons.mjs` crops the
+  1280² masters to the 1024² tile at `(128,50)` and emits `public/icons/games/`:
+  `<slug>-tile-{128,256}.png` (label cropped — every surface already renders the
+  game name as HTML text) and `<slug>-share.png` (640², label baked in, for the
+  share card). Don't hand-edit the PNGs; re-run the generator. `sharp` is
+  deliberately **not** a project dependency — it's a throwaway install (see the
+  script header), so `next build` is unaffected.
+- **Slugs follow routes, not labels.** Three masters carry a shorter baked label
+  than the game key: `SIGNAL`→`Signal Drop`, `FIBER`→`Dark Fiber`,
+  `THE CIRCUIT`→`Circuit`. Accepted by Myke; the share card reads "SIGNAL" for
+  Signal Drop. Signal Drop's *glyph* also contains the word SIGNAL (it's the
+  word-search answer), visible beside the HTML label at 64px — also accepted.
+- **FAR-394 jewel tones are retired** (Myke-approved 2026-07-30). `GAME_ACCENT` is
+  still the single source of truth and still `{accent, deep, glow}`, so
+  `TodaysSignalCard` and the lobby hover glow are unchanged in shape. What the
+  accent *means* changed: it used to BE the pictogram ink drawn on the forest
+  tile; the pictogram is now baked art, so the accent only drives the hover glow
+  and the Signal card.
+- **The accents are NOT each icon's dominant color, on purpose.** Three masters
+  are predominantly cyan; taking each one's modal color collapsed Signal Drop /
+  Circuit / The Brief to Δ5–Δ20 and failed FAR-394's distinguishability guard,
+  and Dark Fiber's core violet read 2.56:1 on forest (min 3). Each accent is
+  therefore drawn from a **different real color already inside its own master** —
+  Signal Drop its red waveform, The Brief its magenta highlight rows, Dark Fiber
+  its lighter violet halo. **No icon was recolored.** `npm run test:contrast` is
+  **29/29, closest pair Δ70**. Three mirrors must stay in sync: `GAME_ACCENT`
+  (GameIcon.jsx), `--color-game-*`/`--color-neon-*` (globals.css), and the gate's
+  own copy in `scripts/contrast-check.mjs`.
+- **Corner geometry:** the masters have opaque `#1a1a1a` corners (no alpha) and a
+  baked ~8.6% radius. The tile container's 20% radius + `overflow:hidden` clips
+  them away — don't drop the container radius below ~10% or the dark corners
+  reappear on the cream lobby cards. `boxSizing:border-box` on the tile is load-
+  bearing: without it the 1px hairline renders the art `(size-2)×size`, oblong.
+- **Removed:** `GameIconDefs` (shared SVG `<defs>`, no longer referenced) and
+  `src/components/gameIconSvg.js` (the share-card SVG mirror FAR-394 required —
+  there is no longer a second copy of the geometry to keep in sync).
+  `buildShareIconBlob` now fetches the pre-rendered PNG instead of rasterising SVG
+  on a canvas, which removes the canvas-taint and `toBlob`-availability paths.
+- **Verified:** `next build` green · `npm run test:contrast` 29/29 · ESLint
+  identical to the `origin/main` baseline (68 problems / 31 errors / 37 warnings)
+  · 21/21 assets serve `200 image/png` · live headless pass on `/` and `/challenge`
+  (7/7 icons, 0 broken, 0 console errors, 0 404s) plus in-game header + switcher.
+- **Not touched:** `design-reference/faraday-daily-challenge-lobby.html` keeps the
+  original pictogram geometry as provenance. League Office game-dot neons
+  (`src/lib/league-office/constants.ts`) remain a separate internal registry —
+  still the follow-up FAR-394 flagged.
+
 ## Legal pages · LLC footer · signup clickwrap (CC-DC-LEGAL-1.0, claude/legal-terms-privacy-footer-05ytxi, 2026-07-30)
 
 **Operating entity = `Faraday Intelligence LLC`, a Minnesota limited liability

@@ -36,25 +36,29 @@
   --color-warm-panel: #faf7f2;    /* input bg + table row hover */
   --color-brick: #9c3b2e;         /* flagged / destructive (4th status color) */
 
-  /* Per-game jewel registry — one desaturated jewel tone per game (FAR-394,
-     editorial palette; was the Ch.09b raw-neon registry). Game pictograms only.
+  /* Per-game registry — sampled from the 2026-07-30 raster art refresh
+     (Myke-approved; supersedes the FAR-394 jewel tones, which no longer matched
+     the shipped icons). The icons themselves are now art, so these values drive
+     only the lobby hover glow and the TodaysSignalCard accent. Each is a real
+     color from its own master, chosen so the seven stay distinguishable — see
+     the GAME_ACCENT comment in GameIcon.jsx for why three aren't cyan.
      Mirror of GAME_ACCENT in src/components/GameIcon.jsx — keep the two in sync.
      The --color-neon-* aliases are retained (same values) so any older utility
-     class keeps resolving during the palette transition. */
-  --color-game-rackl: #2f9c8b;       /* teal */
-  --color-game-signaldrop: #c86a85;  /* garnet rose */
-  --color-game-stack: #a08a3a;       /* citrine/bronze */
-  --color-game-circuit: #4c90bd;     /* sapphire */
-  --color-game-brief: #7ca34a;       /* olive */
-  --color-game-darkfiber: #9a74c0;   /* amethyst */
-  --color-game-frequency: #c06a3c;   /* rust/copper */
-  --color-neon-rackl: #2f9c8b;
-  --color-neon-signaldrop: #c86a85;
-  --color-neon-stack: #a08a3a;
-  --color-neon-circuit: #4c90bd;
-  --color-neon-brief: #7ca34a;
-  --color-neon-darkfiber: #9a74c0;
-  --color-neon-frequency: #c06a3c;
+     class keeps resolving. */
+  --color-game-rackl: #48ff54;       /* LED green */
+  --color-game-signaldrop: #ff6b7d;  /* red waveform */
+  --color-game-stack: #d6ff18;       /* yellow-green bars */
+  --color-game-circuit: #48fefe;     /* cyan medallion */
+  --color-game-brief: #f58cf5;       /* magenta highlights */
+  --color-game-darkfiber: #a855ff;   /* violet halo */
+  --color-game-frequency: #ff7c52;   /* orange pulse */
+  --color-neon-rackl: #48ff54;
+  --color-neon-signaldrop: #ff6b7d;
+  --color-neon-stack: #d6ff18;
+  --color-neon-circuit: #48fefe;
+  --color-neon-brief: #f58cf5;
+  --color-neon-darkfiber: #a855ff;
+  --color-neon-frequency: #ff7c52;
 
   /* Type — Bricolage Grotesque (body/UI), IBM Plex Serif (editorial),
      IBM Plex Mono (labels/data/citations). */

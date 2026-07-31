@@ -1,6 +1,6 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GameIconDefs } from "@/components/GameIcon";
+import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
@@ -35,8 +35,6 @@ const TOKEN_PACKS = [
 export default function Home() {
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
-      <GameIconDefs />
-
       {/* ── Masthead ─────────────────────────────────────────────────────── */}
       <div className="h-0.5 bg-gold" />
       <header className="sticky top-0 z-50 bg-forest">
