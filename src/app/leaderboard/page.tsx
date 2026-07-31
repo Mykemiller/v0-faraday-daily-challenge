@@ -5,6 +5,7 @@ import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import ShareButton from "@/components/ShareButton";
+import { fetchUnreadTotal } from "@/components/messaging/client";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 // Leaderboard — Global + per-team tabs backed by /api/leaderboard/season.
@@ -152,10 +153,16 @@ export default function LeaderboardPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [token, setToken] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
+  const [unread, setUnread] = useState(0);
 
   const getToken = () => {
     try { return localStorage.getItem(SESSION_STORAGE_KEY); } catch { return null; }
   };
+
+  // Nav unread badge — token is already in hand on this page (CC-DC-MESSAGING-1.0).
+  useEffect(() => {
+    if (token) fetchUnreadTotal(token).then(setUnread);
+  }, [token]);
 
   // Session + handle for the masthead — same localStorage mirror the other
   // SiteHeaderNav pages use (HANDLE_STORAGE_KEY, email local-part fallback);
@@ -273,6 +280,7 @@ export default function LeaderboardPage() {
         authed={!!token}
         handle={token ? handle : null}
         onSignOut={signOut}
+        unreadCount={unread}
       />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">

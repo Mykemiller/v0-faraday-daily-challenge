@@ -1,5 +1,67 @@
 @AGENTS.md
 
+## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
+
+In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with
+block / report / mute. Migration `20260730000001_dc_messaging.sql`
+(**APPLIED to prod 2026-07-29**, Myke-approved); authorization matrix
+(18 cases) verified live against the branch preview with observed status
+codes, fixtures cleaned to 0 rows.
+
+- **Five tables, one conversation model.** `dc_conversations` has two
+  CHECK-enforced shapes: `team_broadcast` keyed `(team_id, season_id)` (one
+  channel per team per season, lazily created) and `direct` keyed by the
+  ORDERED pair `(pair_low < pair_high)` — the partial unique index +
+  `fn_dc_find_or_create_direct` RPC make find-or-create race-safe (verified:
+  two concurrent first-sends → one conversation). `dc_messages` is
+  append-only (soft delete via `deleted_at`; the API never SQL-DELETEs);
+  `dc_message_blocks`, `dc_message_reports` complete the set. RLS deny-all,
+  zero policies — NEVER add one (dc_sessions identity, no Supabase JWT).
+- **`dc_conversation_members` is read/mute STATE ONLY — never the
+  authorization source.** Authorization is derived per request in
+  `authorizeConversation()` (`src/lib/messaging/server.ts`): direct → viewer
+  is in the pair; broadcast → viewer has a non-pending `team_memberships`
+  row for `(team_id, season_id)`. Denials collapse to 403 `not_permitted`
+  (existence never leaks).
+- **Captaincy is re-verified server-side on EVERY broadcast send/delete**
+  (`teams.captain_id` re-fetched — captaincy rolls on leave; a cached value
+  would be a security bug).
+- **Blocks are stored one-way, enforced both ways** — either direction
+  silences the pair (threads vanish from both inboxes, unreachable by id,
+  sends → 403 `not_deliverable` with no block confirmation). Blocks do
+  **NOT** suppress team broadcasts: blocking a teammate (even the captain)
+  never cuts you off from team announcements.
+- **Season lock deliberately does NOT block sending** — messaging is not a
+  roster change. Do not "fix" this into a lock check (commented in the
+  send path).
+- **Rate limits** live in `src/lib/messaging/rules.ts` (pure, tested —
+  `npm run test:messaging`): 10 broadcasts/team/24h (soft-deleting never
+  refunds quota), 10 new DM threads/24h (counted against the OPENER),
+  200 DMs/24h, 2000-char bodies. Enforced in `/api/messages` POST.
+- **DM reach is OPEN to all players**; block is currently the only reach
+  control. `/api/messages/directory` (handle prefix search, handle-only
+  output) is therefore effectively a player directory for any signed-in
+  user — accepted v1 trade-off, commented in the route. **Recommended
+  fast-follow: a "who can message me" setting.**
+- **Reports snapshot `body_snapshot` at report time** and survive message
+  deletion; queue = `/league-office/reports` (the Rail's "Disputes & Flags"
+  item, now live) + `/api/league-office/reports` (requireStaff; status
+  triage only, deliberately not the Tier-2 audited-action funnel).
+  Reporters only ever get `{ok:true}` — moderation state is never revealed.
+- **`notification-preferences.ts` intentionally NOT extended** — v1 is
+  in-app only. `direct_message` and `team_broadcast` are the RESERVED
+  category ids for phase-2 email/SMS delivery.
+- **Surfaces:** `/messages` inbox (two-pane ≥900px), `TeamBroadcastPanel`
+  on the team page, gold unread dot + "Messages (n)" in the
+  `SiteHeaderNav` gear menu (badge fetched via `?scope=unread` on
+  /messages, /leaderboard, and the team page only — bounded round-trips).
+  **Open follow-up:** mirroring the badge into `DailyChallenge.jsx`'s
+  `buildHeaderMenus` (file contended by FAR-394/FAR-395 — deliberately
+  untouched this pass).
+- **PostgREST gotcha (real bug caught live):** `dc_messages` has TWO FKs to
+  `dc_subscribers` (`author_id`, `deleted_by`) — embeds must hint
+  `dc_subscribers!dc_messages_author_id_fkey(...)` or every thread read
+  silently returns empty.
 ## League Office Game Library (CC-LO-GAME-LIBRARY-1.0, 2026-07-30)
 
 `/league-office/game-library` — the extensible game catalog: status board, lifecycle
