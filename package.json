@@ -23,6 +23,7 @@
     "test:game-library": "node --test src/lib/league-office/game-library-logic.test.ts",
     "test:advisory-only": "node --test src/lib/league-office/advisory-only.test.mjs",
     "test:market-reaction": "node --test src/lib/market-reaction.test.ts",
+    "test:share": "node --experimental-default-type=module --test src/lib/share/manifest.test.js src/lib/share/buildShare.test.js",
     "test:staging-live": "node --test scripts/far287/staging-live-invariant.test.mjs",
     "test:far287": "node --test scripts/far287/lib/run-bookkeeping.test.mjs scripts/far287/lib/puzzle-schema.test.mjs"
   },
