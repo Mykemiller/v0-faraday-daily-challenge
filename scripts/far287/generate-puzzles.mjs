@@ -4,7 +4,7 @@
 //
 // Flags:
 //   --dry-run           generate + validate, print samples, WRITE NOTHING (default off)
-//   --pilot             only the first 10 themed days (70 records) then stop (Gate 2)
+//   --pilot             only the first 7 themed days (49 records) then stop (Gate 2)
 //   --limit N           cap themed days
 //   --type "<name>"     only one game type
 //   --resume <run_id>   skip (type, go_live_date) already written for that run
@@ -26,13 +26,14 @@ import {
   contentHash, subjectFingerprint, parseModelJson,
 } from "./lib/puzzle-schema.mjs";
 import { buildCorpus, buildSubjectPool, CORPUS_PATH } from "./lib/corpus.mjs";
+import { resolveRunStatus, isTerminal } from "./lib/run-bookkeeping.mjs";
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const val = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
 const DRY = has("--dry-run");
 const PILOT = has("--pilot");
-const LIMIT = PILOT ? 10 : Number(val("--limit", 0)) || Infinity;
+const LIMIT = PILOT ? 7 : Number(val("--limit", 0)) || Infinity; // pilot = 7 days / 49 records (CC-DC-BANK-RESUME-1.0 Phase 3)
 const ONLY_TYPE = val("--type", null);
 const RESUME = val("--resume", null);
 const BATCH = Math.max(8, Math.min(12, Number(val("--batch", 10))));
@@ -90,10 +91,35 @@ async function main() {
   if (has("--refresh-corpus") || !existsSync(CORPUS_PATH)) { console.log("building corpus cache…"); await buildCorpus(); }
   const corpus = JSON.parse(readFileSync(CORPUS_PATH, "utf8"));
 
+  // Calendar preflight: the JSON on disk must match dc_daily_theme row-for-row
+  // before anything generates against it. Regeneration is deterministic, but
+  // never trust that silently — a mismatch means IDF drift, which is a STOP.
+  if (!DRY) {
+    const db = await sbSelect("dc_daily_theme",
+      "select=theme_date,theater_id,sector_code,jpas_tier_code,thread_codes,theme_title&order=theme_date.asc");
+    if (db.length !== CAL.calendar.length)
+      throw new Error(`calendar preflight: dc_daily_theme has ${db.length} rows, JSON has ${CAL.calendar.length}`);
+    CAL.calendar.forEach((d, i) => {
+      const r = db[i];
+      if (r.theme_date !== d.theme_date || r.theater_id !== d.theater_id || r.sector_code !== d.sector_code
+        || r.jpas_tier_code !== d.jpas_tier_code || r.theme_title !== d.theme_title
+        || (r.thread_codes || []).join(";") !== d.thread_codes.join(";"))
+        throw new Error(`calendar preflight: mismatch at ${d.theme_date} — rebuild exports/far287-calendar.json; if it still diverges, STOP (IDF drift is Myke's call)`);
+    });
+    console.log(`calendar preflight: ${db.length} dc_daily_theme rows match the JSON`);
+  }
+
   // run bookkeeping
   const runId = RESUME || randomUUID();
+  let runTarget = days.length * types.length;
   if (!DRY && !RESUME) await sbInsert("dc_puzzle_generation_runs",
     [{ id: runId, target_count: days.length * types.length, rotation_seed: CAL.seed, registry_version: CAL.registry_version, status: "running", params: { pilot: PILOT, model: GEN_MODEL } }]);
+  if (!DRY && RESUME) {
+    const [run] = await sbSelect("dc_puzzle_generation_runs", `select=target_count&id=eq.${runId}`);
+    if (!run) throw new Error(`--resume ${runId}: no such run in dc_puzzle_generation_runs`);
+    if (run.target_count) runTarget = run.target_count;
+    await sbUpdate("dc_puzzle_generation_runs", `id=eq.${runId}`, { status: "running" });
+  }
 
   const bankFps = await existingBankFingerprints();
   const runFps = new Map(); // type -> Set
@@ -104,7 +130,14 @@ async function main() {
     for (const r of rows || []) already.add(`${r.puzzle_type}|${r.go_live_date}`);
   }
 
-  let written = 0, failed = 0; const failures = []; const samples = [];
+  let written = 0, failed = 0, skippedInScope = 0, sinceCheckpoint = 0;
+  const failures = []; const samples = [];
+  // Cumulative bookkeeping: `already` holds this run's previously-written slots,
+  // so written_count = already.size + written survives interruption + resume.
+  const checkpoint = () => DRY ? Promise.resolve() :
+    sbUpdate("dc_puzzle_generation_runs", `id=eq.${runId}`,
+      { written_count: already.size + written, failed_count: failed })
+      .catch((err) => console.warn(`[checkpoint] ${err.message}`));
 
   for (const type of types) {
     const fpSet = runFps.get(type) || runFps.set(type, new Set()).get(type);
@@ -112,7 +145,7 @@ async function main() {
     // build the batch of items for this type across days
     const items = [];
     days.forEach((day, di) => {
-      if (already.has(`${type}|${day.theme_date}`)) return;
+      if (already.has(`${type}|${day.theme_date}`)) { skippedInScope++; return; }
       const pool = buildSubjectPool(corpus, day); // ordered candidate subjects
       const subject = pool.length ? pool[(di + types.indexOf(type)) % pool.length] : day.sector_name;
       items.push({ day, di, subject,
@@ -164,16 +197,23 @@ async function main() {
                catch (err) { fail("db: " + err.message); } }
       }
       process.stdout.write(`\r${type}: ${Math.min(i + BATCH, items.length)}/${items.length} (written ${written}, failed ${failed})   `);
+      if (++sinceCheckpoint >= 5) { sinceCheckpoint = 0; await checkpoint(); }
     }
     process.stdout.write("\n");
+    await checkpoint();
   }
 
+  // Terminal status only when the scope is actually covered; a partial or
+  // failure-ridden pass leaves the run resumable ('generating').
+  const status = resolveRunStatus({ pilot: PILOT, covered: skippedInScope + written,
+    scopeTarget: days.length * types.length, runTarget });
   if (!DRY) await sbUpdate("dc_puzzle_generation_runs", `id=eq.${runId}`,
-    { completed_at: new Date().toISOString(), written_count: written, failed_count: failed, status: PILOT ? "pilot_complete" : "complete" });
+    { completed_at: isTerminal(status) ? new Date().toISOString() : null,
+      written_count: already.size + written, failed_count: failed, status });
 
   mkdirSync("exports", { recursive: true });
-  writeFileSync(`exports/far287-gen-report-${runId}.json`, JSON.stringify({ runId, model: GEN_MODEL, written, failed, failures, dry: DRY, pilot: PILOT }, null, 2));
-  console.log(`\nrun ${runId}: written ${written}, failed ${failed}. report: exports/far287-gen-report-${runId}.json`);
+  writeFileSync(`exports/far287-gen-report-${runId}.json`, JSON.stringify({ runId, model: GEN_MODEL, status, written, failed, failures, dry: DRY, pilot: PILOT }, null, 2));
+  console.log(`\nrun ${runId} [${status}]: written ${written} (+${skippedInScope} already), failed ${failed}. report: exports/far287-gen-report-${runId}.json`);
   if (DRY) console.log(`DRY-RUN samples:\n` + samples.map((s) => `  ${s.go_live_date} ${s.puzzle_type} — ${s.puzzle_name} [${s.difficulty}] ans=${String(s.answer_key).slice(0, 40)}`).join("\n"));
   if (PILOT) console.log(`\n*** PILOT GATE: review the ${written} records above/in staging, then run the full generation. ***`);
 }
