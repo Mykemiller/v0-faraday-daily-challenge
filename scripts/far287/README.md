@@ -11,7 +11,7 @@ staging** (`dc_puzzle_bank_staging`), each with 3 escalating hints. Airtable syn
 | Snapshot | `node scripts/far287/build-snapshot.mjs` | `idf-taxonomy-snapshot.json` | — |
 | Calendar | `node scripts/far287/build-calendar.mjs` | `exports/far287-calendar.{json,csv}`, `docs/far287-calendar-review.md` | **review** |
 | Load calendar | `node scripts/far287/emit-calendar-sql.mjs <run_id> <dir>` → apply SQL | `dc_daily_theme` | — |
-| Generate (pilot) | `node scripts/far287/generate-puzzles.mjs --pilot` | `dc_puzzle_bank_staging` (70) | **pilot** |
+| Generate (pilot) | `node scripts/far287/generate-puzzles.mjs --pilot --resume <run_id>` | `dc_puzzle_bank_staging` (49) | **pilot** |
 | Generate (full) | `node scripts/far287/generate-puzzles.mjs` | `dc_puzzle_bank_staging` (3,500) | — |
 | Validate | `node scripts/far287/validate-staging.mjs --write` | `validation_status` + QA report | — |
 | Export CSV | `node scripts/far287/export-csv.mjs --run <id>` | `exports/puzzle-bank-<id>.csv` | — |
@@ -26,9 +26,19 @@ staging** (`dc_puzzle_bank_staging`), each with 3 escalating hints. Airtable syn
 
 ## Generator flags
 
-`--dry-run` (validate + sample, write nothing) · `--pilot` (first 10 days = 70 records,
+`--dry-run` (validate + sample, write nothing) · `--pilot` (first 7 days = 49 records,
 then stop at the gate) · `--limit N` · `--type "<name>"` · `--resume <run_id>` ·
 `--refresh-corpus` · `--batch N` (8–12).
+
+**Run bookkeeping (CC-DC-BANK-RESUME-1.0):** non-dry runs preflight the calendar
+JSON against `dc_daily_theme` row-for-row (mismatch = abort — IDF drift is Myke's
+call). `--resume` flips the run row back to `running`; `written_count` is cumulative
+(prior slots + this pass) and checkpointed every 5 batches, so an interruption is
+recoverable. Status goes terminal (`complete`/`pilot_complete`) ONLY when the pass
+scope is fully covered; otherwise it stays `generating`. Never run without
+`--resume` once staging holds rows for the run. Invariant guard:
+`npm run test:staging-live` (no staging row `Live` off the Chicago serve date) ·
+logic tests: `npm run test:far287`.
 
 ## Guarantees
 
