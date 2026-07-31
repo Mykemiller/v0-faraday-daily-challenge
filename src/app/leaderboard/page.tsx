@@ -281,6 +281,7 @@ export default function LeaderboardPage() {
         handle={token ? handle : null}
         onSignOut={signOut}
         unreadCount={unread}
+        onUnreadChange={setUnread}
       />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">

@@ -52,16 +52,55 @@ codes, fixtures cleaned to 0 rows.
   in-app only. `direct_message` and `team_broadcast` are the RESERVED
   category ids for phase-2 email/SMS delivery.
 - **Surfaces:** `/messages` inbox (two-pane ≥900px), `TeamBroadcastPanel`
-  on the team page, gold unread dot + "Messages (n)" in the
-  `SiteHeaderNav` gear menu (badge fetched via `?scope=unread` on
-  /messages, /leaderboard, and the team page only — bounded round-trips).
-  **Open follow-up:** mirroring the badge into `DailyChallenge.jsx`'s
-  `buildHeaderMenus` (file contended by FAR-394/FAR-395 — deliberately
-  untouched this pass).
+  on the team page, the masthead **message dock** (below), and "Messages (n)"
+  in the `SiteHeaderNav` gear menu (badge fetched via `?scope=unread` on
+  /messages, /leaderboard, and the team page; the in-app masthead dock
+  fetches its own total once on mount).
 - **PostgREST gotcha (real bug caught live):** `dc_messages` has TWO FKs to
   `dc_subscribers` (`author_id`, `deleted_by`) — embeds must hint
   `dc_subscribers!dc_messages_author_id_fkey(...)` or every thread read
   silently returns empty.
+
+### Messaging dock (CC-DC-MSG-DOCK-1.0, claude/dc-msg-dock-amt5yx)
+
+Site-wide chat trigger + slide-down panel: a chat-bubbles glyph in BOTH
+mastheads (`SiteHeaderNav.tsx` and the `HeaderIconNav` row in
+`DailyChallenge.jsx`, between the @handle chip and the grid icon) opens a
+dropdown of **Message my Captain · My Team · A Player · The Commissioner**;
+choosing one slides `src/components/messaging/MessageDock.tsx` down from
+under the masthead (~200ms, `prefers-reduced-motion` → none; Escape /
+outside-click / trigger close it — never mid-send). Pure overlay: no route
+change, no game-state writes, mounted as a masthead sibling so it can never
+unmount a puzzle or trip the game-switcher confirm. Signed-out → no trigger.
+
+- **The gold unread dot MOVED from the gear trigger to the chat trigger**
+  (aria-label "Messages — n unread"); the gear keeps its "Messages (n)"
+  item. This closed the old "lobby badge mirror" follow-up — the in-app
+  masthead now shows the badge via the dock's own `?scope=unread` fetch.
+- **Shared components, not forks (D8):** `ThreadPane` / `MessageRow` /
+  `NewMessageSearch` were extracted from `MessagesApp.tsx` into their own
+  files under `src/components/messaging/` — the dock and `/messages` render
+  the identical thread/composer/search UI. `/messages` behavior unchanged.
+- **`GET /api/messages?scope=commissioner` (D4):** resolves the League
+  Office staff allowlist email (`league-office/constants.ts` STAFF — the
+  source of truth, never a hardcoded uuid) → dc_subscribers by email
+  (citext) per request. Valid session required (anon → 401). Returns
+  `{available, subscriber_id, handle, is_self}`; no subscriber row →
+  `{available:false}` → item disabled. Sends go through the ordinary DM
+  path — normal rate limits and block rules apply.
+- **`GET /api/messages?scope=captain` (D2):** fresh per-team captain
+  resolution for the viewer's season teams. The dock re-resolves at menu
+  open AND **on every captain-item send** (its "captain" target POSTs
+  `to_subscriber_id` from a just-fetched resolution) — a captaincy roll
+  between open and send lands in the NEW captain's thread, never the stale
+  one. Do not "optimize" this into a cached id.
+- **Menu derivation is pure + tested:** `src/lib/messaging/dock-menu.ts`
+  (`npm run test:messaging`, now rules + dock-menu). D2/D3/D4 matrix: no
+  teams → captain disabled ("Join a team first."), viewer captains every
+  team → captain hidden, >1 eligible team → inline picker; non-member →
+  My Team absent; commissioner unavailable → disabled, is_self → hidden.
+  Hiding/disabling is never enforcement — every send re-authorizes
+  server-side.
 ## League Office Game Library (CC-LO-GAME-LIBRARY-1.0, 2026-07-30)
 
 `/league-office/game-library` — the extensible game catalog: status board, lifecycle

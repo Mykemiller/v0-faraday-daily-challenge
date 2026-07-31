@@ -214,6 +214,7 @@ export default function TeamPage() {
         handle={token ? handle : null}
         onSignOut={signOut}
         unreadCount={unread}
+        onUnreadChange={setUnread}
       />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-6">

@@ -3,6 +3,8 @@
 // GET  /api/messages?token=&scope=threads                      → inbox
 // GET  /api/messages?token=&scope=thread&conversation_id=|team_id= → one thread
 // GET  /api/messages?token=&scope=unread                       → badge counts
+// GET  /api/messages?token=&scope=commissioner                 → commissioner resolver (CC-DC-MSG-DOCK-1.0 D4)
+// GET  /api/messages?token=&scope=captain                      → per-team captain resolver (CC-DC-MSG-DOCK-1.0 D2)
 // POST /api/messages   body: { token, action, ... }
 //   action "send"       { conversation_id | team_id | to_subscriber_id, body }
 //   action "mark-read"  { conversation_id }
@@ -41,6 +43,7 @@ import {
   countUnread,
   isPairBlocked,
 } from '@/lib/messaging/rules';
+import { STAFF } from '@/lib/league-office/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,7 +130,85 @@ export async function GET(request: Request) {
     );
   }
   if (scope === 'unread') return getUnread(h, viewer.id);
+  if (scope === 'commissioner') return getCommissioner(h, viewer.id);
+  if (scope === 'captain') return getCaptains(h, viewer.id);
   return Response.json({ error: 'unknown_scope' }, { status: 400 });
+}
+
+/**
+ * D4 (CC-DC-MSG-DOCK-1.0): resolve "The Commissioner" for the dock. The League
+ * Office staff allowlist (src/lib/league-office/constants.ts STAFF) is the
+ * source of truth — the subscriber row is looked up by email (citext) on every
+ * request, never a hardcoded uuid. Requires a valid session (the shared 401
+ * gate in GET runs before scope dispatch). No subscriber row for the allowlist
+ * email → { available: false } → the dock disables the item. Sends to the
+ * resolved id go through the ordinary direct-message path: normal rate limits
+ * and block rules apply.
+ */
+async function getCommissioner(h: Svc, viewerId: string) {
+  const email = Object.keys(STAFF).find(e => STAFF[e] === 'commissioner');
+  if (!email) return Response.json({ available: false });
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/dc_subscribers?email=eq.${encodeURIComponent(email)}&select=id,handle,email,active&limit=1`,
+    { headers: h, cache: 'no-store' }
+  );
+  const rows = r.ok ? await r.json().catch(() => []) : [];
+  const sub = Array.isArray(rows) ? rows[0] : null;
+  if (!sub || sub.active === false) return Response.json({ available: false });
+  return Response.json({
+    available: true,
+    subscriber_id: sub.id,
+    handle: displayHandle(sub),
+    is_self: sub.id === viewerId,
+  });
+}
+
+/**
+ * D2 (CC-DC-MSG-DOCK-1.0): fresh captain resolution for every team the viewer
+ * belongs to this season. Captaincy rolls when a captain leaves, so the client
+ * must call this at the moment it opens or sends the captain thread — never
+ * cache a captain id client-side. Membership comes from the same
+ * team_memberships source authorizeConversation uses.
+ */
+async function getCaptains(h: Svc, viewerId: string) {
+  const season = await activeSeason(h);
+  if (!season) return Response.json({ teams: [] });
+  const memR = await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${encodeURIComponent(viewerId)}&season_id=eq.${encodeURIComponent(season.id)}&pending=eq.false&select=team_id,teams(id,name,captain_id)`,
+    { headers: h, cache: 'no-store' }
+  );
+  const memRows = memR.ok ? await memR.json().catch(() => []) : [];
+  const teams = (Array.isArray(memRows) ? memRows : [])
+    .map((m: { teams?: { id: string; name: string | null; captain_id: string | null } }) => m.teams)
+    .filter((t): t is { id: string; name: string | null; captain_id: string | null } => !!t);
+
+  // Handle lookup for all foreign captains in one query — handle only, never
+  // the email address.
+  const captainIds = [...new Set(
+    teams.map(t => t.captain_id).filter((id): id is string => !!id && id !== viewerId)
+  )];
+  const handleById = new Map<string, string>();
+  if (captainIds.length > 0) {
+    const inList = captainIds.map(encodeURIComponent).join(',');
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/dc_subscribers?id=in.(${inList})&select=id,handle,email`,
+      { headers: h, cache: 'no-store' }
+    );
+    const rows = r.ok ? await r.json().catch(() => []) : [];
+    for (const s of Array.isArray(rows) ? rows : []) handleById.set(s.id, displayHandle(s));
+  }
+
+  return Response.json({
+    teams: teams.map(t => ({
+      team_id: t.id,
+      team_name: t.name,
+      is_captain: t.captain_id === viewerId,
+      captain:
+        t.captain_id && t.captain_id !== viewerId
+          ? { subscriber_id: t.captain_id, handle: handleById.get(t.captain_id) ?? 'anonymous' }
+          : null,
+    })),
+  });
 }
 
 async function getThreads(h: Svc, viewerId: string) {

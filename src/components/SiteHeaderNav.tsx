@@ -12,6 +12,8 @@
 // once per document via `useNavStyles`.
 
 import { useEffect, useRef, useState } from "react";
+import MessageDock from "@/components/messaging/MessageDock";
+import { useDcToken } from "@/components/messaging/client";
 
 const C = {
   forest: "#1C3424",
@@ -111,12 +113,9 @@ export function buildSiteMenus({
       { label: "Teams",                href: "/leaderboard?view=teams" },
       { label: "Free Agency",          href: "/free-agency" },
     ]},
-    { id: "account", icon: "gear", label: "Account",
-      badge: authed && unreadCount > 0,
-      ariaLabel: authed && unreadCount > 0
-        ? `Account — ${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`
-        : undefined,
-      items: authed ? [
+    // The gold unread dot moved to the chat-bubbles trigger (CC-DC-MSG-DOCK-1.0
+    // D1); the gear keeps its "Messages (n)" item linking to /messages.
+    { id: "account", icon: "gear", label: "Account", items: authed ? [
       { label: unreadCount > 0 ? `Messages (${unreadCount})` : "Messages", href: "/messages", current: current === "messages" },
       { label: "Account",  href: "/account", current: current === "account" },
       { label: "Settings", href: "/account" },  // same Account page today — no separate settings page yet
@@ -279,15 +278,20 @@ export default function SiteHeaderNav({
   handle,
   onSignOut,
   unreadCount = 0,
+  onUnreadChange,
 }: {
   current?: "daily" | "leaderboard" | "account" | "notifications" | "messages";
   authed?: boolean;
   handle?: string | null;
   onSignOut?: () => void;
-  /** Unread message total — gold dot on the gear trigger + "(n)" on Messages. */
+  /** Unread message total — gold dot on the chat trigger + "(n)" on Messages. */
   unreadCount?: number;
+  /** Lets the message dock push a fresh unread total back to the page state
+   *  after it marks a thread read (CC-DC-MSG-DOCK-1.0). */
+  onUnreadChange?: (n: number) => void;
 }) {
   useNavStyles();
+  const token = useDcToken();
   const menus = buildSiteMenus({ authed, current, onSignOut, unreadCount });
 
   return (
@@ -312,6 +316,10 @@ export default function SiteHeaderNav({
                 @{handle}
               </a>
             )}
+            {/* Chat-bubbles trigger + slide-down dock, between the @handle chip
+                and the grid icon (CC-DC-MSG-DOCK-1.0 D1). Renders nothing when
+                signed out (D7 — gated on the session token, not `authed`). */}
+            <MessageDock token={token} initialUnread={unreadCount} onUnreadChange={onUnreadChange} />
             <IconNav menus={menus} />
           </div>
         </div>

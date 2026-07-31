@@ -46,6 +46,7 @@ export default function MessagesPage() {
         handle={token ? handle : null}
         onSignOut={signOut}
         unreadCount={unread}
+        onUnreadChange={setUnread}
       />
 
       <main className="pb-16 pt-6">
