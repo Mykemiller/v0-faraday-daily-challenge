@@ -23,37 +23,17 @@ const GAME_SLUG = {
   "Frequency": "frequency",
 };
 
-// Per-game color, sampled from the raster art. SUPERSEDES FAR-394's jewel tones
-// (Myke-approved 2026-07-30). `deep` is the 0.78 companion for secondary fills.
+// Per-game accent colors. The values (and the full rationale for why they aren't
+// each icon's dominant color) moved to the pure module src/lib/game-accent.js so
+// the share manifest (CC-DC-SHARE-1.0) and node-run tests can import them without
+// JSX. Re-exported here so every existing `from "@/components/GameIcon"` importer
+// keeps working — this file remains the conventional import point for components.
 //
-// What changed underneath: the accent used to BE the pictogram ink drawn on the
-// forest tile, so FAR-394's ">=3:1 on forest" rule described the icon itself. The
-// pictogram is now baked art; the accent's only remaining jobs are the lobby
-// hover glow (at .28 alpha) and the TodaysSignalCard accent prop.
-//
-// WHY THESE AREN'T ALL THE DOMINANT COLOR: three masters (Signal Drop, Circuit,
-// The Brief) are predominantly cyan. Taking each one's modal color collapsed them
-// to Δ5–Δ20 of each other and failed the FAR-394 distinguishability guard, and
-// Dark Fiber's core violet read 2.56:1 on forest (min 3). So each accent is drawn
-// from a DIFFERENT real color already present in its own master — Signal Drop
-// takes its red waveform rather than its cyan word, The Brief its magenta
-// highlight rows, Dark Fiber its lighter glow halo. No icon was recolored; the
-// art is untouched. Gate result: 7/7 contrast, 0 pairs below Δ40 (closest Δ70).
-export const GAME_ACCENT = {
-  "Rackl":       { accent: "#48FF54", deep: "#38C742", glow: "rgba(72,255,84,.28)"   }, // LED green
-  "Signal Drop": { accent: "#FF6B7D", deep: "#C75361", glow: "rgba(255,107,125,.28)" }, // red waveform
-  "The Stack":   { accent: "#D6FF18", deep: "#A7C713", glow: "rgba(214,255,24,.28)"  }, // yellow-green bars
-  "Circuit":     { accent: "#48FEFE", deep: "#38C6C6", glow: "rgba(72,254,254,.28)"  }, // cyan medallion
-  "The Brief":   { accent: "#F58CF5", deep: "#BF6DBF", glow: "rgba(245,140,245,.28)" }, // magenta highlights
-  "Dark Fiber":  { accent: "#A855FF", deep: "#8342C7", glow: "rgba(168,85,255,.28)"  }, // violet halo
-  "Frequency":   { accent: "#FF7C52", deep: "#C76140", glow: "rgba(255,124,82,.28)"  }, // orange pulse
-};
-
-// Backward-compatible alias for the former neon registry. Same shape as before
-// (`neon` + `glow`), so any straggling `GAME_NEON[type].neon` reader keeps working.
-export const GAME_NEON = Object.fromEntries(
-  Object.entries(GAME_ACCENT).map(([k, v]) => [k, { neon: v.accent, glow: v.glow }])
-);
+// What changed underneath (CC-DC-ICON-REFRESH-1.0): the accent used to BE the
+// pictogram ink drawn on the forest tile. The pictogram is now baked art; the
+// accent's remaining jobs are the lobby hover glow (at .28 alpha) and the
+// TodaysSignalCard accent prop.
+export { GAME_ACCENT, GAME_NEON } from "../lib/game-accent";
 
 /**
  * The labeled 640² share frame (dark field + tile + baked game name). Used by the

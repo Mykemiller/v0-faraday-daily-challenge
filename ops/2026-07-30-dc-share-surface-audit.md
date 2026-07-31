@@ -398,6 +398,24 @@ color in iMessage/Slack/LinkedIn without any font dependency:
 
 ---
 
+## 10a. Phase 1 go decisions (Myke, 2026-07-31 — recorded post-approval)
+
+The Phase 0 report was merged (PR #126) and Myke answered the six stop-points:
+
+1. **Icons: attached** (all 7 games + the new Daily Challenge rainbow-bars mark).
+   Note: in this remote environment attachments arrive as chat images, not files —
+   the 7 game icons were sourced from the identical in-repo masters
+   (`public/icons/games/<slug>-share.png`); `public/share/icons/daily-challenge.png`
+   is a faithful SVG-rendered stand-in of the attached DC mark. **Dropping the
+   original file over that path replaces it with zero code changes.**
+2. **Glyph vocabulary (§8): approved** as proposed (🟩🟨⬛, per-game line formats).
+3. **All-seven day summary: scoped out** — no new summary surface this project.
+4. **Rackl guess-history + Dark Fiber mistakes threading: reduced result blocks
+   accepted** (counts-only pips; no client-state additions).
+5. **Font vendoring for the card renderer: approved** (OFL IBM Plex subset in-repo,
+   lands with Phase 2's `/api/share/card`).
+6. **No Jira ticket** — "solved, not tracked."
+
 ## 10. Stop-points requiring input before Phase 1
 
 1. **Assets not received** — the 8 icons + reference screenshot were not attached in
