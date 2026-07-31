@@ -3,7 +3,9 @@
 --
 -- CC-IDF4-SUBDOMAIN-COVERAGE-1.0 Phase 1, step 1 (forward fix).
 --
--- ⚠️ PROPOSAL — NOT APPLIED. Requires Myke sign-off before apply_migration.
+-- ✅ APPLIED to prod 2026-07-31 (Myke-approved: "Apply steps 1-4").
+--    Immediately superseded by 20260731000002, which drops the unnecessary
+--    SECURITY DEFINER below — see that file. Net prod state is SECURITY INVOKER.
 --
 -- PROBLEM (Phase 0 finding, docs/idf4-coverage/PHASE-0-SUBDOMAIN-CLASSIFICATION.md):
 --   `source-poller` writes each source's curated domain tags into

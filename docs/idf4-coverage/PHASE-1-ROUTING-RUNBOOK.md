@@ -1,8 +1,87 @@
 # CC-IDF4-SUBDOMAIN-COVERAGE-1.0 — Phase 1 routing runbook
 
-**Status:** artifacts prepared, **nothing applied or deployed.**
+**Status:** steps 1, 2, 4 **APPLIED to prod 2026-07-31** (Myke: "Apply steps 1-4").
+Step 3 (deploy) **BLOCKED** — see the conflict below. Steps 5–7 not started.
 **Date:** 2026-07-31 · **Supersedes nothing** — builds on
 `docs/idf4-coverage/PHASE-0-SUBDOMAIN-CLASSIFICATION.md` (merged, PR #125).
+
+---
+
+## Execution results
+
+| Step | Outcome |
+|---|---|
+| 1 — migration `20260731000001` + `…002` | ✅ Applied. Trigger installed, verification gate passed, probe discarded, **0 existing rows modified** |
+| 2 — poller domain propagation | ✅ **250,067 rows tagged.** Domain coverage **5.4% → 100.0%** (264,300 / 264,320) |
+| 3 — deploy `faraday-crawl` | ⛔ **BLOCKED** — would activate 15 automations incl. AUTO-140 (see below) |
+| 4 — split mis-filed `D#.#` | ✅ **5,918 rows split.** Zero dotted codes remain in `ifs_domains` |
+
+Reconciliation check: 1,962 pre-existing + 5,918 split = **7,880 rows with a
+sub-domain**, matching exactly — the validation trigger stripped nothing.
+
+Advisor impact: **396 → 394 findings, zero new.** The first migration introduced
+two `security_definer_function_executable` WARNs; `20260731000002` removed the
+unnecessary `SECURITY DEFINER` and cleared both.
+
+### ⚠️ Correction to the Phase 0 reclassification
+
+**The 25 featureless sub-domains are still featureless. Sub-domain coverage did
+not move: 91/116 fed before, 91/116 after.**
+
+Phase 0 predicted six of them (D18.1–.3, D6.1, D6.2, D15.1) were
+"routing-gap-only" and would light up from steps 1–4 alone. **That prediction was
+wrong**, and the reason is structural rather than incidental:
+
+`source_registry` tags at **domain grain only** — it has no sub-domain column.
+Propagating poller tags therefore can never produce a `D#.#` code, no matter how
+many rows it fixes. A sub-domain code exists only if a crawler emits one. Phase 0
+noted the missing grain as an open item but still classified those six as
+routing-only; those two facts contradict each other and the classification was
+the wrong one.
+
+**What steps 1–4 did deliver is real and was the prerequisite:** the 27,392 D18
+artifacts, 9,772 D6, 4,375 D15 and so on are now *visible and classifiable*
+instead of invisible, and the sub-domain measurement now reads one column
+correctly rather than straddling two conventions. But turning that pool into
+sub-domain coverage requires the classifier (step 6) or a crawler that emits the
+codes — not routing.
+
+**The D18.1 canary was therefore not a fair test and remains unresolved.** It
+cannot light up while no automation emits `D18.1`; AUTO-206 tags `{D11, D3}`.
+Fixing that config error is a precondition for the canary to mean anything.
+
+### Parent-domain pools now visible (were all reporting 0)
+
+| D18 | D6 | D15 | D5 | D4 | D7 | D16 | D14 | D8 | D17 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 27,392 | 9,772 | 4,375 | 3,619 | 3,477 | 2,299 | 1,436 | 1,437 | 934 | 548 |
+
+### ⛔ Why step 3 is blocked
+
+Deploying the repo's `faraday-crawl` does more than pick up `splitIfsTags()` and
+the dual-tags. The repo merges **`WAVE3_ACTIVATION` (AUTO-138–152) into the live
+`AUTOMATIONS` fleet**; the deployed v15 does not. Deploying would therefore
+enable 15 crawlers on the 07:00 cron.
+
+**AUTO-140 is in that range** — and Myke's 2026-07-31 addendum explicitly
+reclassified AUTO-140 as a zero-source Phase 2 **build target** whose status
+"stays untouched until their sources are registered and validated." The brief
+also states plainly: *"Do not enable any automation."*
+
+Verified the deploy is otherwise safe: the repo is a strict superset of the
+deployment (**no automation exists only in the deployment**, so nothing would be
+lost), and the repo adds AUTO-179–182 only inside the inert
+`WHITESPACE_SCAFFOLDS` array, which `index.ts` never merges.
+
+Two ways forward, both needing a decision:
+1. **Deploy with `WAVE3_ACTIVATION` removed from the `AUTOMATIONS` merge** —
+   gets `splitIfsTags()` + the dual-tags, activates nothing. Requires a small
+   committed change so deployed ≡ `main`.
+2. **Deploy as-is**, accepting activation of AUTO-138–152 — needs explicit
+   sign-off that supersedes the addendum for the other 14.
+
+Until one is chosen, ~370 artifacts/day keep landing with `D#.#` in
+`ifs_domains`. Step 4 is idempotent and can simply be re-run afterwards.
 
 ---
 
