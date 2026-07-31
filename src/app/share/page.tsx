@@ -1,72 +1,20 @@
 "use client";
 
 // More Faraday → Share / Invite (FAR-408). One hub for every share action,
-// assembling pieces that already exist: invite a colleague (Web Share / copy),
-// share your rank (lives on /leaderboard), and team invites (managed on
-// /account, team pages are shareable URLs). No new backend.
+// assembling pieces that already exist: invite a colleague, share your rank
+// (lives on /leaderboard), and team invites (managed on /account; team pages
+// are shareable URLs). No new backend.
+//
+// CC-DC-SHARE-1.0 Phase 3: the invite action goes through the ONE share path
+// (<ShareButton/> + buildShare) — no ad-hoc navigator.share here.
 
-import { useState } from "react";
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import ShareButton from "@/components/ShareButton";
 
-const SITE = "https://www.faradaydailychallenge.com";
-const INVITE_URL = `${SITE}/challenge`;
-const INVITE_TEXT =
-  "Play the Faraday Daily Challenge — seven quick games a day on the AI data center economy.";
-
-function ShareCard({
-  title,
-  blurb,
-  shareText,
-  shareUrl,
-  buttonLabel,
-}: {
-  title: string;
-  blurb: string;
-  shareText: string;
-  shareUrl: string;
-  buttonLabel: string;
-}) {
-  const [msg, setMsg] = useState("");
-
-  async function doShare() {
-    setMsg("");
-    const nav = typeof navigator !== "undefined" ? navigator : undefined;
-    if (nav?.share) {
-      try {
-        await nav.share({ text: shareText, url: shareUrl });
-        return;
-      } catch {
-        /* user cancelled — fall through to copy */
-      }
-    }
-    try {
-      await nav?.clipboard?.writeText(`${shareText} ${shareUrl}`);
-      setMsg("Link copied ✓");
-      setTimeout(() => setMsg(""), 2500);
-    } catch {
-      setMsg("Copy failed — the link is below.");
-    }
-  }
-
-  return (
-    <section className="rounded-lg border border-forest/10 bg-white px-5 py-5">
-      <h2 className="font-serif text-lg font-bold text-forest">{title}</h2>
-      <p className="mt-1.5 text-[14px] leading-relaxed text-near-black/70">{blurb}</p>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          onClick={doShare}
-          className="rounded-lg border border-gold/50 bg-gold/10 px-4 py-2 font-mono text-[12px] text-forest transition-colors hover:bg-gold/20"
-        >
-          {buttonLabel}
-        </button>
-        {msg && <span className="font-mono text-[11px] text-forest">{msg}</span>}
-      </div>
-      <p className="mt-3 break-all font-mono text-[11px] text-near-black/45">{shareUrl}</p>
-    </section>
-  );
-}
+const INVITE_HEADLINE =
+  "Seven quick games a day on the AI data center economy.";
 
 export default function SharePage() {
   return (
@@ -81,13 +29,19 @@ export default function SharePage() {
         </p>
 
         <div className="mt-8 space-y-4">
-          <ShareCard
-            title="Invite a colleague"
-            blurb="Send someone the Daily Challenge. If they play, the industry gets a little sharper."
-            shareText={INVITE_TEXT}
-            shareUrl={INVITE_URL}
-            buttonLabel="Share the challenge"
-          />
+          <section className="rounded-lg border border-forest/10 bg-white px-5 py-5">
+            <h2 className="font-serif text-lg font-bold text-forest">Invite a colleague</h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-near-black/70">
+              Send someone the Daily Challenge. If they play, the industry gets a little sharper.
+            </p>
+            <div className="mt-4">
+              <ShareButton
+                share={{ kind: "generic", surface: "share-hub", headline: INVITE_HEADLINE }}
+                label="Share the challenge"
+                className="rounded-lg border border-gold/50 bg-gold/10 px-4 py-2 font-mono text-[12px] text-forest transition-colors hover:bg-gold/20"
+              />
+            </div>
+          </section>
 
           <section className="rounded-lg border border-forest/10 bg-white px-5 py-5">
             <h2 className="font-serif text-lg font-bold text-forest">Share your rank</h2>

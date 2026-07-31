@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import ShareButton from "@/components/ShareButton";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 // Leaderboard — Global + per-team tabs backed by /api/leaderboard/season.
@@ -149,7 +150,6 @@ export default function LeaderboardPage() {
   const [globalData, setGlobalData] = useState<GlobalData | null>(null);
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [shareMsg, setShareMsg] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
 
@@ -266,20 +266,6 @@ export default function LeaderboardPage() {
     return [...map.values()].sort((a, b) => b.total - a.total);
   })();
 
-  async function share() {
-    if (!you) return;
-    const text = `${you.total_points.toLocaleString()} pts · #${you.rank} on the Faraday season leaderboard — faradaydailychallenge.com/leaderboard`;
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share({ text }); } catch { /* cancelled */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(text);
-        setShareMsg("Copied ✓");
-        setTimeout(() => setShareMsg(""), 2500);
-      } catch { /* clipboard blocked */ }
-    }
-  }
-
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav
@@ -381,16 +367,18 @@ export default function LeaderboardPage() {
                     </div>
                     <div className="text-[11px] uppercase tracking-wide text-near-black/50">season</div>
                   </div>
-                  <button
-                    onClick={share}
-                    aria-label="Share your rank"
+                  <ShareButton
+                    share={{
+                      kind: "generic",
+                      surface: "leaderboard",
+                      headline: `${you.total_points.toLocaleString()} pts · ${you.rank == null ? "on" : `#${you.rank} on`} the Faraday season leaderboard`,
+                      path: "/leaderboard",
+                    }}
+                    label="Share"
                     className="rounded border border-forest/30 px-3 py-2 text-sm text-forest hover:bg-warm-white"
-                  >
-                    Share
-                  </button>
+                  />
                 </div>
               </div>
-              {shareMsg && <p className="mt-2 text-xs text-forest">{shareMsg}</p>}
               {/* One-click path into the team page(s) — preserves the chip
                   filter UX (chips stay pure filters). */}
               {myTeams.length > 0 && (

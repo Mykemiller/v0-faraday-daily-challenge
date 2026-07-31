@@ -98,6 +98,12 @@ export const SHARE_MANIFEST = {
   },
 };
 
+// Inverse of SLUG_BY_TYPE — the D6 deep-link reader maps ?g=<slug> back to the
+// runtime game key.
+export const TYPE_BY_SLUG = Object.fromEntries(
+  Object.entries(SLUG_BY_TYPE).map(([type, slug]) => [slug, type])
+);
+
 /**
  * Manifest entry for a runtime game key ("Signal Drop"). Unknown/missing type
  * → the generic Daily Challenge entry (D7): a share never breaks on a new or

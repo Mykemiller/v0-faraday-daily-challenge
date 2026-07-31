@@ -140,6 +140,17 @@ function sanitizeScore(v) {
   return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 99999 ? v : null;
 }
 
+// Canonical-origin-relative path override for generic shares whose destination
+// is a real deep link (e.g. the team join URL). Path only — no scheme, host,
+// query, dot-segments, or protocol-relative tricks — so the emitted URL can
+// never leave CANONICAL_ORIGIN (AC 4 by construction, and the fix for the
+// window.location.origin invite bug from the Phase 0 audit).
+function sanitizePath(v) {
+  if (typeof v !== "string") return null;
+  if (!/^\/[A-Za-z0-9\-_/]*$/.test(v) || v.startsWith("//")) return null;
+  return v;
+}
+
 // ── The builder (D4) ─────────────────────────────────────────────────────────
 
 /**
@@ -157,6 +168,7 @@ function sanitizeScore(v) {
  * @param {object}  [input.outcome]         outcome shape (see glyphLines) — states/booleans/counts only
  * @param {string}  [input.headline]        generic shares only: optional first detail line
  * @param {string}  [input.detail]          generic shares only: optional second detail line
+ * @param {string}  [input.path]            generic shares only: canonical-origin-relative destination path (see sanitizePath)
  * @returns {{ title:string, text:string, url:string, imageUrl:string, iconUrl:string, imageFilename:string, number:(number|null) }}
  */
 export function buildShare(input) {
@@ -179,13 +191,15 @@ export function buildShare(input) {
   const lines = isGame ? glyphLines(slug, src.outcome) : [];
 
   // D6 canonical link. Generic shares drop g/d; a game share drops d when the
-  // serve date is unknown (mock/offline play has no publicId).
+  // serve date is unknown (mock/offline play has no publicId). A generic share
+  // may point at a validated canonical path instead of the lobby root.
   const params = new URLSearchParams();
   if (isGame) params.set("g", slug);
   if (isGame && date) params.set("d", date);
   params.set("utm_source", "share");
   params.set("utm_medium", surface);
-  const url = `${CANONICAL_ORIGIN}/?${params.toString()}`;
+  const path = !isGame ? sanitizePath(src.path) : null;
+  const url = `${CANONICAL_ORIGIN}${path || "/"}?${params.toString()}`;
 
   // Card renderer params (D3 — the /api/share/card route ships in Phase 2; the
   // param grammar is fixed here so both phases agree). Outcome travels as the

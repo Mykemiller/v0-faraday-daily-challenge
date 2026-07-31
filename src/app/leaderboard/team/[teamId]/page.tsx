@@ -15,6 +15,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import ShareButton from "@/components/ShareButton";
+import { CANONICAL_ORIGIN } from "@/lib/share/manifest";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 interface RosterMember {
@@ -67,8 +69,8 @@ export default function TeamPage() {
   const [savingName, setSavingName] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [copyMsg, setCopyMsg] = useState("");
   const [rotating, setRotating] = useState(false);
+  const [rotateMsg, setRotateMsg] = useState("");
   const [actionErr, setActionErr] = useState("");
 
   const getToken = () => {
@@ -113,18 +115,6 @@ export default function TeamPage() {
 
   useEffect(() => { if (teamId) load(); }, [teamId, load]);
 
-  const inviteUrl = data?.join_token && typeof window !== "undefined"
-    ? `${window.location.origin}/leaderboard/join/${data.join_token}`
-    : "";
-
-  async function copyInvite() {
-    if (!inviteUrl) return;
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopyMsg("Copied ✓");
-      setTimeout(() => setCopyMsg(""), 2500);
-    } catch { setCopyMsg("Copy failed — select and copy the link."); }
-  }
 
   async function saveName() {
     const name = draftName.trim();
@@ -199,8 +189,8 @@ export default function TeamPage() {
         return;
       }
       setData(d => (d ? { ...d, join_token: (json as { join_token: string }).join_token } : d));
-      setCopyMsg("Link rotated — old link disabled.");
-      setTimeout(() => setCopyMsg(""), 3500);
+      setRotateMsg("Link rotated — old link disabled.");
+      setTimeout(() => setRotateMsg(""), 3500);
     } catch {
       setActionErr("Network error — try again.");
     } finally {
@@ -275,10 +265,8 @@ export default function TeamPage() {
             setConfirmLeave={setConfirmLeave}
             leaving={leaving}
             onLeave={doLeave}
-            inviteUrl={inviteUrl}
-            copyMsg={copyMsg}
-            onCopy={copyInvite}
             rotating={rotating}
+            rotateMsg={rotateMsg}
             onRotate={rotateLink}
             actionErr={actionErr}
           />
@@ -291,7 +279,7 @@ export default function TeamPage() {
 
 function TeamBody({
   data, editingName, setEditingName, draftName, setDraftName, nameErr, savingName, onSaveName,
-  confirmLeave, setConfirmLeave, leaving, onLeave, inviteUrl, copyMsg, onCopy, rotating, onRotate, actionErr,
+  confirmLeave, setConfirmLeave, leaving, onLeave, rotating, rotateMsg, onRotate, actionErr,
 }: {
   data: TeamData;
   editingName: boolean;
@@ -305,10 +293,8 @@ function TeamBody({
   setConfirmLeave: (v: boolean) => void;
   leaving: boolean;
   onLeave: () => void;
-  inviteUrl: string;
-  copyMsg: string;
-  onCopy: () => void;
   rotating: boolean;
+  rotateMsg: string;
   onRotate: () => void;
   actionErr: string;
 }) {
@@ -316,6 +302,13 @@ function TeamBody({
   const isCaptain = viewer.is_captain;
   const isMember = viewer.is_member;
   const solo = data.member_count <= 1;
+
+  // CC-DC-SHARE-1.0: the invite link is ALWAYS the canonical subscriber origin
+  // (never window.location.origin — that leaked faraday-intelligence.ai links,
+  // Phase 0 audit §1.5). Display URL here; the share action itself goes through
+  // ShareButton → buildShare with the same validated path.
+  const joinPath = data.join_token ? `/leaderboard/join/${data.join_token}` : null;
+  const inviteUrl = joinPath ? `${CANONICAL_ORIGIN}${joinPath}` : "";
 
   const memberLabel = `${data.member_count} member${data.member_count === 1 ? "" : "s"}`;
 
@@ -452,15 +445,19 @@ function TeamBody({
                 aria-label="Team invite link"
                 className="min-w-0 flex-1 rounded border border-forest/15 bg-warm-panel px-2 py-1.5 font-mono text-xs text-near-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-gold"
               />
-              <button
-                onClick={onCopy}
+              <ShareButton
+                share={{
+                  kind: "generic",
+                  surface: "team-page",
+                  headline: `Join "${team.name}" on the Faraday Daily Challenge`,
+                  path: joinPath ?? undefined,
+                }}
+                label="Share link"
                 className="w-full rounded border border-forest/20 px-4 py-2 font-mono text-[12px] text-near-black/70 hover:border-forest/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold sm:w-auto"
-              >
-                Copy link
-              </button>
+              />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              {copyMsg && <span className="text-xs text-forest" role="status">{copyMsg}</span>}
+              {rotateMsg && <span className="text-xs text-forest" role="status">{rotateMsg}</span>}
               {/* Rotate — captain only. */}
               {isCaptain && (
                 <button
