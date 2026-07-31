@@ -289,10 +289,19 @@ async function getThread(
     can_delete: m.author_id === viewerId || (convo!.kind === 'team_broadcast' && isCaptain),
   }));
 
+  // The viewer's own read/mute state (state only — never authorization) so the
+  // UI can mark unread messages and render the mute toggle without extra calls.
+  const states = await loadMemberStates(h, viewerId, [convo.id]);
+  const st = states.get(convo.id);
+
   return Response.json({
     conversation_id: convo.id,
     kind: convo.kind,
     messages,
+    viewer_state: {
+      last_read_at: st?.last_read_at ?? null,
+      muted: !!st?.muted_at,
+    },
     ...extra,
   });
 }
