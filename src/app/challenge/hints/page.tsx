@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 const HINT_MAX = 3; // mirrors DailyChallenge.jsx (FAR-198)
@@ -199,6 +200,7 @@ export default function HintsTodayPage() {
           <a href="/challenge" className="underline hover:text-forest">← Back to the Daily Challenge</a>
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }

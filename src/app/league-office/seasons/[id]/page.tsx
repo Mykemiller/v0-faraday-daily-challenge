@@ -1,10 +1,16 @@
 // League Office — Season detail. Timeline centerpiece (regular play · trading
-// windows · free agency · TODAY marker), standings snapshot, participants.
+// windows · free agency · TODAY marker), standings snapshot, participants —
+// plus the configuration layer (spec §2.3): scope chips, the version timeline
+// with its field-by-field diff, the "effective now" panel, and the action bar.
 
 import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
 import { getSeason, ctToday } from "@/lib/league-office/data";
+import { getSeasonConfigDetail, resolveScopeTeamCount } from "@/lib/league-office/seasons";
 import { PageHeading, Card, KpiCard, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
+import { SeasonVersions } from "@/components/league-office/season/SeasonVersions";
+import { SeasonActionBar } from "@/components/league-office/season/SeasonActionBar";
+import { dayMaskLabel } from "@/lib/league-office/season-config-logic";
 
 function dnum(d: string | null): number | null {
   if (!d) return null;
@@ -24,7 +30,11 @@ export default async function SeasonDetailPage({
   const staff = await requireStaff();
   if (!staff.ok) return <PendingScreen />;
   const { id } = await params;
-  const d = await getSeason(staff.s, id);
+  const [d, cfg] = await Promise.all([
+    getSeason(staff.s, id),
+    getSeasonConfigDetail(staff.s, id),
+  ]);
+  const scopeTeamCount = await resolveScopeTeamCount(staff.s, cfg.scopes);
 
   if (!d.season) {
     return (
@@ -44,10 +54,33 @@ export default async function SeasonDetailPage({
         <StatusChip label={s.status} tone={s.status === "active" ? "green" : s.status === "upcoming" ? "amber" : "gray"} />
       </div>
       <div className="double-rule" />
-      <p style={{ fontSize: 13, color: "#6b6257", margin: "12px 0 20px" }}>
+      <p style={{ fontSize: 13, color: "#6b6257", margin: "12px 0 12px" }}>
         {s.starts_on ?? "?"} → {s.ends_on ?? "?"}
-        {s.locked_at ? " · locked" : ""}
+        {s.locked_at ? ` · locked ${s.locked_at.slice(0, 10)}` : ""}
       </p>
+
+      {/* scope chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+        <ScopeChip label={cfg.scope.label} />
+        {cfg.scope.excluded.map((x) => (
+          <ScopeChip key={x} label={`excl. ${x}`} muted />
+        ))}
+        <ScopeChip label={`${scopeTeamCount} team${scopeTeamCount === 1 ? "" : "s"}`} muted />
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <SeasonActionBar seasonId={s.id} locked={!!s.locked_at} status={s.status} />
+      </div>
+
+      <Card title="Configuration versions">
+        <SeasonVersions seasonId={s.id} configs={cfg.configs} />
+      </Card>
+
+      <div style={{ margin: "16px 0" }}>
+        <Card title="Effective now">
+          <EffectiveNow effective={cfg.effective} />
+        </Card>
+      </div>
 
       <Card title="Season timeline">
         <Timeline
@@ -85,6 +118,73 @@ export default async function SeasonDetailPage({
         )}
       </Card>
     </>
+  );
+}
+
+function ScopeChip({ label, muted }: { label: string; muted?: boolean }) {
+  return (
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 10,
+        letterSpacing: ".05em",
+        padding: "4px 9px",
+        borderRadius: 5,
+        border: "1px solid var(--color-cream-border)",
+        background: muted ? "var(--color-warm-panel)" : "rgba(196,146,42,.12)",
+        color: muted ? "#8d8375" : "#94560a",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** Reads `v_season_effective_config` — the configuration actually in force right
+ *  now. Runtime view: a scheduled version does NOT appear here until its
+ *  effective date arrives (the hourly cron flips it), which is exactly how the
+ *  commissioner can tell scheduling is real and not decorative. */
+function EffectiveNow({ effective }: { effective: Record<string, unknown> | null }) {
+  if (!effective)
+    return <EmptyState>No configuration version is in force for this season yet.</EmptyState>;
+
+  const v = (k: string) => effective[k];
+  const fmt = (x: unknown) =>
+    x === null || x === undefined || x === "" ? "—" : typeof x === "boolean" ? (x ? "On" : "Off") : String(x);
+
+  const rows: [string, string][] = [
+    ["Version", `v${fmt(v("config_version"))} · ${fmt(v("config_state"))}`],
+    ["In force since", String(v("effective_from") ?? "").slice(0, 16).replace("T", " ") || "—"],
+    ["Games per day", fmt(v("games_per_day") ?? "all enabled")],
+    ["Play days", dayMaskLabel((v("play_days_of_week") as number[]) ?? null)],
+    ["Max teams / subscriber", fmt(v("max_teams_per_subscriber"))],
+    ["Team size", `${fmt(v("min_team_size"))} – ${fmt(v("max_team_size") ?? "∞")}`],
+    ["Scoring profile", fmt(v("scoring_profile"))],
+    ["Team score method", fmt(v("team_score_method"))],
+    ["Difficulty curve", fmt(v("difficulty_curve"))],
+    ["Hints", v("hints_enabled") ? `${fmt(v("max_hints_per_game"))} max · −${fmt(v("hint_penalty_pct"))}%` : "Off"],
+    ["Free agency", fmt(v("allow_free_agency"))],
+    ["Late join", fmt(v("allow_late_join"))],
+    ["Leaderboard", v("publish_leaderboard") ? fmt(v("leaderboard_visibility")) : "Not published"],
+    ["Roster lock", fmt(v("roster_lock_on"))],
+  ];
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px 22px" }}>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ display: "flex", gap: 10, alignItems: "baseline", minWidth: 0 }}>
+          <span
+            className="font-mono"
+            style={{ fontSize: 9.5, letterSpacing: ".08em", textTransform: "uppercase", color: "#8d8375", flex: "none", width: 118 }}
+          >
+            {label}
+          </span>
+          <span style={{ fontSize: 12.5, color: "#141210", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {value}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 

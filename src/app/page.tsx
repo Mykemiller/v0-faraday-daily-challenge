@@ -1,6 +1,6 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GameIconDefs } from "@/components/GameIcon";
+import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
@@ -35,8 +35,6 @@ const TOKEN_PACKS = [
 export default function Home() {
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
-      <GameIconDefs />
-
       {/* ── Masthead ─────────────────────────────────────────────────────── */}
       <div className="h-0.5 bg-gold" />
       <header className="sticky top-0 z-50 bg-forest">
@@ -238,6 +236,16 @@ export default function Home() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-5 py-6 font-mono text-[11px] text-near-black/65">
           <BrandMark size={16} />
           <span><b className="font-display text-[13px] font-bold not-italic text-near-black">Faraday Intelligence.</b> <i className="font-serif text-near-black/75">Your unfair advantage.</i></span>
+        </div>
+        {/* Legal attribution — same notice the shared SiteFooter carries on the
+            Daily Challenge surfaces, kept inline here so the storefront's
+            brand-tagline footer stays intact above it. */}
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 border-t border-warm-gray/40 px-5 py-4 font-mono text-[11px] text-near-black/65">
+          <span>&copy; 2026 Faraday Intelligence LLC. All rights reserved.</span>
+          <span aria-hidden className="text-near-black/30">&middot;</span>
+          <Link href="/terms" className="underline underline-offset-2 hover:text-forest">Terms</Link>
+          <span aria-hidden className="text-near-black/30">&middot;</span>
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-forest">Privacy</Link>
         </div>
       </footer>
     </div>

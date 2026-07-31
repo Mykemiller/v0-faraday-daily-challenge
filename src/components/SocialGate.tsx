@@ -102,6 +102,14 @@ export default function SocialGate({
         </button>
       </form>
 
+      {/* Clickwrap — affirmative assent adjacent to the email submit action. */}
+      <p className="mt-3 text-center font-mono text-[11px] leading-relaxed text-near-black/60">
+        By continuing you agree to the{' '}
+        <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-forest">Terms of Service</a>
+        {' '}and{' '}
+        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-forest">Privacy Policy</a>.
+      </p>
+
       {status === 'error' && error && (
         <p className="text-center text-red-600 mt-4 text-sm">{error}</p>
       )}

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import OTPGate from "@/components/OTPGate";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import {
   SESSION_STORAGE_KEY,
   HANDLE_STORAGE_KEY,
@@ -297,6 +298,7 @@ export default function AccountPage() {
             <div key={i} className="h-20 rounded-lg bg-warm-cream" />
           ))}
         </main>
+        <SiteFooter />
       </div>
     );
   }
@@ -331,6 +333,7 @@ export default function AccountPage() {
             />
           </div>
         </main>
+        <SiteFooter />
       </div>
     );
   }
@@ -539,6 +542,7 @@ export default function AccountPage() {
           )}
         </Card>
       </main>
+      <SiteFooter />
     </div>
   );
 }

@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 interface PublicSignal {
@@ -197,6 +198,7 @@ export default function SignalsPage() {
           <BackToChallenge placement="bottom" />
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

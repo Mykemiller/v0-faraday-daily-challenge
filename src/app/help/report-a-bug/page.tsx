@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 import FeedbackForm from "@/components/FeedbackForm";
 
 export const metadata = {
@@ -32,6 +33,7 @@ export default function ReportABugPage() {
           <Link href="/challenge" className="underline hover:text-forest">← Back to the Daily Challenge</Link>
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }

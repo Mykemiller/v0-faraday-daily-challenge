@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
+import SiteFooter from "@/components/SiteFooter";
 
 // Shared layout for stubbed Daily Challenge pages reached from the header
 // dropdowns (Help & Feedback, Compete, More Faraday). Wears the DC masthead
@@ -33,6 +34,7 @@ export default function DcStubPage({
           <Link href="/challenge" className="underline hover:text-forest">← Back to the Daily Challenge</Link>
         </p>
       </main>
+      <SiteFooter />
     </div>
   );
 }

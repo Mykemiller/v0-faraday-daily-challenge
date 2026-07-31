@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GameIconDefs, GAME_ACCENT } from "@/components/GameIcon";
-import { gameIconSvgString } from "@/components/gameIconSvg";
+import GameIcon, { GAME_ACCENT, gameShareIconSrc } from "@/components/GameIcon";
 import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
@@ -555,35 +554,20 @@ const DC_URL = SITE_URL;
 // Public-facing share domain — the short, memorable URL we hand to recipients.
 const SHARE_URL = "https://www.faradaydailychallenge.com";
 
-// Load an SVG-string into an <Image> for canvas drawing. Resolves null on any
-// failure so a missing icon never blocks the card. Self-contained data URL ⇒
-// the canvas stays untainted and toBlob keeps working.
-function loadSvgImage(svg) {
-  return new Promise((resolve) => {
-    if (!svg || typeof Image === "undefined") return resolve(null);
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-  });
-}
-
-// Rasterise the game's locked neon pictogram tile to a square PNG blob — this is
-// the share image (NYT-Connections style: the score + Public ID ride in the share
-// text, not baked into the image). Mirrors the on-screen GameIcon via
-// gameIconSvgString, so the shared tile is the exact neon icon the player saw.
-// The tile's rounded corners stay transparent, so it sits cleanly in any bubble.
-// Returns null if canvas/toBlob is unavailable.
-async function buildShareIconBlob(puzzleType, size = 640) {
+// The share image (NYT-Connections style: the score + Public ID ride in the share
+// text, not baked into the image). Since the 2026-07-30 art refresh this is a
+// pre-rendered 640² asset — the labeled frame, so the shared card names the game
+// even where the accompanying text is stripped. Fetched rather than rasterised on
+// a canvas: the asset is already the exact size and format we want, which removes
+// the canvas-taint and toBlob-availability failure modes entirely.
+// Returns null on any fetch failure so a missing icon never blocks the card.
+async function buildShareIconBlob(puzzleType) {
   try {
-    const img = await loadSvgImage(gameIconSvgString(puzzleType, size));
-    if (!img) return null;
-    const cv = document.createElement("canvas");
-    cv.width = size; cv.height = size;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, size, size);
-    return await new Promise((resolve) => cv.toBlob((b) => resolve(b), "image/png"));
+    const src = gameShareIconSrc(puzzleType);
+    if (!src || typeof fetch === "undefined") return null;
+    const res = await fetch(src);
+    if (!res.ok) return null;
+    return await res.blob();
   } catch { return null; }
 }
 
@@ -2318,7 +2302,7 @@ function GameTile({ config, onPlay, played, priorScore }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME SWITCHER — jump to any other game from inside a puzzle
 // ══════════════════════════════════════════════════════════════════════════════
-// Renders the other six games as their locked homepage neon pictograms (GameIcon).
+// Renders the other six games as their homepage neon icons (GameIcon).
 // Tapping requests a switch; the parent confirms before discarding in-progress play.
 function GameSwitcher({ current, onSwitch }) {
   const others = GAME_CONFIGS.filter(c => c.type !== current);
@@ -2621,7 +2605,7 @@ function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSe
       { label: "Faraday Merchandise",        href: "/merch" },
       { label: "Faraday Academy",            disabled: true },  // reserved for a later phase — no link by design
       { divider: true },
-      { label: "Terms / Privacy",            href: "/legal" },
+      { label: "Terms / Privacy",            href: "/terms" },
     ]},
   ];
 }
@@ -3160,7 +3144,6 @@ export default function DailyChallenge() {
   return (
     <div style={{ minHeight:"100vh", background: (screen === "lobby" || screen === "account") ? C.cream : C.bg, color:C.black, ...sans }}>
       {showSplash && <SplashScreen onEnter={dismissSplash} />}
-      <GameIconDefs />
 
       {/* FAR-393: Intelligence Readiness reward banner — shown only when the
           server confirmed a milestone token grant this session. Dismissible. */}
@@ -3308,11 +3291,11 @@ export default function DailyChallenge() {
               padding:"28px 24px", margin:"28px 0 0" }}>
               <p style={{ ...sans, fontWeight:700, fontSize:"22px", lineHeight:1.35,
                 color:C.cream, margin:0 }}>
-                <span style={{ color:C.gold }}>1891 → 2080.</span> We read the signals and trajectory on a 189 year timescale. The news cycle operates on yesterday’s press announcement and next quarter’s chip forecast.
+                <span style={{ color:C.gold }}>1891 → 2080.</span> The news thinks in quarters. Faraday thinks in centuries.
               </p>
               <p style={{ ...sans, fontWeight:400, fontSize:"15px", lineHeight:1.7,
                 color:C.cream, opacity:0.85, margin:"16px 0 0" }}>
-                The oldest generators powering our grid came online in 1891, and are still working today. The water and load forecasts that are real constraints run to 2080. Faraday is actively tracking the whole span across more than twenty intelligence domains and aligned to jurisdiction — not the press release. The arc, and the collisions.
+                Generators built in 1891 still power the grid today. The forecasts that matter run to 2080. The Daily Challenge is just the front door — behind it, Faraday maps and models 189 years of signal, across twenty-plus intelligence domains, jurisdiction by jurisdiction.
               </p>
               <p style={{ ...serif, fontStyle:"italic", fontSize:"16px", color:C.gold,
                 margin:"20px 0 0", paddingTop:"16px",
@@ -3440,6 +3423,30 @@ export default function DailyChallenge() {
           />
         )}
       </main>
+
+      {/* ── LEGAL FOOTER ── Reaches every in-app screen (lobby, all 7 games,
+          account, gate) because the shell wraps them all. Token-matched twin of
+          the shared <SiteFooter/> used by the standalone routes; it lives here
+          rather than importing that component because this surface styles from
+          the `C` object, not the Tailwind @theme, and flips light/dark by
+          screen. */}
+      <footer style={{
+        marginTop:"48px",
+        borderTop:`1px solid ${(screen === "lobby" || screen === "account") ? "rgba(20,18,16,0.12)" : C.border}`,
+      }}>
+        <div style={{
+          maxWidth:"820px", margin:"0 auto", padding:"18px 20px",
+          display:"flex", flexWrap:"wrap", alignItems:"center", gap:"8px",
+          ...mono, fontSize:"11px", lineHeight:1.6,
+          color:(screen === "lobby" || screen === "account") ? "rgba(20,18,16,0.65)" : C.muted,
+        }}>
+          <span>&copy; 2026 Faraday Intelligence LLC. All rights reserved.</span>
+          <span aria-hidden style={{ opacity:0.5 }}>&middot;</span>
+          <a href="/terms" style={{ color:"inherit", textDecoration:"underline" }}>Terms</a>
+          <span aria-hidden style={{ opacity:0.5 }}>&middot;</span>
+          <a href="/privacy" style={{ color:"inherit", textDecoration:"underline" }}>Privacy</a>
+        </div>
+      </footer>
     </div>
   );
 }

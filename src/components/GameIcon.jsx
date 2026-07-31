@@ -1,183 +1,59 @@
-// Daily Challenge game pictograms — the Faraday editorial jewel registry.
-// Each game has one desaturated jewel tone (FAR-394) and metaphor, drawn on a
-// forest gradient tile with a shared glow filter, 10px grid texture, and ambient
-// ellipse. Geometry ported verbatim from
-// design-reference/faraday-daily-challenge-lobby.html; the per-game color moved
-// from raw neon to a desaturated jewel tone per the editorial-palette pass.
+// Daily Challenge game icons — the neon-on-forest raster set.
+//
+// The icons were hand-drawn inline SVG (Ch.09b geometry, recolored to FAR-394
+// jewel tones) until the 2026-07-30 art refresh replaced them with authored
+// 1280² masters. The art is now a build artifact, not code: see
+// scripts/build-game-icons.mjs for how public/icons/games/* is produced.
+// Do not hand-edit the PNGs — re-run the generator.
 //
 // Usage:
-//   <GameIconDefs />              once per page (hidden shared <defs>)
-//   <GameIcon game="Rackl" />     per tile
-//   GAME_ACCENT["Rackl"].glow     hover-glow color (per game)
-//
-// FAR-394 (editorial palette) — the per-game differentiator is now ONE
-// desaturated jewel tone per game (`accent`), a darker companion for secondary
-// fills (`deep`), and a subtle glow. Each `accent` clears >=3:1 against the
-// darkest forest tile stop (#1C3424) so the pictogram reads without raw neon;
-// none competes with Faraday Gold (#C4922A) as a dominant color. The mapping
-// keeps each game's hue identity but is a PROPOSED design pass — confirm the
-// final values with Myke/design before wide rollout (per the ticket). This
-// object is the single source of truth: the pictogram fills, the lobby hover
-// glow, and the globals.css --color-game-* mirror all derive from it.
-export const GAME_ACCENT = {
-  "Rackl":       { accent: "#2F9C8B", deep: "#237A6C", glow: "rgba(47,156,139,.28)" },  // teal
-  "Signal Drop": { accent: "#C86A85", deep: "#A9506A", glow: "rgba(200,106,133,.28)" }, // garnet rose
-  "The Stack":   { accent: "#A08A3A", deep: "#83712E", glow: "rgba(160,138,58,.28)" },  // citrine/bronze
-  "Circuit":     { accent: "#4C90BD", deep: "#3A6E92", glow: "rgba(76,144,189,.28)" },  // sapphire
-  "The Brief":   { accent: "#7CA34A", deep: "#61833A", glow: "rgba(124,163,74,.28)" },  // olive
-  "Dark Fiber":  { accent: "#9A74C0", deep: "#7A5A9E", glow: "rgba(154,116,192,.28)" }, // amethyst
-  "Frequency":   { accent: "#C06A3C", deep: "#9E5430", glow: "rgba(192,106,60,.28)" },  // rust/copper
+//   <GameIcon game="Rackl" />       per tile
+//   GAME_ACCENT["Rackl"].glow       hover-glow color (per game)
+//   gameShareIconSrc("Rackl")       labeled 640² frame for the share card
+
+// Route slug per game key. Three masters carry a shorter baked label than the
+// game key ("SIGNAL", "FIBER", "THE CIRCUIT"); the slug follows the app's route.
+const GAME_SLUG = {
+  "Rackl": "rackl",
+  "Signal Drop": "signal-drop",
+  "The Stack": "the-stack",
+  "Circuit": "circuit",
+  "The Brief": "the-brief",
+  "Dark Fiber": "dark-fiber",
+  "Frequency": "frequency",
 };
 
-// Backward-compatible alias for the former neon registry. Same shape as before
-// (`neon` + `glow`), now pointing at the jewel `accent`, so any straggling
-// `GAME_NEON[type].neon` / `.glow` reader keeps working during the palette pass.
-export const GAME_NEON = Object.fromEntries(
-  Object.entries(GAME_ACCENT).map(([k, v]) => [k, { neon: v.accent, glow: v.glow }])
-);
+// Per-game accent colors. The values (and the full rationale for why they aren't
+// each icon's dominant color) moved to the pure module src/lib/game-accent.js so
+// the share manifest (CC-DC-SHARE-1.0) and node-run tests can import them without
+// JSX. Re-exported here so every existing `from "@/components/GameIcon"` importer
+// keeps working — this file remains the conventional import point for components.
+//
+// What changed underneath (CC-DC-ICON-REFRESH-1.0): the accent used to BE the
+// pictogram ink drawn on the forest tile. The pictogram is now baked art; the
+// accent's remaining jobs are the lobby hover glow (at .28 alpha) and the
+// TodaysSignalCard accent prop.
+export { GAME_ACCENT, GAME_NEON } from "../lib/game-accent";
 
-// Shared neon glow filter + 10px grid texture + ambient ellipse (Ch.09b).
-// Render exactly once per page; the pictograms reference these by id.
-export function GameIconDefs() {
-  return (
-    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-      <defs>
-        <filter id="fdc-neon" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="1.6" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <pattern id="fdc-grid" width="10" height="10" patternUnits="userSpaceOnUse">
-          <path d="M10 0H0V10" fill="none" stroke="rgba(248,245,240,.05)" strokeWidth="1" />
-        </pattern>
-        <radialGradient id="fdc-amb" cx="50%" cy="42%" r="60%">
-          <stop offset="0%" stopColor="rgba(248,245,240,.10)" />
-          <stop offset="100%" stopColor="rgba(248,245,240,0)" />
-        </radialGradient>
-      </defs>
-    </svg>
-  );
-}
-
-function Pictogram({ game }) {
-  switch (game) {
-    case "Rackl":
-      return (
-        <g filter="url(#fdc-neon)">
-          <rect x="24" y="20" width="62" height="70" rx="6" fill="none" stroke="#2F9C8B" strokeWidth="3" />
-          <rect x="32" y="29" width="21" height="11" rx="2" fill="#2F9C8B" />
-          <rect x="57" y="29" width="21" height="11" rx="2" fill="#237A6C" />
-          <rect x="32" y="44" width="21" height="11" rx="2" fill="#237A6C" />
-          <rect x="57" y="44" width="21" height="11" rx="2" fill="#2F9C8B" />
-          <rect x="32" y="59" width="21" height="11" rx="2" fill="#2F9C8B" />
-          <rect x="57" y="59" width="21" height="11" rx="2" fill="rgba(47,156,139,.30)" />
-          <rect x="32" y="74" width="21" height="11" rx="2" fill="rgba(47,156,139,.30)" />
-          <rect x="57" y="74" width="21" height="11" rx="2" fill="#237A6C" />
-        </g>
-      );
-    case "Signal Drop":
-      return (
-        <g filter="url(#fdc-neon)">
-          <g fill="rgba(200,106,133,.38)">
-            <rect x="26" y="18" width="13" height="13" rx="2" />
-            <rect x="43" y="18" width="13" height="13" rx="2" />
-            <rect x="60" y="18" width="13" height="13" rx="2" />
-            <rect x="77" y="18" width="13" height="13" rx="2" />
-            <rect x="26" y="35" width="13" height="13" rx="2" />
-            <rect x="43" y="35" width="13" height="13" rx="2" />
-            <rect x="60" y="35" width="13" height="13" rx="2" />
-            <rect x="77" y="35" width="13" height="13" rx="2" />
-          </g>
-          <g fill="#C86A85">
-            <rect x="26" y="52" width="13" height="13" rx="2" />
-            <rect x="43" y="52" width="13" height="13" rx="2" />
-            <rect x="60" y="52" width="13" height="13" rx="2" />
-            <rect x="77" y="52" width="13" height="13" rx="2" />
-          </g>
-          <path d="M24 84 q8 -12 16 0 t16 0 t16 0 t16 0" fill="none" stroke="#C86A85" strokeWidth="3.5" strokeLinecap="round" />
-        </g>
-      );
-    case "The Stack":
-      return (
-        <g filter="url(#fdc-neon)">
-          <rect x="40" y="22" width="30" height="13" rx="3" fill="#A08A3A" />
-          <rect x="33" y="41" width="44" height="13" rx="3" fill="rgba(160,138,58,.70)" />
-          <rect x="26" y="60" width="58" height="13" rx="3" fill="rgba(160,138,58,.50)" />
-          <rect x="20" y="79" width="70" height="13" rx="3" fill="rgba(160,138,58,.30)" />
-          <path d="M88 84 V30 M88 30 l-6 8 M88 30 l6 8" stroke="#A08A3A" strokeWidth="3.5" fill="none" strokeLinecap="round" transform="translate(8,0)" />
-        </g>
-      );
-    case "Circuit":
-      return (
-        <g filter="url(#fdc-neon)">
-          <circle cx="55" cy="34" r="13" fill="none" stroke="#4C90BD" strokeWidth="3.5" />
-          <text x="55" y="40" textAnchor="middle" fontFamily="IBM Plex Mono,monospace" fontSize="16" fontWeight="700" fill="#4C90BD">?</text>
-          <path d="M48 45 L33 62 M62 45 L77 62" stroke="#4C90BD" strokeWidth="3" strokeLinecap="round" />
-          <rect x="22" y="62" width="22" height="14" rx="3" fill="#4C90BD" />
-          <rect x="66" y="62" width="22" height="14" rx="3" fill="rgba(58,110,146,.55)" />
-          <path d="M30 92 a26 12 0 0 1 50 0" fill="none" stroke="rgba(76,144,189,.55)" strokeWidth="3" strokeLinecap="round" strokeDasharray="5 6" />
-        </g>
-      );
-    case "The Brief":
-      return (
-        <g filter="url(#fdc-neon)">
-          <path d="M32 18 h32 l14 14 v50 h-46 z" fill="none" stroke="#7CA34A" strokeWidth="3" />
-          <path d="M64 18 v14 h14" fill="rgba(124,163,74,.45)" stroke="#7CA34A" strokeWidth="3" />
-          <line x1="40" y1="44" x2="70" y2="44" stroke="rgba(124,163,74,.45)" strokeWidth="3" strokeLinecap="round" />
-          <line x1="40" y1="54" x2="70" y2="54" stroke="#7CA34A" strokeWidth="4" strokeLinecap="round" />
-          <line x1="40" y1="64" x2="62" y2="64" stroke="rgba(124,163,74,.45)" strokeWidth="3" strokeLinecap="round" />
-          <g>
-            <circle cx="38" cy="92" r="4" fill="#7CA34A" />
-            <circle cx="50" cy="92" r="4" fill="rgba(97,131,58,.6)" />
-            <circle cx="62" cy="92" r="4" fill="rgba(97,131,58,.6)" />
-            <circle cx="74" cy="92" r="4" fill="rgba(97,131,58,.6)" />
-          </g>
-        </g>
-      );
-    case "Dark Fiber":
-      return (
-        <g filter="url(#fdc-neon)" fill="none" strokeLinecap="round">
-          <path d="M32 30 C 55 30 55 56 78 56" stroke="#9A74C0" strokeWidth="3.5" />
-          <path d="M32 56 C 55 56 55 82 78 82" stroke="rgba(122,90,158,.65)" strokeWidth="3" />
-          <path d="M32 82 C 55 82 55 30 78 30" stroke="rgba(122,90,158,.65)" strokeWidth="3" />
-          <g fill="#9A74C0" stroke="none">
-            <circle cx="30" cy="30" r="6" />
-            <circle cx="30" cy="56" r="6" />
-            <circle cx="30" cy="82" r="6" />
-          </g>
-          <g fill="rgba(154,116,192,.55)" stroke="none">
-            <circle cx="80" cy="30" r="6" />
-            <circle cx="80" cy="56" r="6" />
-            <circle cx="80" cy="82" r="6" />
-          </g>
-        </g>
-      );
-    case "Frequency":
-      return (
-        <g filter="url(#fdc-neon)">
-          <path d="M20 52 q9 -22 18 0 t18 0 t18 0 t18 0" fill="none" stroke="#C06A3C" strokeWidth="3.5" strokeLinecap="round" />
-          <line x1="66" y1="22" x2="66" y2="68" stroke="rgba(158,84,48,.85)" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="66" cy="52" r="5" fill="#C06A3C" />
-          <g>
-            <circle cx="38" cy="88" r="4" fill="rgba(158,84,48,.6)" />
-            <circle cx="50" cy="88" r="4" fill="#C06A3C" />
-            <circle cx="62" cy="88" r="4" fill="rgba(158,84,48,.6)" />
-            <circle cx="74" cy="88" r="4" fill="rgba(158,84,48,.6)" />
-          </g>
-        </g>
-      );
-    default:
-      return null;
-  }
+/**
+ * The labeled 640² share frame (dark field + tile + baked game name). Used by the
+ * share card, where the baked label is the point. Returns "" for an unknown game.
+ * @param {string} game
+ */
+export function gameShareIconSrc(game) {
+  const slug = GAME_SLUG[game];
+  return slug ? `/icons/games/${slug}-share.png` : "";
 }
 
 /**
- * A single game's neon pictogram on its forest gradient tile.
+ * A single game's icon tile. The tile chrome (radius, hairline, forest fallback)
+ * stays in CSS so the art can be swapped without touching layout. The container's
+ * 20% radius is deliberately rounder than the art's baked ~8.6% corner, so
+ * overflow:hidden clips away the master's opaque #1a1a1a corners.
  * @param {{ game: string, size?: number }} props
  */
 export default function GameIcon({ game, size = 64 }) {
+  const slug = GAME_SLUG[game];
   return (
     <span
       className="icon-tile"
@@ -185,6 +61,9 @@ export default function GameIcon({ game, size = 64 }) {
       style={{
         width: size,
         height: size,
+        // border-box so the hairline eats into the tile rather than adding 2px —
+        // otherwise the art renders (size-2)×size and the square goes oblong.
+        boxSizing: "border-box",
         flex: "none",
         borderRadius: Math.round(size * 0.2),
         border: "1px solid rgba(255,255,255,.09)",
@@ -195,11 +74,21 @@ export default function GameIcon({ game, size = 64 }) {
         overflow: "hidden",
       }}
     >
-      <svg width={size} height={size} viewBox="0 0 110 110">
-        <rect width="110" height="110" fill="url(#fdc-grid)" />
-        <rect width="110" height="110" fill="url(#fdc-amb)" />
-        <Pictogram game={game} />
-      </svg>
+      {slug && (
+        // Fixed-size static tile: next/image adds an optimizer request and a
+        // layout wrapper for no gain at ≤64px, and these ship pre-sized.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/icons/games/${slug}-tile-256.png`}
+          srcSet={`/icons/games/${slug}-tile-128.png 128w, /icons/games/${slug}-tile-256.png 256w`}
+          sizes={`${size}px`}
+          alt=""
+          width={size}
+          height={size}
+          decoding="async"
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      )}
     </span>
   );
 }

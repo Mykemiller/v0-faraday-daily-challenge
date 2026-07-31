@@ -62,6 +62,247 @@ codes, fixtures cleaned to 0 rows.
   `dc_subscribers` (`author_id`, `deleted_by`) — embeds must hint
   `dc_subscribers!dc_messages_author_id_fkey(...)` or every thread read
   silently returns empty.
+## League Office Game Library (CC-LO-GAME-LIBRARY-1.0, 2026-07-30)
+
+`/league-office/game-library` — the extensible game catalog: status board, lifecycle
+control, and which games are configured for which season. Ops note:
+**`ops/2026-07-30-lo-game-library.md`**; Phase 0 investigation:
+`docs/lo-game-library/PHASE-0-FINDINGS.md`.
+
+- **⚠️ LIFECYCLE ≠ SEASON ASSIGNMENT (D1) — do not collapse them.** `game_catalog.
+  lifecycle_state` (enum `game_lifecycle_state`: `new_idea → in_test → live → retired`)
+  is **ONE state per game**. "Assigned to a season" is a **many-to-many relationship** in
+  `season_games`, always **derived** for display, never stored as a state. All 7 live
+  games are simultaneously Live *and* assigned to 4 seasons — a single-state model
+  cannot represent that. Allowed transitions (server-enforced in `checkTransition`):
+  `new_idea→in_test`, `in_test→live|new_idea`, `live→retired`, `retired→live`. There is
+  deliberately **no `new_idea→live`**. Every transition requires a reason.
+- **⚠️ THE SEASON SLATE IS ADVISORY (D4) — it does NOT gate serving.**
+  `/api/challenge/today` selects on publish state alone (`published='Live'`) and keys
+  games by the free-text name; it never reads `season_config`/`season_games`. Toggling a
+  game here changes what the console *says*, not what subscribers get. Enforcement is a
+  later phase behind the `DC_PUZZLE_SOURCE` cutover (CC-DC-SUPABASE-SERVING-1.0, PR #115
+  — merged, flag unset in prod). **`npm run test:advisory-only` (6) is the guard**: it
+  asserts the served set is identical before/after a slate toggle AND that no serving
+  module mentions `season_games`/`season_config`/`game_catalog`. If you deliberately wire
+  enforcement, update D4, the page copy and these docs in the same change — do not just
+  delete the test.
+- **⚠️ `short_code` and the Public ID prefix are TWO LIVE SYSTEMS (D8) — never derive one
+  from the other.** `game_catalog.short_code` = RKL/SGD/STK/CIR/DKF/FRQ/BRF;
+  `game_catalog.public_id_prefix` = RACK/SGNL/STAK/CIRC/FIBR/FREQ/BRIF, matching the
+  `public_id` values `trg_dc_assign_public_id` mints. **Share links in the wild use the
+  prefix.** Both are stored; neither is computed.
+- **`runtime_key` is the join key the runtime actually uses (D3).** The serving path keys
+  games by display name as free text (`dc_completions.puzzle_type`,
+  `dc_daily_attempts.game_type`, `dc_solve_time_bands.game_type`,
+  `dc_puzzle_bank_staging.puzzle_type`), while `game_key` is a snake_case slug **nothing
+  joins on**. `runtime_key` names that orphan join so it is testable. Unique (partial
+  index); a CHECK requires it for `live`. **`game_key` is never editable; `runtime_key`
+  freezes once live** — both enforced by the `sanitizeCatalogPatch` whitelist and again in
+  `updateGame`.
+- **Editing a season's slate reuses the PR #120 state machine (D5).** `draft`/`scheduled`
+  are written in place; **`active` is cloned + promoted** (`season_config_clone` → edit the
+  draft → `season_config_promote`), which yields v+1 active with the prior version
+  superseded. **Do NOT insert a second row already in state `active`** — that trips
+  `season_config_one_active_uq` (recorded as "defect 3" for migration 20260730000001).
+  `closed`/`superseded`/`cancelled`/locked seasons are refused.
+- **⚠️ Every config ships `games_per_day = 7` against exactly 7 enabled games, so ANY
+  unassign trips the `games_per_day_exceeds_slate` validator** and blocks promotion. The
+  write path validates *before* promoting, discards the orphan clone, and reports the real
+  finding. Lowering `games_per_day` belongs to the **season config editor** — this surface
+  deliberately does not rewrite it as a side effect of a slate toggle.
+- **D9 is a database trigger, not UI validation:** `trg_season_games_assignable` rejects
+  assigning any game whose lifecycle is not `live`/`in_test`. It fires on INSERT and on
+  UPDATE **only when `game_id` changes**, so retiring a game does not brick edits to its
+  existing rows. Because `saveConfigBundle` replaces a slate by DELETE + INSERT, retiring
+  an assigned game would make that slate unsaveable — so `checkTransition` refuses to
+  retire while assignments exist and tells staff to unassign first.
+- **Writes** go through the existing Tier 2 funnel: `executeAction` cases `game.create`,
+  `game.lifecycle_change`, `game.update`, `game.reorder`, `game.season_assign`,
+  `game.season_unassign` → `game-library-write.ts`, one `lo_audit_log` row each
+  (`domain='game_library'`, populated `before`/`after`). A versioned assignment also writes
+  `season.config_version_created` (target_type `season_config`). **`season_config_promote`
+  self-logs — do not double-log it.**
+- **Migrations `20260730000002` (lifecycle + trigger) and `20260730000003` (11-concept
+  backlog seed) — APPLIED to prod 2026-07-30 (Myke-approved).** Both carry in-migration
+  verification gates that raise and roll back on an unexpected count. Catalog is now **18
+  rows: 7 `live` + 11 `new_idea`**; `season_games` unchanged at **28**. Seeded concepts are
+  `is_active=false` so `loadGameCatalog()`'s default filter keeps them out of the season
+  slate editor. `category` gained a new value **`spatial`** (Grid Lock, Mesh) — there is no
+  CHECK constraint on `category`, so nothing needed extending.
+- **RLS untouched (D10).** `game_catalog`, `season_games`, `season_config`,
+  `season_difficulty_mix` all have **RLS disabled**; every read is server-side service-role
+  (5 call sites, no anon/authenticated path). Logged as a separate security item — do not
+  enable RLS as a side effect of this surface.
+- Tests: `npm run test:game-library` (26) · `npm run test:advisory-only` (6).
+  `npm run build` green.
+
+## League Office season configuration (CC-LO-SEASON-CONFIG-1.0, PR #120, 2026-07-30)
+
+Commissioner-facing season config: create a season end-to-end without SQL, edit a
+versioned **effective-dated** config, schedule a change for a future date, and read a
+diffable version history. Full runbook: **`docs/lo-season-config/README.md`**.
+
+- **Routes:** `/league-office/seasons` (index + scope/slate/version columns + row menu)
+  · `/seasons/new` (4-step wizard — **nothing is written until step 4 submits**) ·
+  `/seasons/[id]` (version timeline · effective-now · two-version diff · action bar) ·
+  `/seasons/[id]/config/[configId]` (the editor, sections A–I). **11 `/api/lo/*` routes**,
+  each independently re-verifying staff; every mutation writes ONE `lo_audit_log` row
+  (`domain='seasons'`) with a mandatory reason. `season_config_promote` self-logs — do
+  NOT double-log it.
+- **⚠️ Migration `20260730000001_season_config_effective_dating_fix.sql` — APPLIED to
+  prod 2026-07-30 (Myke-approved).** It repairs **four defects in the already-applied
+  season_config_* functions**, found by exercising the real RPCs: (1) `promote()` ALWAYS
+  threw — `set state = case … end` yields `text` and Postgres won't implicitly cast to
+  the `season_config_state` enum (`42804`); (2) scheduling superseded the incumbent
+  immediately, leaving the season with **no config in force** until the effective date;
+  (3) `apply_due()` demoted + promoted in ONE statement via data-modifying CTEs, tripping
+  `season_config_one_active_uq` (`23505`); (4) superseding at the same instant a version
+  took effect violated `effective_to > effective_from`. **Defects 1 and 2 masked each
+  other** — nothing could ever be promoted, so the scheduling path was never reached.
+  Also hardened: two overdue scheduled versions → **latest wins**, older superseded.
+  **Do NOT "simplify" `apply_due()` back into a single statement** — that is defect 3.
+- **Editing rule (enforced at the API, not just the UI):** `draft`/`scheduled` are
+  writable; **`active` is READ-ONLY and cloning is the only path** — that is what makes
+  the version history trustworthy. A locked season (`seasons.locked_at`) rejects every
+  config mutation with `423`. `sanitizeConfigPatch` is whitelist-only, so a client can
+  never promote itself by PATCHing `state`.
+- **Optimistic concurrency is a FINGERPRINT, not `updated_at`** — that column does not
+  exist on `season_config`, and the child rows (games, mixes) carry no timestamps at all,
+  so a row-timestamp guard could not detect a slate edit even in principle. The editor
+  round-trips a hash over the config **and** its children; a concurrent write moves it →
+  `409` + reload prompt.
+- **Cross-season copy is NOT `season_config_clone()`.** That RPC resolves its source from
+  its own `p_season_id` and writes back into the **same** season — aiming it at a source
+  season would add a stray draft there and return an id for the wrong season. Same-season
+  versioning still uses the RPC. The source pick also cannot be a PostgREST `order`:
+  sorting by the enum puts `draft` **first** and would copy a stale draft over the live
+  config (use `pickFocusConfig`).
+- **Catalog-driven slate:** rendered from `game_catalog` merged with `season_games`, so
+  an 8th puzzle type appears with **zero code change**. Theme hierarchy comes from live
+  `dc_daily_theme` — public labels only, never D-codes.
+- **Cron** `/api/cron/season-config-apply` hourly at **:05** → `season_config_apply_due()`.
+  An audit row is written ONLY when something actually flipped.
+- **Verified:** 17-assertion harness (promote-now · schedule · incumbent stays live during
+  the wait · cron flip · exactly-one-active · idempotent re-run · validation refusal ·
+  two-overdue) all PASS — run pre-apply AND again against the **deployed** functions,
+  inside `BEGIN … ROLLBACK` (0 test rows persisted; 4 seasons / 4 configs / 1 active
+  unchanged). Advisor: **no new findings** — the `function_search_path_mutable` WARN and
+  the `season_config` `rls_disabled_in_public` ERROR are pre-existing (the untouched
+  `season_config_clone`/`_validate` carry the same WARN). `npm run test:season-config` (22).
+- **Known gaps:** child writes are **not transactional** (PostgREST cannot do
+  multi-statement transactions — a mid-sequence failure returns an explicit "reload before
+  editing further" rather than pretending atomicity); `conferences` is empty so the
+  conference scope option is disabled; Thread-level theme allocation is stored/read but the
+  editor exposes Theater + Sector.
+
+## Game icon art refresh (CC-DC-ICON-REFRESH-1.0, feat/dc-icon-refresh, 2026-07-30)
+
+**One-time upgrade, and it supersedes FAR-394's per-game color decision.** The
+seven game icons were hand-drawn inline SVG (Ch.09b geometry, recolored to jewel
+tones by FAR-394 two days earlier). They are now **raster art**, authored outside
+the repo. The "do not recreate the icons" rule in the cosmetic-buff section still
+stands for everything after this pass.
+
+- **Art is a build artifact, not code.** `scripts/build-game-icons.mjs` crops the
+  1280² masters to the 1024² tile at `(128,50)` and emits `public/icons/games/`:
+  `<slug>-tile-{128,256}.png` (label cropped — every surface already renders the
+  game name as HTML text) and `<slug>-share.png` (640², label baked in, for the
+  share card). Don't hand-edit the PNGs; re-run the generator. `sharp` is
+  deliberately **not** a project dependency — it's a throwaway install (see the
+  script header), so `next build` is unaffected.
+- **Slugs follow routes, not labels.** Three masters carry a shorter baked label
+  than the game key: `SIGNAL`→`Signal Drop`, `FIBER`→`Dark Fiber`,
+  `THE CIRCUIT`→`Circuit`. Accepted by Myke; the share card reads "SIGNAL" for
+  Signal Drop. Signal Drop's *glyph* also contains the word SIGNAL (it's the
+  word-search answer), visible beside the HTML label at 64px — also accepted.
+- **FAR-394 jewel tones are retired** (Myke-approved 2026-07-30). `GAME_ACCENT` is
+  still the single source of truth and still `{accent, deep, glow}`, so
+  `TodaysSignalCard` and the lobby hover glow are unchanged in shape. What the
+  accent *means* changed: it used to BE the pictogram ink drawn on the forest
+  tile; the pictogram is now baked art, so the accent only drives the hover glow
+  and the Signal card.
+- **The accents are NOT each icon's dominant color, on purpose.** Three masters
+  are predominantly cyan; taking each one's modal color collapsed Signal Drop /
+  Circuit / The Brief to Δ5–Δ20 and failed FAR-394's distinguishability guard,
+  and Dark Fiber's core violet read 2.56:1 on forest (min 3). Each accent is
+  therefore drawn from a **different real color already inside its own master** —
+  Signal Drop its red waveform, The Brief its magenta highlight rows, Dark Fiber
+  its lighter violet halo. **No icon was recolored.** `npm run test:contrast` is
+  **29/29, closest pair Δ70**. Three mirrors must stay in sync: `GAME_ACCENT`
+  (GameIcon.jsx), `--color-game-*`/`--color-neon-*` (globals.css), and the gate's
+  own copy in `scripts/contrast-check.mjs`.
+- **Corner geometry:** the masters have opaque `#1a1a1a` corners (no alpha) and a
+  baked ~8.6% radius. The tile container's 20% radius + `overflow:hidden` clips
+  them away — don't drop the container radius below ~10% or the dark corners
+  reappear on the cream lobby cards. `boxSizing:border-box` on the tile is load-
+  bearing: without it the 1px hairline renders the art `(size-2)×size`, oblong.
+- **Removed:** `GameIconDefs` (shared SVG `<defs>`, no longer referenced) and
+  `src/components/gameIconSvg.js` (the share-card SVG mirror FAR-394 required —
+  there is no longer a second copy of the geometry to keep in sync).
+  `buildShareIconBlob` now fetches the pre-rendered PNG instead of rasterising SVG
+  on a canvas, which removes the canvas-taint and `toBlob`-availability paths.
+- **Verified:** `next build` green · `npm run test:contrast` 29/29 · ESLint
+  identical to the `origin/main` baseline (68 problems / 31 errors / 37 warnings)
+  · 21/21 assets serve `200 image/png` · live headless pass on `/` and `/challenge`
+  (7/7 icons, 0 broken, 0 console errors, 0 404s) plus in-game header + switcher.
+- **Not touched:** `design-reference/faraday-daily-challenge-lobby.html` keeps the
+  original pictogram geometry as provenance. League Office game-dot neons
+  (`src/lib/league-office/constants.ts`) remain a separate internal registry —
+  still the follow-up FAR-394 flagged.
+
+## Legal pages · LLC footer · signup clickwrap (CC-DC-LEGAL-1.0, claude/legal-terms-privacy-footer-05ytxi, 2026-07-30)
+
+**Operating entity = `Faraday Intelligence LLC`, a Minnesota limited liability
+company.** That exact string is the attribution everywhere — footer notice and
+both documents. Product names carry ™ in legal copy: Faraday Intelligence™,
+Faraday Daily Challenge™, Jurisdiction Watch™.
+
+- **Routes: `/terms` and `/privacy`** — two separate pages, both **static site
+  content with the copy inline in the page component** (no CMS, no Airtable, no
+  Supabase, **no new dependency** — the repo still ships only next/react/react-dom).
+  The old combined `/legal` placeholder is now a **`permanentRedirect("/terms")`**
+  (D1: replaced-with-`/terms`, chosen over an index page because only two nav
+  links pointed at it). Keep `/legal` as a redirect — do not delete it.
+- **Effective-date convention:** one `effectiveDate` literal per page component,
+  currently **July 30, 2026**. ToS §7 / Privacy §10 promise that a material change
+  is signalled by bumping it — so **edit the literal in the page, never a shared
+  constant**, and bump it whenever the text changes materially.
+- **Shell** `src/components/LegalDocument.tsx` — SiteHeaderNav + title + effective
+  date + sibling cross-link, with the section/paragraph/list typography applied
+  once via arbitrary-variant classes. Contact route is the **Feedback page**
+  (`/help/feedback`), never a raw email address.
+- **Footer** `src/components/SiteFooter.tsx` — `© 2026 Faraday Intelligence LLC.
+  All rights reserved. · Terms · Privacy`. Baked into `DcStubPage` + `StubPage`
+  (so every stub inherits it) and added per-page to the 18 `SiteHeaderNav` routes,
+  `/live-agent`, `/jurisdiction-watch`. Three surfaces carry a **hand-rolled twin**
+  instead, because they don't style from the Tailwind `@theme`: the dark in-app
+  shell at the bottom of `DailyChallenge.jsx` (covers lobby + all 7 games +
+  account + gate; flips light/dark by `screen`), the storefront `/` footer, and
+  the two `/library` forest footers. **Edit all four when the notice changes.**
+  Not reached, deliberately: `/league-office/*` (staff-only internal), `/auth`
+  (transient verify screen), the pure redirects (`/legal`, `/notifications`,
+  `/academy`, the 7 per-game routes), and `/api/*`.
+- **Clickwrap** — "By continuing you agree to the Terms of Service and Privacy
+  Policy." rendered **immediately under the submit button** in
+  `src/components/OTPGate.jsx` (the live registration flow: email → `send-otp` →
+  `verify-otp`; mounted by `DailyChallenge.jsx`, `/account`,
+  `/account/notifications`). D4: adjacent assent, **no checkbox**. Links open in a
+  new tab so an in-progress sign-up is never lost. `src/components/SocialGate.tsx`
+  (the `register-with-magic-link` caller) got the same line, but note it is
+  **imported by nothing** — dead code kept in tree. **No auth logic, edge
+  function, schema, or RLS was touched.**
+- **No cookie-consent banner (D6), and that is a verified finding, not an
+  assumption:** the repo has zero third-party analytics/ad trackers — no gtag,
+  GTM, `@vercel/analytics`, PostHog, Segment, Plausible, or pixel. If one is ever
+  added, the banner question reopens.
+- **Verified:** `npm run build` green · `npm run test:contrast` 29/29 · headless
+  pass over `/terms /privacy /legal /challenge /account /leaderboard
+  /help/feedback` — footer on all 7, clickwrap on the `/account` gate, `/legal`
+  308s to `/terms`, **no console errors from these routes** (the only console
+  noise is the sandbox's blocked Google Fonts + the 500s from unset local
+  Airtable/Supabase env). ESLint unchanged: same 2 pre-existing errors before
+  and after.
 
 ## League Office Announcements → in-app player banner (claude/new-session-ilg5cd, 2026-07-29)
 
@@ -367,7 +608,8 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
 - **More Faraday** = About (`/about` stub) / Who is Faraday (`/who-is-faraday`
   stub) / Share / Invite (`/share` stub) / Notifications (`/notifications` stub) /
   Faraday Merchandise (`/merch` stub) / **Faraday Academy — disabled/grayed, no
-  link (reserved for a later phase, do NOT wire)** / Terms-Privacy (`/legal` stub).
+  link (reserved for a later phase, do NOT wire)** / Terms-Privacy (**now `/terms`,
+  a real page — see the Legal pages section at the top; `/legal` redirects there**).
   Other Faraday products (Jurisdiction Watch, Signal Room, …) deliberately NOT in
   this menu. No "Sign Up" in the gear menu by design.
 - Stub pages share `src/components/DcStubPage.tsx` (DC masthead + "Coming soon"
@@ -389,7 +631,8 @@ click-toggle dropdown (design-review menu structure, 2026-07-02):
   pass (Myke-confirmed "retire live/mw/streak flame").
 - Placeholder links to flag: Leaderboard Today/Season both →/leaderboard (no
   time-range views yet); every `/help/*`, `/about`, `/who-is-faraday`, `/share`,
-  `/notifications`, `/merch`, `/free-agency`, `/legal` link lands on a stub.
+  `/notifications`, `/merch`, `/free-agency` link lands on a stub (`/legal` no
+  longer does — it redirects to the real `/terms`).
   Repoint in `buildHeaderMenus` / `buildSiteMenus` when real pages exist.
 - **Standalone Next routes** (`/account`, `/leaderboard`, …) use the twin
   component `src/components/SiteHeaderNav.tsx` — same icon-dropdown look/behavior
