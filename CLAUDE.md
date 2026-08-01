@@ -76,6 +76,35 @@ Full findings + acceptance evidence: `docs/league-model/PART-B-REPORT.md`.
   provably joined two conferences in two leagues (rolled back). Company
   standings changed BY DESIGN (one merged "Deloitte" org at 7109).
 
+## League model Part C — scoring attribution derived (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
+
+Part C: season attribution for scoring is **derived at read time** (date +
+membership), never stored per event. Migration `20260801000004…` (**APPLIED to
+prod 2026-08-01**, all six acceptance criteria verified live — the old-vs-new
+diff was ZERO rows); full evidence: `docs/league-model/PART-C-REPORT.md`.
+
+- **`score_events.season_id` → `legacy_season_id`** (nullable, audit-only —
+  NEVER dropped, NEVER written by new code). A score event counts in every
+  season whose date range contains `played_at::date`; team attribution joins
+  `team_memberships` for that season. **Do NOT fan out writes** and do NOT
+  add season_id to `dc_completions`/`leaderboard_daily`.
+- **`season_scores` / `team_scores` views replaced in place** (they predated
+  Part C with stored-column semantics); new **`team_daily_scores`** carries
+  the per-day points + **hints rollup from `dc_completions.hints_used`** (the
+  ONLY per-play hints record — LO season config stores hint *policy*, not
+  usage; usage is real since 2026-07-03/FAR-287).
+- **RPC signatures kept:** `global_leaderboard` / `team_leaderboard_season` /
+  `team_total_score` still take `p_season_id` — it now selects the season
+  whose DATE WINDOW attributes rows — so `/api/leaderboard/season` and
+  `/api/leaderboard/team/[teamId]` needed zero changes. All three gained
+  `SET search_path` (they are SECURITY DEFINER and previously lacked it).
+- **`/api/score` writes score_events unconditionally and without a season id**
+  (C2) — the old active-season gate on the write is gone; the season lock
+  check remains. The LO reset-preview count reads `legacy_season_id`.
+- **⚠️ Repo-only `20260728000001_lo_reset_season_scoring.sql` was never
+  applied to prod** and targets the old column name — rewrite it against
+  `legacy_season_id` before ever applying.
+
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
 In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with

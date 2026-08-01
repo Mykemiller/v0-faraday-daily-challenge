@@ -429,7 +429,10 @@ export async function getScoringResetPreview(s: Svc): Promise<ScoringResetPrevie
     return { season, counts: zero, total: 0 };
   }
   const [se, dc, lb, ss] = await Promise.all([
-    q<{ id: string }>(s, `score_events?season_id=eq.${season.id}&points=neq.0&select=id`),
+    // Part C: score_events carries legacy_season_id (audit-only) — new rows are
+    // attributed by date at read time. This preview counts the legacy-stamped
+    // rows, matching what the (un-applied) reset RPC would target.
+    q<{ id: string }>(s, `score_events?legacy_season_id=eq.${season.id}&points=neq.0&select=id`),
     q<{ id: string }>(
       s,
       `dc_completions?puzzle_date=gte.${season.starts_on}&puzzle_date=lte.${season.ends_on}&score=neq.0&select=id`

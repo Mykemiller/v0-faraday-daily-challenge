@@ -161,20 +161,21 @@ export async function POST(request: Request) {
     }),
   }).catch(() => {});
 
-  // Write score_event (season-scoped, source of truth for leaderboard).
-  if (activeSeason?.id) {
-    await fetch(`${s.base}/score_events`, {
-      method: "POST",
-      headers: { ...s.headers, Prefer: "return=minimal" },
-      body: JSON.stringify({
-        subscriber_id: subscriberId,
-        season_id: activeSeason.id,
-        game_id: gameType,
-        points: score,
-        played_at: new Date().toISOString(),
-      }),
-    }).catch(() => {});
-  }
+  // Write score_event (source of truth for season/team leaderboards). Part C:
+  // season attribution is DERIVED at read time from played_at + memberships —
+  // the row carries no season id (legacy_season_id stays NULL on new rows), and
+  // the write is unconditional (C2): a play outside any season window simply
+  // counts toward no season.
+  await fetch(`${s.base}/score_events`, {
+    method: "POST",
+    headers: { ...s.headers, Prefer: "return=minimal" },
+    body: JSON.stringify({
+      subscriber_id: subscriberId,
+      game_id: gameType,
+      points: score,
+      played_at: new Date().toISOString(),
+    }),
+  }).catch(() => {});
 
   // Upsert leaderboard_daily: increment running daily score + games_played.
   // Read-then-write is safe here because dc_daily_attempts already prevents
