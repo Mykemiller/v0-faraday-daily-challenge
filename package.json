@@ -22,6 +22,7 @@
     "test:broadcast": "node --test src/lib/league-office/sanitize-html.test.ts src/lib/league-office/broadcast-logic.test.ts",
     "test:season-config": "node --test src/lib/league-office/season-config-logic.test.ts",
     "test:game-library": "node --test src/lib/league-office/game-library-logic.test.ts",
+    "test:slate-filter": "node --test src/lib/league-office/slate-filter.test.ts",
     "test:advisory-only": "node --test src/lib/league-office/advisory-only.test.mjs",
     "test:market-reaction": "node --test src/lib/market-reaction.test.ts",
     "test:share": "node --experimental-default-type=module --test src/lib/share/manifest.test.js src/lib/share/buildShare.test.js src/lib/share/card-params.test.js src/lib/share/og.test.js",
