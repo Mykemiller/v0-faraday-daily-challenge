@@ -1,8 +1,11 @@
--- CC-INGEST-METADATA-EXTRACTION-1.0 — Part 2: Google-stub TITLES (optional)
+-- CC-INGEST-METADATA-EXTRACTION-1.0 — Part 2: Google-stub TITLES
 --
--- ⚠️ STAGED, NOT APPLIED — and separately gated on Myke's §7 decision: "decide
--- whether stub titles are extracted in this pass". Strike this file from the
--- apply if the answer is no; Part 1 stands alone.
+-- APPLIED to prod 2026-08-01 (Myke-approved, incl. the §7 stub-title decision:
+-- yes). Application mechanics: the ~245k-row rewrite exceeds the 60s MCP
+-- statement window, so the IDENTICAL approved UPDATE was pre-applied in six
+-- bounded batches (driven by the cc_ingest_metadata_staging snapshot), then
+-- this migration ran as recorded: its idempotent full UPDATE swept the
+-- post-staging drift rows and the gates verified the final state.
 --
 -- The 245k Google News stub rows carry a REAL headline in raw_content line 1
 -- (Google's item title, format "headline - Publisher"). This backfills that
@@ -44,31 +47,29 @@ where a.signal_envelope->>'source_name' like 'Google News search:%'
 
 do $$
 declare
-  v_stub_source bigint;
-  v_stub_citable bigint;
-  v_titled bigint;
+  v record;
 begin
-  -- Stubs must never gain a publisher.
-  select count(*) into v_stub_source from public.artifacts
-   where signal_envelope->>'source_name' like 'Google News search:%'
-     and coalesce(signal_envelope->>'source','') <> '';
-  if v_stub_source <> 0 then
-    raise exception 'GATE FAIL: % stub rows carry a source', v_stub_source;
-  end if;
+  -- One pass over artifacts (embedding vectors make every scan expensive).
+  select
+    -- Stubs must never gain a publisher.
+    count(*) filter (where signal_envelope->>'source_name' like 'Google News search:%'
+                     and coalesce(signal_envelope->>'source','') <> '') as stub_source,
+    -- Stubs must remain uncitable (URL condition holds for every stub row).
+    count(*) filter (where signal_envelope->>'source_name' like 'Google News search:%'
+                     and source_url is not null and source_url <> ''
+                     and source_url not like '%news.google.com/rss%'
+                     and coalesce(signal_envelope->>'title','') <> ''
+                     and coalesce(signal_envelope->>'source','') <> '') as stub_citable,
+    count(*) filter (where signal_envelope->>'source_name' like 'Google News search:%'
+                     and coalesce(signal_envelope->>'title','') <> '') as titled
+  into v
+  from public.artifacts;
 
-  -- Stubs must remain uncitable (URL condition holds for every stub row).
-  select count(*) into v_stub_citable from public.artifacts
-   where signal_envelope->>'source_name' like 'Google News search:%'
-     and source_url is not null and source_url <> ''
-     and source_url not like '%news.google.com/rss%'
-     and coalesce(signal_envelope->>'title','') <> ''
-     and coalesce(signal_envelope->>'source','') <> '';
-  if v_stub_citable <> 0 then
-    raise exception 'GATE FAIL: % stub rows became citable', v_stub_citable;
+  if v.stub_source <> 0 then
+    raise exception 'GATE FAIL: % stub rows carry a source', v.stub_source;
   end if;
-
-  select count(*) into v_titled from public.artifacts
-   where signal_envelope->>'source_name' like 'Google News search:%'
-     and coalesce(signal_envelope->>'title','') <> '';
-  raise notice 'CC-INGEST-METADATA Part 2 applied. Stub rows with titles: % (245,213 at staging on 2026-08-01 + drift). Citable pool unchanged by this part.', v_titled;
+  if v.stub_citable <> 0 then
+    raise exception 'GATE FAIL: % stub rows became citable', v.stub_citable;
+  end if;
+  raise notice 'CC-INGEST-METADATA Part 2 applied. Stub rows with titles: % (245,213 at staging on 2026-08-01 + drift). Citable pool unchanged by this part.', v.titled;
 end $$;

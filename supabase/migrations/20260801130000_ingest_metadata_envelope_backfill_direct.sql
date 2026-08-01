@@ -1,11 +1,12 @@
 -- CC-INGEST-METADATA-EXTRACTION-1.0 — Part 1: direct-publisher envelope backfill
 --
--- ⚠️ STAGED, NOT APPLIED. Do not apply without Myke's explicit sign-off — this
--- mutates production rows in public.artifacts (§6 of the ticket). Evidence for
--- sign-off: docs/ingest-metadata-extraction/REPORT.md (200-row hand-checked
--- sample, measured precision, BEGIN..ROLLBACK dry-run results).
+-- APPLIED to prod 2026-08-01 (Myke-approved — bulk write, canonical key
+-- direction, 300-char cap all signed off in PR #142). Applied AFTER the
+-- source-poller v1.4 canonical-write deploy, so no gap window exists between
+-- backfill and cutover. Evidence: docs/ingest-metadata-extraction/REPORT.md
+-- (200-row hand-checked sample, measured precision, BEGIN..ROLLBACK dry-run).
 --
--- Canonical envelope contract (decided by this ticket; Myke to confirm):
+-- Canonical envelope contract (Myke-confirmed 2026-08-01):
 --   `title`, `summary`, `source` are the canonical signal_envelope keys — the
 --   keys the live match_artifacts v1.2 citability predicate already reads, and
 --   the keys the 13k legacy (faraday-crawl) rows already carry. Current-gen
@@ -73,58 +74,51 @@ where coalesce(a.signal_envelope->>'source_name','') <> ''
   and coalesce(a.signal_envelope->>'title','') = '';
 
 -- Verification gates — invariant-based (the corpus grows ~10k rows/day, so
--- exact-count equality would rot between sign-off and apply). Any failure
--- raises and rolls the whole migration back.
+-- exact-count equality would rot between sign-off and apply), computed in ONE
+-- pass over artifacts (the table carries 4KB embedding vectors per row, so
+-- every full scan is expensive). Any failure raises and rolls the whole
+-- migration back.
 do $$
 declare
-  v_google_source bigint;
-  v_stub_url_source bigint;
-  v_long_title bigint;
-  v_remaining_gap bigint;
-  v_citable bigint;
+  v record;
 begin
-  -- The hard rule of the ticket: no publisher value is ever a search label.
-  select count(*) into v_google_source from public.artifacts
-   where signal_envelope->>'source' like 'Google News search:%';
-  if v_google_source <> 0 then
-    raise exception 'GATE FAIL: % rows carry a Google search label as source', v_google_source;
-  end if;
+  select
+    -- The hard rule of the ticket: no publisher value is ever a search label.
+    count(*) filter (where signal_envelope->>'source' like 'Google News search:%') as google_source,
+    -- No Google-stub-URL row may carry a publisher.
+    count(*) filter (where source_url like '%news.google.com/rss%'
+                     and coalesce(signal_envelope->>'source','') <> '') as stub_url_source,
+    -- No written title may exceed the 300-char sanity cap.
+    count(*) filter (where coalesce(signal_envelope->>'source_name','') <> ''
+                     and signal_envelope->>'source_name' not like 'Google News search:%'
+                     and length(signal_envelope->>'title') > 300) as long_title,
+    -- Every remaining title gap in this channel must be an unbroken-body reject.
+    count(*) filter (where coalesce(signal_envelope->>'source_name','') <> ''
+                     and signal_envelope->>'source_name' not like 'Google News search:%'
+                     and coalesce(signal_envelope->>'title','') = ''
+                     and btrim(split_part(raw_content, E'\n', 1)) <> ''
+                     and length(btrim(split_part(raw_content, E'\n', 1))) <= 300
+                     and (position(E'\n' in raw_content) > 0 or length(raw_content) <= 200)) as remaining_gap,
+    count(*) filter (where source_url is not null and source_url <> ''
+                     and source_url not like '%news.google.com/rss%'
+                     and coalesce(signal_envelope->>'title','') <> ''
+                     and coalesce(signal_envelope->>'source','') <> '') as citable
+  into v
+  from public.artifacts;
 
-  -- No Google-stub-URL row may carry a publisher.
-  select count(*) into v_stub_url_source from public.artifacts
-   where source_url like '%news.google.com/rss%'
-     and coalesce(signal_envelope->>'source','') <> '';
-  if v_stub_url_source <> 0 then
-    raise exception 'GATE FAIL: % stub-URL rows carry a source', v_stub_url_source;
+  if v.google_source <> 0 then
+    raise exception 'GATE FAIL: % rows carry a Google search label as source', v.google_source;
   end if;
-
-  -- No written title may exceed the 300-char sanity cap.
-  select count(*) into v_long_title from public.artifacts
-   where coalesce(signal_envelope->>'source_name','') <> ''
-     and signal_envelope->>'source_name' not like 'Google News search:%'
-     and length(signal_envelope->>'title') > 300;
-  if v_long_title <> 0 then
-    raise exception 'GATE FAIL: % over-length titles written', v_long_title;
+  if v.stub_url_source <> 0 then
+    raise exception 'GATE FAIL: % stub-URL rows carry a source', v.stub_url_source;
   end if;
-
-  -- Every remaining title gap in this channel must be an unbroken-body reject.
-  select count(*) into v_remaining_gap from public.artifacts a
-   where coalesce(a.signal_envelope->>'source_name','') <> ''
-     and a.signal_envelope->>'source_name' not like 'Google News search:%'
-     and coalesce(a.signal_envelope->>'title','') = ''
-     and btrim(split_part(a.raw_content, E'\n', 1)) <> ''
-     and length(btrim(split_part(a.raw_content, E'\n', 1))) <= 300
-     and (position(E'\n' in a.raw_content) > 0 or length(a.raw_content) <= 200);
-  if v_remaining_gap <> 0 then
-    raise exception 'GATE FAIL: % extractable rows left without a title', v_remaining_gap;
+  if v.long_title <> 0 then
+    raise exception 'GATE FAIL: % over-length titles written', v.long_title;
   end if;
-
-  select count(*) into v_citable from public.artifacts
-   where source_url is not null and source_url <> ''
-     and source_url not like '%news.google.com/rss%'
-     and coalesce(signal_envelope->>'title','') <> ''
-     and coalesce(signal_envelope->>'source','') <> '';
-  raise notice 'CC-INGEST-METADATA Part 1 applied. Citable artifacts now: % (was 13,117 at staging on 2026-08-01; projected ~28,280 + drift)', v_citable;
+  if v.remaining_gap <> 0 then
+    raise exception 'GATE FAIL: % extractable rows left without a title', v.remaining_gap;
+  end if;
+  raise notice 'CC-INGEST-METADATA Part 1 applied. Citable artifacts now: % (was 13,117 at staging on 2026-08-01; projected ~28,280 + drift)', v.citable;
 end $$;
 
 comment on column public.artifacts.signal_envelope is

@@ -3,9 +3,10 @@
 ## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
 
 Recovers title/publisher metadata already stored in `public.artifacts` so the
-`match_artifacts` v1.2 citability predicate can see it. **⚠️ STAGED, NOT
-APPLIED — both migrations await Myke's sign-off** (they mutate up to 275k prod
-rows). Full evidence: `docs/ingest-metadata-extraction/REPORT.md`; rollback:
+`match_artifacts` v1.2 citability predicate can see it. **Both migrations
+APPLIED to prod 2026-08-01 (Myke-approved), all gates passed — citable pool
+now 28,280, exactly the projection.** Full evidence + execution record:
+`docs/ingest-metadata-extraction/REPORT.md`; rollback:
 `docs/ingest-metadata-extraction/down.sql`.
 
 - **Canonical envelope keys = `title`/`summary`/`source`** (what v1.2 already
@@ -29,13 +30,13 @@ rows). Full evidence: `docs/ingest-metadata-extraction/REPORT.md`; rollback:
 - **The ~1.6k "bare" rows (LinkedIn posts, ISO filings) are deliberately
   untouched**: measured first-line-as-title precision ~55% vs the 98% bar.
   Write-set sample precision (200 rows hand-checked, stratified): **156/156**.
-- **Both migrations are idempotent** — after the source-poller write-path fix
-  deploys (follow-up CC-INGEST-CANONICAL-WRITE; the poller is a deployed-only
-  edge fn, AUTO-199, not in this repo), re-run the same UPDATEs as a sweep to
-  close the gap window (~10k stub rows/day accrue meanwhile).
-- Scratch evidence tables `cc_ingest_metadata_staging` /
-  `cc_ingest_metadata_sample` (RLS deny-all) hold the extraction + the checked
-  sample — drop after sign-off.
+- **Write path is canonical at the source since 2026-08-01:**
+  `source-poller` **v1.4** (deployed BEFORE the backfill — no gap window)
+  writes `title`/`summary` on every insert and `source` only when
+  `scope <> 'query_feed'`. Its VCS record now lives in the **Faraday repo**
+  (`supabase/functions/source-poller/`). Both migrations stay idempotent —
+  safe to re-run as a sweep if ever needed.
+- Scratch evidence tables were dropped after sign-off (0 remaining).
 
 ## League model Part A — seasons join leagues (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
 

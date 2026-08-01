@@ -2,9 +2,24 @@
 
 Recover title and publisher metadata already present in `public.artifacts`
 but invisible to the `match_artifacts` v1.2 citability predicate. All numbers
-measured live against prod `ycadmmngkdhvpcsrcuaq` on **2026-08-01**. Nothing
-has been written to `artifacts` — the backfill is **staged, unapplied**,
-awaiting Myke's sign-off (§7 below).
+measured live against prod `ycadmmngkdhvpcsrcuaq` on **2026-08-01**.
+
+> **EXECUTED 2026-08-01 — Myke approved all five §9 actions in PR #142.**
+> Applied in this order (so no gap window exists):
+> 1. `source-poller` **v1.4** deployed (fn version 15) — canonical
+>    `title`/`summary` on every insert, `source` gated off for
+>    `scope='query_feed'`. First post-deploy run: `success=true`, 23/23 ok.
+> 2. Part 1 migration applied — all gates passed.
+> 3. Part 2 applied: the ~245k-row rewrite exceeds the 60s MCP statement
+>    window, so the identical approved UPDATE was pre-applied in six bounded
+>    batches (sliced via the staging snapshot), then the migration ran as
+>    recorded — its idempotent full UPDATE swept drift (0 rows remained) and
+>    the gates passed.
+> 4. **Verified: citable = 28,280 (exactly the projection)**; titled 273,652
+>    (= total − 1,568 bare − 173 headline-less, exact); both hard guards 0.
+>    Security advisors: zero findings touching artifacts/source-poller.
+> 5. Scratch tables `cc_ingest_metadata_staging` / `cc_ingest_metadata_sample`
+>    dropped (0 remaining).
 
 ## 1. Canonical envelope contract
 
