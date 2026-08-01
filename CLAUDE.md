@@ -1,5 +1,49 @@
 @AGENTS.md
 
+## Artifact tagging spine (CC-ARTIFACT-TAGGING-SPINE-1.0, claude/artifact-tagging-spine-xd930e, 2026-08-01)
+
+Three tagging axes (IDF domain/sub-domain · citation · jurisdiction) made measurable.
+Migration `20260801120000_artifact_tagging_spine.sql` (**APPLIED to prod 2026-08-01**,
+additive only, advisor delta = 4 intended `rls_enabled_no_policy` INFOs); full findings:
+`docs/artifact-tagging-spine/REPORT.md`. **No writes to `artifacts`/`entities`/
+`artifact_entities`** — every §6 STOP condition held.
+
+- **Domain tags are lane labels, not content truth: 42.3% strict precision** (200-row
+  stratified hand-check; no domain reaches 90%; D15 0%, D18/D19 22%). AUTO-199 is
+  **94.6% of the corpus** and stamps `ifs_domains` from `source_registry.idf_domains`
+  per SOURCE — its local-gov-watch lanes stamp `[D13,D18]` on obituaries. Treat
+  `ifs_domains` as collection provenance until enrichment-stage re-verification lands.
+- **Sub-domain 2.9% root cause = never attempted for AUTO-199** (dedicated crawlers
+  AUTO-060+ are already 100% tagged; that path is fully harvested). v1 keyword rules
+  (`tagspine_subdomain_rules`, 31 rules) staged **6,919 candidates on 5,993 artifacts**
+  in `artifact_subdomain_candidates` — measured **69.5% strict / 90.0% lenient**, below
+  the 90% bar, so they are **STAGED ONLY — never bulk-write `artifacts.ifs_subdomains`
+  without Myke sign-off**. Per-rule: D3.4 100%, D7.2 100%, D18.2 89% · D13.3 47%,
+  D2.5 0% strict. ⚠️ `ifs_subdomains` is `'{}'` (empty array, NOT null) on untagged
+  rows — guard with `coalesce(cardinality(...),0)=0`, never `array_length(...)=0`.
+- **Jurisdiction axis exists: `artifact_jurisdictions`** (confidence + method on every
+  row, never denormalised onto artifacts) — **17,970 pairs / 14,807 artifacts (5.4%)**,
+  populated ONLY via the entity path: `tagspine_geo_entity_map` classifies all 270
+  geography entities (146 resolved · 78 held_ambiguous · 46 non_jurisdictional).
+  75-pair hand-check: **0 wrong** (61 correct / 14 plausible) — passes the bar.
+  **The lane_scope shortcut (gsearch:loc-* → target place) measured 49% aboutness and
+  was REJECTED** — do not populate it; Google News city queries drift to wrong-state
+  homonyms and statewide stories. Honest ceiling ~6.5% until jurisdiction resolution
+  runs at entity-extraction time. Spine gotchas: names carry LSAD suffixes
+  ("Columbus city"), **no CDP rows** (Ashburn VA unresolvable), metro tier has corrupt
+  `state_abbr` (Northern Virginia→TN).
+- **`v_artifact_tagging_health`** (service-role only): per-domain axis coverage +
+  readiness predicates. All consumers require **citable** (= the 20260801091150
+  contract). Ready today: **Library/Academy 7,880 · JW 3,721** (of 275,393).
+- **Citability moved mid-task 13,117 → 28,280** — the CC-INGEST-METADATA-EXTRACTION
+  backfill landed during execution. **D18 stays effectively uncitable (278/31,045,
+  0.9%)**: it is one lane of Google News redirect stubs; Opposition Register /
+  Permitting Denial cannot ship until loc-lane ingest resolves real publisher URLs —
+  tagging cannot fix an uncitable source.
+- **Myke queue:** approve/deny promoting the ≥85%-strict rule subset (~2,400 artifacts);
+  set the JW confidence threshold (view reports ≥0.8); dispose of the 78 held entities
+  (Ashburn, Georgia-state-vs-country first); D18 ship/hold decision.
+
 ## League model Part A — seasons join leagues (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
 
 Part A of the league → conference → durable-team restructure. Migration
