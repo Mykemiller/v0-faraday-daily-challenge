@@ -196,9 +196,12 @@ export async function createSeason(
   const clash = await getOne<{ id: string }>(s, `seasons?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`);
   if (clash) return err(409, `The slug “${slug}” is already taken. Choose a different name or edit the slug.`);
 
-  // `seasons_no_overlap` EXCLUDEs overlapping daterange(starts_on, ends_on, '[]').
-  // Pre-checked so the message can NAME the clashing season; the constraint
-  // mapping below still covers the race where one is created concurrently.
+  // `seasons_no_overlap_per_league` EXCLUDEs overlapping daterange(starts_on,
+  // ends_on, '[]') within one league (Part A). This pre-check stays GLOBAL
+  // because the wizard only creates INDEPENDENT-league seasons today; it must
+  // become league-scoped when a league picker exists. Pre-checked so the
+  // message can NAME the clashing season; the constraint mapping below still
+  // covers the race where one is created concurrently.
   const existing = await fetchJson<SeasonRange[]>(s, `seasons?select=id,name,starts_on,ends_on`);
   const overlap = findOverlappingSeason(input.starts_on, input.ends_on, existing ?? []);
   if (overlap)
@@ -206,6 +209,12 @@ export async function createSeason(
       409,
       `Those dates overlap “${overlap.name}” (${overlap.starts_on} → ${overlap.ends_on}). Seasons cannot overlap — pick a window outside it.`
     );
+
+  // Part A (league model): seasons.league_id is NOT NULL. The wizard has no
+  // league picker yet, so every LO-created season lands in INDEPENDENT —
+  // resolved by code, never a hardcoded uuid.
+  const league = await getOne<{ id: string }>(s, `leagues?code=eq.INDEPENDENT&select=id&limit=1`);
+  if (!league) return err(500, "League INDEPENDENT not found — cannot create a season.");
 
   // NOTE: free_agency_start / free_agency_notice_start are GENERATED ALWAYS
   // (ends_on − 3 / ends_on − 7). Sending them — even as NULL — makes Postgres
@@ -218,6 +227,7 @@ export async function createSeason(
     ends_on: input.ends_on,
     status: "upcoming",
     tz: (input.tz || "America/Chicago").trim(),
+    league_id: league.id,
   });
   if (!created.ok) return err(created.status, seasonWriteMessage(created.message));
 
