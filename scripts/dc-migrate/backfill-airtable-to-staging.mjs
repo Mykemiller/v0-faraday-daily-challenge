@@ -28,6 +28,16 @@
 // (dc_public_id_seq) was seeded at 365 from the 2026-07-29 measurement; if the
 // reported max ever reaches that, re-seed before cutover (the script prints
 // the exact setval statement).
+//
+// ⚠️ SUPERSEDED for the actual cutover (CC-LEAGUE-MODEL-1.0 Part C½,
+// 2026-08-01): Myke decided "Forward only import" — the ~268 Retired/
+// historical rows were deliberately NOT imported. The 98 forward rows
+// (7 Live 2026-08-01 + 91 Published 2026-08-02..14) were imported via the
+// Airtable MCP + SQL with this script's exact mapRecord() field mapping, with
+// ONE divergence: forward rows carry theme_date = go_live_date (real
+// dc_daily_theme rows exist from 2026-08-01), not NULL. Evidence:
+// docs/league-model/PART-C-HALF-REPORT.md. Do not run --apply to backfill
+// history unless that decision is explicitly reversed.
 
 import { createHash } from "node:crypto";
 

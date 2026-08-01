@@ -105,6 +105,42 @@ diff was ZERO rows); full evidence: `docs/league-model/PART-C-REPORT.md`.
   applied to prod** and targets the old column name — rewrite it against
   `legacy_season_id` before ever applying.
 
+## League model Part C½ — puzzle serving Airtable → Supabase (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
+
+Part C½: `dc_puzzle_bank_staging` holds the complete forward serve set; the
+only remaining cutover step is **Myke setting `DC_PUZZLE_SOURCE=supabase` in
+Vercel + redeploy** (rollback = unset + redeploy). Evidence:
+`docs/league-model/PART-C-HALF-REPORT.md`; updated runbook:
+`docs/dc-supabase-serving/README.md`.
+
+- **⚠️ HARD DEADLINE: the bank runs dry after 2026-08-14** — Airtable AND
+  staging both end there. CC-2 (fill the bank: insert → `fn_dc_approve_puzzles`
+  → rotation) must land before 2026-08-15 regardless of the flag.
+- **"Forward only import" (Myke 2026-08-01):** 98 rows imported (7 Live
+  2026-08-01 + 91 Published 2026-08-02..14, 7 types × 14 days), the ~268
+  Retired/historical rows deliberately skipped — no runtime path resolves a
+  retired public id. All original Public IDs preserved (`dc_public_id_seq`
+  untouched at 365; the mint trigger skips rows arriving with an id). The
+  historical `--apply` backfill in `backfill-airtable-to-staging.mjs` is
+  **superseded — do not run it** (header comment says so).
+- Import ran as Airtable MCP reads → per-day SQL INSERTs (container egress is
+  policy-blocked; no AIRTABLE_API_KEY exists server-side), transcribing the
+  backfill script's exact mapping, except **forward rows carry
+  `theme_date = go_live_date`** (real dc_daily_theme rows exist from 08-01).
+  Aug 8–11 rows have NULL hints — faithful to Airtable (never authored).
+  98/98 per-row RETURNING checks green; rolled-back
+  `fn_dc_rotate_live_set('2026-08-02')` dry run promoted/retired 7/7.
+- **`dc_puzzle_bank_staging.season_id`** (uuid NULL → seasons, migration
+  `20260801000005…`, **APPLIED to prod 2026-08-01**) — forward hook only; the
+  serve path never reads it; season slates stay `season_config`/`season_games`.
+- `puzzle-bank.js` `PUZZLE_TYPES` re-export repointed onto
+  `supabase-puzzle-bank.js` so the Phase-5 Airtable-lib deletion can't orphan
+  the facade. **The Airtable lib itself is still in tree — delete only after
+  the flag flip + one watched rotation cycle** (guardrail unchanged).
+- AC6 (Signal Drop answer/`answer_key` never in client payloads) is asserted
+  by `npm run test:puzzle-bank`; AC7 re-verified: zero anon/authed policies
+  on any `dc_*` table.
+
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
 In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with
