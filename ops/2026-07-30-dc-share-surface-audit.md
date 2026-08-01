@@ -427,3 +427,38 @@ The Phase 0 report was merged (PR #126) and Myke answered the six stop-points:
    client-state additions in Phase 3, or accept the reduced result blocks in §8.
 5. **Font vendoring** for the card renderer (OFL IBM Plex subset in-repo) — §6.
 6. Jira ticket creation per §9.
+
+## 11. Acceptance-criteria sweep (Phase 5 close-out, 2026-08-01)
+
+All five phases shipped and merged: Phase 0 audit (#126) · Phase 1 assets +
+manifest + `buildShare` (#130) · Phase 2 `/api/share/card` + `/share/preview`
+(#131) · Phase 3 `ShareButton` + call-site replacement (#132) · Phase 4 OG/meta
+unfurls (#134). Final state against the 8 acceptance criteria:
+
+| AC | Status | Evidence |
+|---|---|---|
+| 1 — exactly one share code path | ✅ | `grep -rn "navigator.share\|navigator.canShare\|writeText" src/` matches only `src/components/ShareButton.jsx`. All 5 audited call sites replaced; `buildShareIconBlob`/`shareViaDevice` and the ad-hoc page handlers deleted. |
+| 2 — all 7 games + generic produce name/number/score/graphic/link | ✅ | `buildShare` text block + `/api/share/card` render all five elements; reviewed on `/share/preview` (9 sample cards, both sizes); `test:share` asserts the text/URL halves. |
+| 3 — Signal Drop spoiler test | ✅ | `buildShare.test.js` AC-3 cases: the answer smuggled through `word`/`puzzleName`/`name`/`answers`/outcome extras/publicId reaches none of title/text/url/imageUrl, won and lost games; display names come only from the manifest; card params are closed grammars (`card-params.test.js`). |
+| 4 — no `faraday-intelligence.ai` in any payload | ✅ | Asserted in `test:share` across game/generic payloads; every URL builder is pinned to `CANONICAL_ORIGIN`; the one live leak (team invite via `window.location.origin`) was fixed in Phase 3. |
+| 5 — degradation ladder on real targets | ⚠️ partial | Verified in this environment (headless Chromium, real clicks): rung 3 clipboard copy with contents asserted; forced clipboard failure → rung 4 visible textarea; rung 1/2 logic exercised by code path (no Web Share API exists on headless Linux — its absence IS the rung-2→3 fall-through). **iOS Safari, desktop Safari, desktop Chrome (real), and Slack-paste behavior require hardware this remote sandbox does not have.** Checklist for a 10-minute pass on real devices: (a) iPhone Safari → share sheet should offer the PNG card; (b) desktop Safari → text share sheet or Copied ✓; (c) desktop Chrome → Copied ✓, paste shows text block + link; (d) paste any shared link into Slack → unfurl should show the day card (Phase 4 OG tags). |
+| 6 — `/share/preview` renders all 8, excluded from production | ✅ | 9 samples render (7 games + generic + degraded); `VERCEL_ENV=production` → 404 verified with both server configs; card route still serves. |
+| 7 — missing icon → DC mark; missing result → text-only; no throws | ✅ | Manifest fallback tests; card route icon-fetch fallback; `glyphLines`/`buildShare` degrade tests; live `game=mystery` and junk-grid renders verified. |
+| 8 — Phase 0 report committed | ✅ | This file (PR #126). |
+
+Close-out notes:
+- **Reduced result blocks for Rackl / Dark Fiber** (counts-only pips) are the
+  approved trade-off (§10a #4) — revisit only if guess-history recording is
+  ever added client-side.
+- **Signal Drop renders "correct" pips in its red accent** (per-game-accent
+  rule); flagged in PR #131 as the one debatable read — swap to a fixed green
+  is a one-line change in the card route if desired.
+- **`gameShareIconSrc` removed** in Phase 5 (its last caller died with the old
+  ScoreCard cascade). The `public/icons/games/<slug>-share.png` assets remain
+  (generator output contract); the share path serves `public/share/icons/`.
+- **`public/share/icons/daily-challenge.png` is still the SVG-rendered
+  stand-in** — drop the original master over that path (and ideally a matching
+  tile-only crop over `daily-challenge-tile.png`) whenever convenient; zero
+  code changes needed.
+- **Stray `public/Newicons`** (71KB JS source, publicly served) remains flagged
+  from Phase 0 — outside share scope, left untouched.

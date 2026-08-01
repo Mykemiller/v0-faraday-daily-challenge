@@ -9,7 +9,7 @@
 // Usage:
 //   <GameIcon game="Rackl" />       per tile
 //   GAME_ACCENT["Rackl"].glow       hover-glow color (per game)
-//   gameShareIconSrc("Rackl")       labeled 640² frame for the share card
+// Share-card icon paths live in the share manifest (src/lib/share/manifest.js).
 
 // Route slug per game key. Three masters carry a shorter baked label than the
 // game key ("SIGNAL", "FIBER", "THE CIRCUIT"); the slug follows the app's route.
@@ -34,16 +34,6 @@ const GAME_SLUG = {
 // accent's remaining jobs are the lobby hover glow (at .28 alpha) and the
 // TodaysSignalCard accent prop.
 export { GAME_ACCENT, GAME_NEON } from "../lib/game-accent";
-
-/**
- * The labeled 640² share frame (dark field + tile + baked game name). Used by the
- * share card, where the baked label is the point. Returns "" for an unknown game.
- * @param {string} game
- */
-export function gameShareIconSrc(game) {
-  const slug = GAME_SLUG[game];
-  return slug ? `/icons/games/${slug}-share.png` : "";
-}
 
 /**
  * A single game's icon tile. The tile chrome (radius, hairline, forest fallback)
