@@ -17,6 +17,8 @@ import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import ShareButton from "@/components/ShareButton";
 import { CANONICAL_ORIGIN } from "@/lib/share/manifest";
+import TeamBroadcastPanel from "@/components/messaging/TeamBroadcastPanel";
+import { fetchUnreadTotal } from "@/components/messaging/client";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
 
 interface RosterMember {
@@ -61,6 +63,7 @@ export default function TeamPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "notfound" | "error">("loading");
   const [token, setToken] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
+  const [unread, setUnread] = useState(0);
 
   // Management UI state
   const [editingName, setEditingName] = useState(false);
@@ -88,6 +91,11 @@ export default function TeamPage() {
       }
     } catch { /* storage disabled */ }
   }, []);
+
+  // Nav unread badge — token is already in hand on this page (CC-DC-MESSAGING-1.0).
+  useEffect(() => {
+    if (token) fetchUnreadTotal(token).then(setUnread);
+  }, [token]);
 
   function signOut() {
     try {
@@ -205,6 +213,8 @@ export default function TeamPage() {
         authed={!!token}
         handle={token ? handle : null}
         onSignOut={signOut}
+        unreadCount={unread}
+        onUnreadChange={setUnread}
       />
 
       <main className="mx-auto max-w-2xl px-5 pb-16 pt-6">
@@ -254,6 +264,7 @@ export default function TeamPage() {
         {status === "ready" && data && (
           <TeamBody
             data={data}
+            token={token}
             editingName={editingName}
             setEditingName={setEditingName}
             draftName={draftName}
@@ -278,10 +289,11 @@ export default function TeamPage() {
 }
 
 function TeamBody({
-  data, editingName, setEditingName, draftName, setDraftName, nameErr, savingName, onSaveName,
+  data, token, editingName, setEditingName, draftName, setDraftName, nameErr, savingName, onSaveName,
   confirmLeave, setConfirmLeave, leaving, onLeave, rotating, rotateMsg, onRotate, actionErr,
 }: {
   data: TeamData;
+  token: string | null;
   editingName: boolean;
   setEditingName: (v: boolean) => void;
   draftName: string;
@@ -424,6 +436,15 @@ function TeamBody({
           </p>
         )}
       </section>
+
+      {/* Team broadcasts — below the roster, above the manage/leave area.
+          Renders nothing for non-members (CC-DC-MESSAGING-1.0). */}
+      <TeamBroadcastPanel
+        teamId={team.id}
+        token={token}
+        isCaptain={viewer.is_captain}
+        isMember={viewer.is_member}
+      />
 
       {/* Management — quiet, below the roster, above the same thin rule the
           leaderboard uses for its admin block. Members only. */}

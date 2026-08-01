@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
 import BroadcastBanner from "@/components/BroadcastBanner";
+import MessageDock from "@/components/messaging/MessageDock";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
 import { deriveTakeFallback } from "@/lib/faradays-take";
@@ -2589,7 +2590,7 @@ function HeaderIconNav({ menus }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (
@@ -3179,6 +3180,15 @@ export default function DailyChallenge() {
                 </div>
               </div>
             )}
+            {/* Chat-bubbles trigger + slide-down message dock, between the
+                @handle chip and the grid icon (CC-DC-MSG-DOCK-1.0 D1). A pure
+                sibling overlay inside the masthead — it never wraps or
+                re-parents the game tree, so opening/closing it can't unmount a
+                puzzle or trip the game-switcher discard confirm. Renders
+                nothing when signed out (D7). No initialUnread prop → the dock
+                fetches its own badge total (closes the old lobby-mirror
+                follow-up). */}
+            <MessageDock token={sessionToken} />
             <HeaderIconNav menus={headerMenus} />
           </div>
         </div>

@@ -24,7 +24,8 @@ const TOOLS: Item[] = [
   { icon: "⇄", label: "Trading & Free Agency" },
   { icon: "⚑", label: "Announcements", href: "/league-office/announcements" },
   { icon: "☲", label: "Audit Log", href: "/league-office/audit" },
-  { icon: "⚠", label: "Disputes & Flags" },
+  // Activated by CC-DC-MESSAGING-1.0 — the player message report queue.
+  { icon: "⚠", label: "Disputes & Flags", href: "/league-office/reports" },
   { icon: "⚙", label: "Staff & Permissions" },
 ];
 const PLATFORM: Item[] = [{ icon: "⚙", label: "Settings" }];

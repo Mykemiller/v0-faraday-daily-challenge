@@ -12,6 +12,8 @@
 // once per document via `useNavStyles`.
 
 import { useEffect, useRef, useState } from "react";
+import MessageDock from "@/components/messaging/MessageDock";
+import { useDcToken } from "@/components/messaging/client";
 
 const C = {
   forest: "#1C3424",
@@ -38,6 +40,10 @@ interface Menu {
   icon: "grid" | "help" | "trophy" | "gear" | "hamburger";
   label: string;
   items: MenuItem[];
+  /** Gold 6px dot on the trigger (unread messages live behind this menu). */
+  badge?: boolean;
+  /** Full aria-label when it should say more than `label` (e.g. unread count). */
+  ariaLabel?: string;
 }
 
 // Inline SVGs for the five triggers — grid · help · trophy · gear · hamburger.
@@ -75,10 +81,13 @@ export function buildSiteMenus({
   authed,
   current,
   onSignOut,
+  unreadCount = 0,
 }: {
   authed: boolean;
-  current?: "daily" | "leaderboard" | "account" | "notifications";
+  current?: "daily" | "leaderboard" | "account" | "notifications" | "messages";
   onSignOut?: () => void;
+  /** Unread message total for the nav badge (CC-DC-MESSAGING-1.0). */
+  unreadCount?: number;
 }): Menu[] {
   return [
     { id: "games", icon: "grid", label: "All Games", items:
@@ -104,7 +113,10 @@ export function buildSiteMenus({
       { label: "Teams",                href: "/leaderboard?view=teams" },
       { label: "Free Agency",          href: "/free-agency" },
     ]},
+    // The gold unread dot moved to the chat-bubbles trigger (CC-DC-MSG-DOCK-1.0
+    // D1); the gear keeps its "Messages (n)" item linking to /messages.
     { id: "account", icon: "gear", label: "Account", items: authed ? [
+      { label: unreadCount > 0 ? `Messages (${unreadCount})` : "Messages", href: "/messages", current: current === "messages" },
       { label: "Account",  href: "/account", current: current === "account" },
       { label: "Settings", href: "/account" },  // same Account page today — no separate settings page yet
       { label: "Notifications", href: "/account/notifications", current: current === "notifications" },
@@ -138,8 +150,10 @@ export function buildSiteMenus({
 const NAV_STYLE_ID = "dc-sitenav-styles";
 const NAV_CSS = `
   .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
-  .dc-trigger { display:flex; flex-direction:column; align-items:center; gap:5px;
+  .dc-trigger { position:relative; display:flex; flex-direction:column; align-items:center; gap:5px;
     background:none; border:none; cursor:pointer; padding:4px 2px; -webkit-tap-highlight-color:transparent; }
+  .dc-badge-dot { position:absolute; top:1px; right:-3px; width:6px; height:6px;
+    border-radius:50%; background:${C.gold}; }
   .dc-trigger svg { width:19px; height:19px; stroke:rgba(238,230,218,0.62); fill:none; transition:stroke .12s; }
   .dc-navwrap.open .dc-trigger svg, .dc-trigger:hover svg { stroke:${C.gold}; }
   .dc-caret { width:6px; height:6px; border-right:1.4px solid rgba(238,230,218,0.35);
@@ -201,7 +215,7 @@ function IconNav({ menus }: { menus: Menu[] }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (
@@ -211,11 +225,12 @@ function IconNav({ menus }: { menus: Menu[] }) {
               className="dc-trigger"
               aria-haspopup="menu"
               aria-expanded={isOpen}
-              aria-label={m.label}
+              aria-label={m.ariaLabel ?? m.label}
               title={m.label}
               onClick={(e) => { e.stopPropagation(); setOpen(isOpen ? null : m.id); }}
             >
               <NavGlyph name={m.icon} />
+              {m.badge && <span className="dc-badge-dot" aria-hidden="true" />}
               <span className="dc-caret" aria-hidden="true" />
             </button>
             <div className="dc-dd" role="menu" aria-label={m.label}>
@@ -262,14 +277,22 @@ export default function SiteHeaderNav({
   authed = false,
   handle,
   onSignOut,
+  unreadCount = 0,
+  onUnreadChange,
 }: {
-  current?: "daily" | "leaderboard" | "account" | "notifications";
+  current?: "daily" | "leaderboard" | "account" | "notifications" | "messages";
   authed?: boolean;
   handle?: string | null;
   onSignOut?: () => void;
+  /** Unread message total — gold dot on the chat trigger + "(n)" on Messages. */
+  unreadCount?: number;
+  /** Lets the message dock push a fresh unread total back to the page state
+   *  after it marks a thread read (CC-DC-MSG-DOCK-1.0). */
+  onUnreadChange?: (n: number) => void;
 }) {
   useNavStyles();
-  const menus = buildSiteMenus({ authed, current, onSignOut });
+  const token = useDcToken();
+  const menus = buildSiteMenus({ authed, current, onSignOut, unreadCount });
 
   return (
     <>
@@ -293,6 +316,10 @@ export default function SiteHeaderNav({
                 @{handle}
               </a>
             )}
+            {/* Chat-bubbles trigger + slide-down dock, between the @handle chip
+                and the grid icon (CC-DC-MSG-DOCK-1.0 D1). Renders nothing when
+                signed out (D7 — gated on the session token, not `authed`). */}
+            <MessageDock token={token} initialUnread={unreadCount} onUnreadChange={onUnreadChange} />
             <IconNav menus={menus} />
           </div>
         </div>
