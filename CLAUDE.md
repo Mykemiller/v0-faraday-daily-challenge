@@ -38,6 +38,44 @@ BEGIN..ROLLBACK): `docs/league-model/part-a-down.sql`.
 - Advisor delta: exactly +1 intended `rls_enabled_no_policy` INFO. Pre-existing
   `rls_disabled_in_public` ERRORs on leagues/conferences left as found.
 
+## League model Part B — durable-franchise teams (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
+
+Part B: the teams-as-hierarchy model (`group_type`/`parent_id`/`season` label)
+is retired; org structure lives in **conferences + team_conference_memberships**.
+Full findings + acceptance evidence: `docs/league-model/PART-B-REPORT.md`.
+
+- **⚠️ TWO-PHASE MIGRATION.** Phase 1 `20260801000002…` (data + all function
+  rewrites) — **APPLIED to prod 2026-08-01**. Phase 2 `20260801000003…`
+  (drops `teams.season`/`group_type`/`parent_id` + the hierarchy trigger) —
+  **apply ONLY after this PR's Vercel prod deploy is live**; until then both
+  old and new app code work against the schema.
+- **Q1 (Myke): the demo DELOITTE company team was DELETED** (5 @example.com
+  members, zero overlap with the real DELOITTE-2026 team, 0 conversations);
+  the demo DELOITTE league + conference are ARCHIVED, never deleted (Q4c).
+- **Q2: `team_conference_memberships` is DERIVED from real play** (distinct
+  (team, season) pairs in team_memberships → 12 rows, 6 teams × S1+S2) and
+  **kept live by `trg_team_memberships_tcm_autofill`** — do not hand-write
+  tcm rows; insert the membership and let the trigger fill it.
+- **Q3: DELOITTE-2026 + Network Edge + HCI live in the Deloitte ORG
+  conference** (the DELOITTE-2026 league's GENERAL conf upgraded in place:
+  code DELOITTE, type 'org'). Lonely hearts → new private conference;
+  SHEBA/PE → INDEPENDENT GENERAL. "Company" now MEANS org-type conference:
+  `fn_company_standings`/`fn_company_team_standings` take conference ids,
+  and `fn_group_member_emails(p_group)` accepts a team id OR conference id.
+- **RPC wire compat:** `team_create` keeps its 5-arg signature —
+  `p_group_type`/`p_parent_code` are accepted and IGNORED (team-action still
+  passes them; no redeploy needed there). `team_get_my_teams` return columns
+  changed (`conference_code`/`conference_name` replace group_type/parent_*).
+  Edge fns `get-team-leaderboard` (v15) + `get-leaderboard` (v17) redeployed.
+- **Q4b: LO season-scope "leagues" now come from the REAL `leagues` table**
+  (loadLeagues previously read top-level `teams` rows, and season_scopes
+  stored team ids). Hot summer Final Beta's team-id scope rows were reset to
+  one `platform` row.
+- **Acceptance:** team_leaderboard byte-identical before/after; memberships
+  29→24 (exactly the approved demo rows); every team has tcm rows; a team
+  provably joined two conferences in two leagues (rolled back). Company
+  standings changed BY DESIGN (one merged "Deloitte" org at 7109).
+
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
 In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with

@@ -158,11 +158,12 @@ export const loadScopes = (s: Svc, seasonId: string) =>
 export const loadConferences = (s: Svc) =>
   q<ConferenceRow>(s, `conferences?select=*&order=name.asc`);
 
-/** Top-level `teams` rows are the leagues (parent_id is null). */
+/** Part B: leagues are the REAL `leagues` table rows (the old teams-as-leagues
+ *  reading is retired along with teams.parent_id). */
 export const loadLeagues = (s: Svc) =>
-  q<{ id: string; code: string; name: string; group_type: string | null }>(
+  q<{ id: string; code: string; name: string }>(
     s,
-    `teams?parent_id=is.null&select=id,code,name,group_type&order=name.asc`
+    `leagues?archived_at=is.null&select=id,code,name&order=name.asc`
   );
 
 // ── RPC helper ───────────────────────────────────────────────────────────────
@@ -445,7 +446,7 @@ export async function getSeasonConfigDetail(s: Svc, seasonId: string): Promise<S
 // ── scope options + resolution ───────────────────────────────────────────────
 
 export type ScopeOptions = {
-  leagues: { id: string; name: string; code: string; group_type: string | null }[];
+  leagues: { id: string; name: string; code: string }[];
   conferences: { id: string; name: string; code: string; league_id: string | null }[];
 };
 
@@ -460,28 +461,31 @@ export async function getScopeOptions(s: Svc): Promise<ScopeOptions> {
 }
 
 /** Live "member teams resolved from this scope" count for Section B. A platform
- *  scope resolves to every top-level team; a league scope to itself plus its
- *  children; a conference scope to the teams whose parent league it belongs to.
- *  Exclusions are subtracted last. */
+ *  scope resolves to every team; a league scope to teams whose league_id is in
+ *  scope; a conference scope to teams whose conference_id is in scope.
+ *  Exclusions (by team, league, or conference id) are subtracted last. */
 export async function resolveScopeTeamCount(s: Svc, scopes: ScopeRow[]): Promise<number> {
-  const teams = await q<{ id: string; parent_id: string | null }>(
+  const teams = await q<{ id: string; league_id: string | null; conference_id: string | null }>(
     s,
-    `teams?select=id,parent_id`
+    `teams?select=id,league_id,conference_id`
   );
   const included = scopes.filter((x) => !x.is_excluded);
   const excludedIds = new Set(scopes.filter((x) => x.is_excluded).map((x) => x.scope_ref_id));
+  const isExcluded = (t: { id: string; league_id: string | null; conference_id: string | null }) =>
+    excludedIds.has(t.id) || excludedIds.has(t.league_id) || excludedIds.has(t.conference_id);
 
   if (!included.length) return 0;
   if (included.some((x) => x.scope_type === "platform")) {
-    return teams.filter((t) => !excludedIds.has(t.id) && !excludedIds.has(t.parent_id)).length;
+    return teams.filter((t) => !isExcluded(t)).length;
   }
 
   const roots = new Set(included.map((x) => x.scope_ref_id).filter(Boolean) as string[]);
   return teams.filter(
     (t) =>
-      (roots.has(t.id) || (t.parent_id && roots.has(t.parent_id))) &&
-      !excludedIds.has(t.id) &&
-      !excludedIds.has(t.parent_id)
+      (roots.has(t.id) ||
+        (t.league_id != null && roots.has(t.league_id)) ||
+        (t.conference_id != null && roots.has(t.conference_id))) &&
+      !isExcluded(t)
   ).length;
 }
 

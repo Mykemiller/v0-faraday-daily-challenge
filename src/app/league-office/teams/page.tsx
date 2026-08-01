@@ -1,4 +1,4 @@
-// League Office — Team directory. Live teams (group_type='team') as a card grid,
+// League Office — Team directory. Live teams as a card grid,
 // with their company/conference label, roster size, and captain.
 
 import Link from "next/link";

@@ -34,11 +34,19 @@ export function lastNDates(n: number, end = ctToday()): string[] {
 // ── Shared dimension loads ───────────────────────────────────────────────────
 export type Team = {
   id: string;
+  code: string;
   name: string;
-  season: string | null;
-  group_type: string | null;
-  parent_id: string | null;
   captain_id: string | null;
+  league_id: string | null;
+  conference_id: string | null;
+};
+export type ConferenceDim = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  league_id: string | null;
+  archived_at: string | null;
 };
 export type Season = {
   id: string;
@@ -65,13 +73,15 @@ export type Subscriber = {
   created_at: string | null;
 };
 
-const teamCols = "id,name,season,group_type,parent_id,captain_id";
+const teamCols = "id,code,name,captain_id,league_id,conference_id";
 const seasonCols =
   "id,slug,name,starts_on,ends_on,status,tz,locked_at,free_agency_start,free_agency_notice_start";
 const subCols =
   "id,email,handle,active,play_streak,full_set_streak,last_seen_at,created_at";
 
 export const loadTeams = (s: Svc) => q<Team>(s, `teams?select=${teamCols}&order=name.asc`);
+export const loadConferenceDims = (s: Svc) =>
+  q<ConferenceDim>(s, `conferences?select=id,code,name,type,league_id,archived_at&order=name.asc`);
 export const loadSeasons = (s: Svc) =>
   q<Season>(s, `seasons?select=${seasonCols}&order=starts_on.desc`);
 
@@ -153,7 +163,7 @@ export async function getDashboard(s: Svc, seasonId?: string): Promise<Dashboard
   return {
     activeSubscribers: subs.filter((x) => x.active !== false).length,
     playingToday: new Set(attemptsToday.map((a) => a.subscriber_id)).size,
-    teams: teams.filter((t) => t.group_type === "team" || t.group_type == null).length,
+    teams: teams.length,
     pendingRequests: pendingList.length,
     puzzleCached: pageContent.length,
     season,
@@ -189,14 +199,14 @@ export type SubscriberDetail = {
   sub: Subscriber | null;
   matrix: { game: string; neon: string; cells: { date: string; score: number | null; played: boolean }[] }[];
   dates: string[];
-  memberships: { team: string; group_type: string | null; role: string; pending: boolean }[];
+  memberships: { team: string; conference: string | null; role: string; pending: boolean }[];
   badges: { key: string; earnedAt: string }[];
   totals: { attempts: number; wins: number; badges: number; teams: number };
 };
 
 export async function getSubscriber(s: Svc, id: string): Promise<SubscriberDetail> {
   const dates = lastNDates(7);
-  const [subs, attempts, memberships, badges, teams] = await Promise.all([
+  const [subs, attempts, memberships, badges, teams, confs] = await Promise.all([
     q<Subscriber>(s, `dc_subscribers?id=eq.${id}&select=${subCols}`),
     q<{ game_type: string; play_date: string; score: number; result: string }>(
       s,
@@ -211,6 +221,7 @@ export async function getSubscriber(s: Svc, id: string): Promise<SubscriberDetai
       `dc_badges?subscriber_id=eq.${id}&select=badge_key,earned_at&order=earned_at.desc`
     ),
     loadTeams(s),
+    loadConferenceDims(s),
   ]);
 
   const byCell = new Map<string, { score: number; result: string }>();
@@ -226,12 +237,13 @@ export async function getSubscriber(s: Svc, id: string): Promise<SubscriberDetai
   }));
 
   const teamMap = new Map(teams.map((t) => [t.id, t]));
+  const confMap = new Map(confs.map((c) => [c.id, c]));
   const sub = subs[0] ?? null;
   const memRows = memberships.map((m) => {
     const t = teamMap.get(m.team_id);
     return {
       team: t?.name ?? "—",
-      group_type: t?.group_type ?? null,
+      conference: (t?.conference_id && confMap.get(t.conference_id)?.name) || null,
       role: t?.captain_id && sub && t.captain_id === sub.id ? "Captain" : "Member",
       pending: m.pending,
     };
@@ -261,25 +273,23 @@ export type TeamCard = Team & {
 };
 
 export async function listTeams(s: Svc): Promise<TeamCard[]> {
-  const [teams, memberships, subMap] = await Promise.all([
+  const [teams, memberships, subMap, confs] = await Promise.all([
     loadTeams(s),
     q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
     loadSubscriberMap(s),
+    loadConferenceDims(s),
   ]);
-  const byId = new Map(teams.map((t) => [t.id, t]));
-  return teams
-    .filter((t) => t.group_type !== "company")
-    .map((t) => {
-      const mem = memberships.filter((m) => m.team_id === t.id);
-      const parent = t.parent_id ? byId.get(t.parent_id) : undefined;
-      return {
-        ...t,
-        memberCount: mem.filter((m) => !m.pending).length,
-        pendingCount: mem.filter((m) => m.pending).length,
-        captainHandle: t.captain_id ? handleOf(subMap[t.captain_id]) : null,
-        conference: parent?.name ?? null,
-      };
-    });
+  const confMap = new Map(confs.map((c) => [c.id, c]));
+  return teams.map((t) => {
+    const mem = memberships.filter((m) => m.team_id === t.id);
+    return {
+      ...t,
+      memberCount: mem.filter((m) => !m.pending).length,
+      pendingCount: mem.filter((m) => m.pending).length,
+      captainHandle: t.captain_id ? handleOf(subMap[t.captain_id]) : null,
+      conference: (t.conference_id && confMap.get(t.conference_id)?.name) || null,
+    };
+  });
 }
 
 export type TeamDetail = {
@@ -290,16 +300,17 @@ export type TeamDetail = {
 };
 
 export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
-  const [teams, memberships, subMap] = await Promise.all([
+  const [teams, memberships, subMap, confs] = await Promise.all([
     loadTeams(s),
     q<{ id: string; subscriber_id: string; pending: boolean }>(
       s,
       `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending`
     ),
     loadSubscriberMap(s),
+    loadConferenceDims(s),
   ]);
   const team = teams.find((t) => t.id === id) ?? null;
-  const parent = team?.parent_id ? teams.find((t) => t.id === team.parent_id) : undefined;
+  const conf = team?.conference_id ? confs.find((c) => c.id === team.conference_id) : undefined;
   const roster = memberships
     .filter((m) => !m.pending)
     .map((m) => ({
@@ -311,7 +322,7 @@ export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
   const pending = memberships
     .filter((m) => m.pending)
     .map((m) => ({ membershipId: m.id, subscriberId: m.subscriber_id, handle: handleOf(subMap[m.subscriber_id]) }));
-  return { team, conference: parent?.name ?? null, roster, pending };
+  return { team, conference: conf?.name ?? null, roster, pending };
 }
 
 // ── Leagues & Conferences ────────────────────────────────────────────────────
@@ -324,35 +335,37 @@ export type Conference = {
 };
 
 export async function getLeagues(s: Svc): Promise<Conference[]> {
-  const [teams, memberships] = await Promise.all([
+  // Part B: conferences are REAL rows now (the org/private/public groupings in
+  // `conferences`), not teams.group_type='company' — that hierarchy is retired.
+  const [teams, memberships, confs] = await Promise.all([
     loadTeams(s),
     q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
+    loadConferenceDims(s),
   ]);
   const memByTeam = new Map<string, number>();
   for (const m of memberships) if (!m.pending) memByTeam.set(m.team_id, (memByTeam.get(m.team_id) ?? 0) + 1);
-  const companies = teams.filter((t) => t.group_type === "company");
-  const conferences = companies.map((c) => {
-    const children = teams.filter((t) => t.parent_id === c.id);
-    const teamRows = children.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 }));
-    return {
-      id: c.id,
-      name: c.name,
-      teamCount: children.length,
-      memberCount: teamRows.reduce((a, b) => a + b.members, 0),
-      teams: teamRows,
-    };
-  });
-  // Independent teams (no company parent) grouped under a synthetic conference.
-  const independents = teams.filter(
-    (t) => t.group_type !== "company" && (!t.parent_id || !companies.some((c) => c.id === t.parent_id))
-  );
-  if (independents.length) {
+  const conferences = confs
+    .filter((c) => !c.archived_at)
+    .map((c) => {
+      const members = teams.filter((t) => t.conference_id === c.id);
+      const teamRows = members.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 }));
+      return {
+        id: c.id,
+        name: c.name,
+        teamCount: members.length,
+        memberCount: teamRows.reduce((a, b) => a + b.members, 0),
+        teams: teamRows,
+      };
+    });
+  // Teams without a home conference grouped under a synthetic bucket.
+  const homeless = teams.filter((t) => !t.conference_id);
+  if (homeless.length) {
     conferences.push({
-      id: "independent",
-      name: "Independent (no conference)",
-      teamCount: independents.length,
-      memberCount: independents.reduce((a, t) => a + (memByTeam.get(t.id) ?? 0), 0),
-      teams: independents.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 })),
+      id: "no-conference",
+      name: "No conference",
+      teamCount: homeless.length,
+      memberCount: homeless.reduce((a, t) => a + (memByTeam.get(t.id) ?? 0), 0),
+      teams: homeless.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 })),
     });
   }
   return conferences;

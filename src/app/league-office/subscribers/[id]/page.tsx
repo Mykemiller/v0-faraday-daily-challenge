@@ -143,7 +143,7 @@ export default async function SubscriberDetailPage({
               {d.memberships.map((m, i) => (
                 <li key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: i ? "1px solid var(--color-cream-line)" : "none" }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{m.team}</span>
-                  {m.group_type === "company" ? <StatusChip label="Company" tone="amber" /> : null}
+                  {m.conference ? <StatusChip label={m.conference} tone="amber" /> : null}
                   <span style={{ flex: 1 }} />
                   <StatusChip label={m.pending ? "Pending" : m.role} tone={m.pending ? "amber" : "green"} />
                 </li>
