@@ -21,6 +21,12 @@ import {
   type LogFn as GameLogFn,
 } from "./game-library-write";
 import { htmlToText, safeHref, sanitizeBroadcastBody, sanitizeHtml } from "./sanitize-html";
+import {
+  startGenerationRun,
+  approvePilot,
+  approveSeasonPuzzles,
+  type GenLogFn,
+} from "./generation-write";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -274,6 +280,28 @@ export async function executeAction(
             reason,
             assign: input.action === "game.season_assign",
           });
+      }
+    }
+
+    // ── Season generation (CC-FARADAY-LEAGUE-1.0 Part D) ─────────────────────
+    // Each case re-derives the server-side GENERATABLE status before writing;
+    // the audit row stays here via the same `log` closure (domain 'seasons').
+    case "season.generate_pilot":
+    case "season.generate_full":
+    case "season.approve_pilot":
+    case "season.approve_puzzles": {
+      const genLog: GenLogFn = (action, targetType, targetId, before, after, reversible) =>
+        log("seasons", action, targetType, targetId, before, after, reversible);
+
+      switch (input.action) {
+        case "season.generate_pilot":
+          return startGenerationRun(s, genLog, { seasonId: input.seasonId, kind: "pilot" });
+        case "season.generate_full":
+          return startGenerationRun(s, genLog, { seasonId: input.seasonId, kind: "full" });
+        case "season.approve_pilot":
+          return approvePilot(s, genLog, { seasonId: input.seasonId });
+        default:
+          return approveSeasonPuzzles(s, genLog, staffEmail, { seasonId: input.seasonId });
       }
     }
 

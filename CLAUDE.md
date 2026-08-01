@@ -185,6 +185,57 @@ Vercel + redeploy** (rollback = unset + redeploy). Evidence:
   by `npm run test:puzzle-bank`; AC7 re-verified: zero anon/authed policies
   on any `dc_*` table.
 
+## League model Part D — season builder + generation worker (CC-FARADAY-LEAGUE-1.0, claude/faraday-league-model-91w9rf, 2026-08-01)
+
+Part D: calendar-wide pre-generation is retired; a commissioner configures a
+season and generates its puzzles from `/league-office/seasons/[id]` ("Puzzle
+generation" card). Migration `20260801140000_league_model_part_d_season_generation.sql`
+(**APPLIED to prod 2026-08-01**, Myke-approved); full evidence + Hot Summer
+runbook: `docs/league-model/PART-D-REPORT.md`.
+
+- **Themes are season-scoped**: `dc_daily_theme.season_id` (the 500 NULL-season
+  rows are the reusable CORPUS — never served, never deleted). ⚠️ The old
+  `UNIQUE(theme_date)` + simple staging FK are GONE — replaced by unique
+  `(season_id, theme_date)` + partial unique on corpus dates + the composite
+  MATCH SIMPLE FK `dc_staging_theme_fk` (the 98 season-less C½ import rows skip
+  it, documented). Run `34dd26f6` is superseded (DEC-3) — never resume it.
+- **Worker = Vercel Node routes** (Myke's "vercel edge function" call, 2026-08-01
+  — literal Edge can't run 60s batches): one engine
+  (`src/lib/generation/worker.ts`), two triggers — staff `POST
+  /api/lo/generation/worker` and cron `/api/cron/generation-worker` (*/10,
+  `maxDuration=300`). Bounded slices; heartbeat + `phase_cursor` + honest
+  counters checkpointed per batch; pilot = 1 puzzle/game (DEC-5) on the first
+  globally-free date; zero-progress sweep → `failed_short` (stops + reports);
+  full completion stamps `seasons.generated_at`. Generated rows are ALWAYS
+  Draft/Unpublished with `public_id` NULL (trigger mints on publish, DEC-6).
+- **Validation is server-side once** (`generation-logic.ts` pure +
+  `generation-status.ts` loader): conditions 1–10 mapped onto the live model —
+  slate = `season_games`→`game_catalog` live/runtime_key (Logo Match =
+  `dead_game`, Myke re-confirmed it never existed); NEW `season_games.
+  puzzle_count` (NULL = day count; `<` errors, `>` only WARNS — the global
+  `UNIQUE(puzzle_type, go_live_date)` makes DEC-2 surplus unrepresentable in
+  the v1 single-league bank); **theme-mix `sector_code`s ARE the D1–D23 codes**
+  and are checked live against the Domain Registry (fail-soft to corpus).
+- **Locked seasons reject config mutation AT THE DB** (`55P03` triggers on
+  season_config + all three child tables) with ONE exemption: state-machine
+  bookkeeping UPDATEs (`state/effective_from/effective_to/applied_at`) still
+  pass so promote/apply_due survive a lock. Do not "tighten" that exemption —
+  it keeps the hourly cron from aborting on locked seasons.
+- **Tier 2 cases** `season.generate_pilot|generate_full|approve_pilot|
+  approve_puzzles` → `generation-write.ts` (each re-derives the status before
+  writing; one audit row, `domain='seasons'`). Approve calls
+  `fn_dc_approve_puzzles(dates, actor)` with the SEASON's draft dates.
+- **Alarms**: stall banner (heartbeat >30 min) + the bank-minimum alert (any
+  configured game <14 days Published/Live ahead — AUTO-031's role, now real).
+- **DEC-7 guard is a test**: `npm run test:generation-readonly` — Airtable
+  access exists ONLY in `src/lib/generation/corpus.ts` and is GET-only; also
+  asserts the worker never writes `public_id`/Published. Logic tests:
+  `npm run test:generation` (17). Ports `src/lib/generation/{puzzle-schema,
+  prompts}.js` are verbatim copies of the far287 lib (script stays for local use).
+- **Critical path**: Hot Summer needs config → pilot (lands 2026-08-15; Aug
+  3–14 are covered by the import) → approve → full (~147 puzzles) → approve →
+  lock, before 2026-08-15. Needs Anthropic credit on the Vercel key.
+
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
 In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with
