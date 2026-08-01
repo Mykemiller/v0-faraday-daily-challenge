@@ -205,16 +205,25 @@ export async function POST(request: Request) {
       return suffix ? `${base}-${suffix}` : base;
     };
 
+    // Part B: the season label + group hierarchy columns are retired. New teams
+    // land in the INDEPENDENT league's GENERAL conference (resolved by code —
+    // never a hardcoded uuid); the team_memberships insert below then auto-fills
+    // team_conference_memberships via the DB trigger.
+    const confR = await fetch(
+      `${SUPABASE_URL}/rest/v1/conferences?code=eq.GENERAL&select=id,league_id,leagues!inner(code)&leagues.code=eq.INDEPENDENT&limit=1`,
+      { headers: h, cache: 'no-store' }
+    );
+    const confRows = confR.ok ? await confR.json().catch(() => []) : [];
+    const homeConf = Array.isArray(confRows) ? confRows[0] : null;
+
     const teamPayload = (code: string) => ({
       name: teamName,
       code,
-      // teams.season is DEPRECATED (founding-era label only) — still stamped for
-      // continuity; season scoping lives on team_memberships.season_id.
-      season: (season as Record<string, unknown>).name ?? '',
       created_by_email: createdByEmail,
-      group_type: 'team',
       // Team Captain MVP: the creating subscriber is automatically captain.
       captain_id: subscriberId,
+      league_id: homeConf?.league_id ?? null,
+      conference_id: homeConf?.id ?? null,
     });
 
     // Try insert; retry once with a suffix if the code slug collides

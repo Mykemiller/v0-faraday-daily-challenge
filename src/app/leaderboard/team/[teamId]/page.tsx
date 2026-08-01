@@ -33,7 +33,7 @@ interface RosterMember {
 
 interface TeamData {
   season: { id: string; name: string };
-  team: { id: string; name: string; code: string; group_type: string; captain_id: string | null };
+  team: { id: string; name: string; code: string; captain_id: string | null };
   member_count: number;
   team_total: number;
   team_today_total: number;

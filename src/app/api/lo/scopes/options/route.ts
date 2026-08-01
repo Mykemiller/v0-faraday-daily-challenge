@@ -1,6 +1,6 @@
 // GET /api/lo/scopes/options — pickers for the wizard's Scope step and the
-// editor's Section B. Leagues are the top-level `teams` rows (parent_id is
-// null); conferences are the optional layer between a league and its teams.
+// editor's Section B. Part B: leagues come from the real `leagues` table and
+// conferences from `conferences` (the teams-as-leagues reading is retired).
 
 import { guard } from "@/lib/league-office/api-guard";
 import { getScopeOptions } from "@/lib/league-office/seasons";

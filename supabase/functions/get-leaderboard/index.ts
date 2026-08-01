@@ -264,8 +264,8 @@ Deno.serve(async (req: Request) => {
     if (myEmail) {
       const { data: groups } = await sb.rpc("team_get_my_teams", { p_email: myEmail });
       myGroups = (groups ?? []).map((g: Record<string, unknown>) => ({
-        code: g.code, name: g.name, groupType: g.group_type,
-        parentCode: g.parent_code, memberCount: g.members,
+        code: g.code, name: g.name, groupType: "team",
+        parentCode: g.conference_code ?? null, memberCount: g.members,
       }));
     }
 

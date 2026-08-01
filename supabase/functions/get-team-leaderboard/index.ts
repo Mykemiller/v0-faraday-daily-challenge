@@ -94,7 +94,7 @@ Deno.serve(async (req: Request) => {
     const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10) || 50, 100);
 
     const { data: group } = await sb
-      .from("teams").select("id, code, name, group_type, parent_id")
+      .from("teams").select("id, code, name, conference_id")
       .eq("code", teamCode).maybeSingle();
     if (!group) return json({ error: "Group not found" }, 404);
 
@@ -137,33 +137,35 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Parent company (for a team) + standings.
+    // Org-conference context replaces the retired company/parent hierarchy
+    // (Part B): a team's "company" is its org-type conference, and both
+    // fn_company_* RPCs now take conference ids.
     let parentCode: string | null = null;
     let parentName: string | null = null;
     let teamVsTeam: { rank: number; of: number } | null = null;
-    const companyId: string | null =
-      group.group_type === "company" ? group.id : (group.parent_id as string | null);
-    if (group.group_type === "team" && group.parent_id) {
-      const { data: parent } = await sb.from("teams").select("code, name").eq("id", group.parent_id).maybeSingle();
-      parentCode = (parent?.code as string) ?? null;
-      parentName = (parent?.name as string) ?? null;
-      const { data: sib } = await sb.rpc("fn_company_team_standings", {
-        p_company: group.parent_id, p_period: period, p_day: today, p_season: seasonId,
-      });
-      const mine = (sib ?? []).find((r: { code: string }) => r.code === group.code);
-      if (mine) teamVsTeam = { rank: Number((mine as { rank: number }).rank), of: (sib ?? []).length };
-    }
-
     let companyVsCompany: { rank: number; of: number; beatsPct: number } | null = null;
-    if (companyId) {
-      const { data: co } = await sb.rpc("fn_company_standings", {
-        p_period: period, p_day: today, p_season: seasonId,
-      });
-      const mine = (co ?? []).find((r: { company_id: string }) => r.company_id === companyId);
-      if (mine) {
-        const of = (co ?? []).length;
-        const rank = Number((mine as { rank: number }).rank);
-        companyVsCompany = { rank, of, beatsPct: of > 0 ? Math.round(((of - rank) / of) * 100) : 0 };
+    if (group.conference_id) {
+      const { data: conf } = await sb
+        .from("conferences").select("id, code, name, type")
+        .eq("id", group.conference_id).maybeSingle();
+      if (conf && conf.type === "org") {
+        parentCode = (conf.code as string) ?? null;
+        parentName = (conf.name as string) ?? null;
+        const { data: sib } = await sb.rpc("fn_company_team_standings", {
+          p_company: conf.id, p_period: period, p_day: today, p_season: seasonId,
+        });
+        const mine = (sib ?? []).find((r: { code: string }) => r.code === group.code);
+        if (mine) teamVsTeam = { rank: Number((mine as { rank: number }).rank), of: (sib ?? []).length };
+
+        const { data: co } = await sb.rpc("fn_company_standings", {
+          p_period: period, p_day: today, p_season: seasonId,
+        });
+        const mineCo = (co ?? []).find((r: { company_id: string }) => r.company_id === conf.id);
+        if (mineCo) {
+          const of = (co ?? []).length;
+          const rank = Number((mineCo as { rank: number }).rank);
+          companyVsCompany = { rank, of, beatsPct: of > 0 ? Math.round(((of - rank) / of) * 100) : 0 };
+        }
       }
     }
 
@@ -202,7 +204,7 @@ Deno.serve(async (req: Request) => {
       group: {
         code: group.code,
         name: group.name,
-        groupType: group.group_type,
+        groupType: "team",
         parentCode,
         parentName,
         memberCount,

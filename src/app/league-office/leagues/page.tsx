@@ -1,5 +1,6 @@
-// League Office — Leagues & Conferences. Conferences ARE the existing
-// teams.group_type='company' rows + parent_id hierarchy (no new tables).
+// League Office — Leagues & Conferences. Part B: conferences are the real
+// `conferences` table rows (org/private/public); the old teams-as-companies
+// hierarchy (group_type + parent_id) is retired.
 
 import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
@@ -13,7 +14,7 @@ export default async function LeaguesPage() {
 
   return (
     <>
-      <PageHeading title="Leagues & Conferences" sub={`${conferences.length} conference${conferences.length === 1 ? "" : "s"} · conferences are company groups in the team hierarchy`} />
+      <PageHeading title="Leagues & Conferences" sub={`${conferences.length} conference${conferences.length === 1 ? "" : "s"} · teams join conferences per season`} />
       {conferences.length === 0 ? (
         <EmptyState>No conferences defined yet.</EmptyState>
       ) : (

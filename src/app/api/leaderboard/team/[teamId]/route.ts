@@ -76,7 +76,7 @@ async function activeSeason(h: Svc) {
 
 async function fetchTeam(h: Svc, teamId: string) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/teams?id=eq.${encodeURIComponent(teamId)}&select=id,name,code,captain_id,group_type,parent_id,join_token&limit=1`,
+    `${SUPABASE_URL}/rest/v1/teams?id=eq.${encodeURIComponent(teamId)}&select=id,name,code,captain_id,join_token&limit=1`,
     { headers: h, cache: 'no-store' }
   );
   if (!r.ok) return null;
@@ -250,7 +250,6 @@ export async function GET(
       id: team.id,
       name: team.name,
       code: team.code,
-      group_type: team.group_type,
       captain_id: team.captain_id,
     },
     member_count: members.length,
