@@ -40,7 +40,15 @@ async function sb(s: Svc, path: string, init: RequestInit = {}): Promise<unknown
     cache: "no-store",
   });
   if (!r.ok) throw new Error(`Supabase ${init.method || "GET"} ${path.split("?")[0]} ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  return r.status === 204 ? null : r.json();
+  // `Prefer: return=minimal` answers a POST with 201 + an EMPTY body (and a
+  // PATCH/DELETE with 204). Calling r.json() on that empty body throws
+  // "Unexpected end of JSON input" — which made every SUCCESSFUL staging insert
+  // get counted as a `db:` failure, so a run that actually wrote its puzzles
+  // still reported failed_short / 0 written. Read the body as text first and
+  // only parse when there is one.
+  if (r.status === 204) return null;
+  const text = await r.text();
+  return text ? JSON.parse(text) : null;
 }
 const sbGet = <T>(s: Svc, path: string) => sb(s, path) as Promise<T[]>;
 const sbPatch = (s: Svc, path: string, body: unknown) =>
