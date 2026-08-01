@@ -1,5 +1,42 @@
 @AGENTS.md
 
+## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
+
+Recovers title/publisher metadata already stored in `public.artifacts` so the
+`match_artifacts` v1.2 citability predicate can see it. **⚠️ STAGED, NOT
+APPLIED — both migrations await Myke's sign-off** (they mutate up to 275k prod
+rows). Full evidence: `docs/ingest-metadata-extraction/REPORT.md`; rollback:
+`docs/ingest-metadata-extraction/down.sql`.
+
+- **Canonical envelope keys = `title`/`summary`/`source`** (what v1.2 already
+  reads; the 13k legacy faraday-crawl rows already conform). Poller keys
+  `source_name`/`source_key`/`license`/`license_status`/`idf_domains`/
+  `confidence_cap` are preserved verbatim — additive normalisation, fill-gaps
+  only, nothing overwritten. **`match_artifacts` itself is unchanged.**
+- **Migration `20260801130000…` (Part 1, direct publishers):** 15,336 rows
+  where `source_name` is a real publisher — title = first line of
+  `raw_content` (the publisher's own headline; 173 unbroken-body rows
+  correctly get none), summary = post-`\n\n` text, source = `source_name`.
+  Citable pool 13,117 → **~28,280** (gap to the ticket's 28,453 = the 173
+  headline-less rows). Proven in BEGIN..ROLLBACK against prod.
+- **Migration `20260801130001…` (Part 2, stub titles — Myke-optional):** the
+  245k Google News stubs gain their real headline as `title` (Google's
+  `" - Publisher"` suffix kept, never parsed). **They NEVER gain a `source`**
+  — their `source_name` is the crawler's search query, and the DB gate raises
+  if any stub ends up with one. Citability unchanged by construction (stub
+  URL fails the predicate). Multi-minute runtime — apply via
+  `apply_migration`/psql, not a 60s interactive window.
+- **The ~1.6k "bare" rows (LinkedIn posts, ISO filings) are deliberately
+  untouched**: measured first-line-as-title precision ~55% vs the 98% bar.
+  Write-set sample precision (200 rows hand-checked, stratified): **156/156**.
+- **Both migrations are idempotent** — after the source-poller write-path fix
+  deploys (follow-up CC-INGEST-CANONICAL-WRITE; the poller is a deployed-only
+  edge fn, AUTO-199, not in this repo), re-run the same UPDATEs as a sweep to
+  close the gap window (~10k stub rows/day accrue meanwhile).
+- Scratch evidence tables `cc_ingest_metadata_staging` /
+  `cc_ingest_metadata_sample` (RLS deny-all) hold the extraction + the checked
+  sample — drop after sign-off.
+
 ## League model Part A — seasons join leagues (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
 
 Part A of the league → conference → durable-team restructure. Migration
