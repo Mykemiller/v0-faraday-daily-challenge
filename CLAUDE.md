@@ -1,5 +1,43 @@
 @AGENTS.md
 
+## League model Part A — seasons join leagues (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
+
+Part A of the league → conference → durable-team restructure. Migration
+`20260801000001_league_model_part_a_seasons_join_leagues.sql` (**APPLIED to
+prod 2026-08-01**, Myke-approved); full findings + acceptance evidence:
+`docs/league-model/PART-A-REPORT.md`; down-migration (proven in
+BEGIN..ROLLBACK): `docs/league-model/part-a-down.sql`.
+
+- **⚠️ `leagues` / `conferences` pre-existed prod, created OUTSIDE VCS** — 3
+  leagues (`DELOITTE`, `DELOITTE-2026`, `INDEPENDENT`) + one `GENERAL`
+  conference each, already live-bound by the LO season-scope feature
+  (`season_scopes.scope_ref_id`, `loadScopeOptions`). Decision (Option 1,
+  Myke 2026-08-01): **adopt & extend, never recreate** — `code` plays the
+  spec's `slug` role. The earlier "conferences is empty" note below is stale.
+- **`seasons.league_id` is NOT NULL → INDEPENDENT** (D1) and that NOT NULL is
+  **load-bearing**: the overlap guard is now the exclusion constraint
+  `seasons_no_overlap_per_league` (`league_id with =` + daterange `&&`) — a
+  nullable league_id would silently permit overlapping seasons (NULL never
+  conflicts with NULL). Same date range in TWO leagues is legal (verified).
+  Also new: `playoff_starts_on`, `roster_freeze_on` + 3 CHECKs (playoff inside
+  season; freeze ≤ playoff; freeze ≥ starts_on + quarter-length).
+- **`createSeason` now writes `league_id`** (resolved by `code='INDEPENDENT'`
+  per request, never a hardcoded uuid) — without it every LO season creation
+  500s on the NOT NULL. The wizard's overlap pre-check stays GLOBAL until a
+  league picker exists (commented in season-write.ts).
+- **`team_conference_memberships` (team, conference, season)** created — RLS
+  on, zero policies (deny-all, service-role only). Empty until Part B.
+- **The spec's `season_games` was deliberately NOT created** — that name is
+  the live Game Library table; per-season slates are `season_config` +
+  `season_games` + `season_difficulty_mix`.
+- **Known singleton assumption, deferred:** ~18 call sites resolve "THE
+  active season" (`status='active' LIMIT 1`, or date-containment in
+  `fn_leaderboard_rollover`). Safe while only INDEPENDENT runs seasons;
+  becomes "active season FOR a league" in later parts. Enumerated in the
+  Part A report/PR.
+- Advisor delta: exactly +1 intended `rls_enabled_no_policy` INFO. Pre-existing
+  `rls_disabled_in_public` ERRORs on leagues/conferences left as found.
+
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
 In-app messaging v1: captain → team broadcasts + open 1:1 DMs, with
