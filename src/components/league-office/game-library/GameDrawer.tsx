@@ -159,9 +159,9 @@ export function GameDrawer({
             </div>
           )}
           <Note>
-            Assignment is a relationship, not a lifecycle state — and it is{" "}
-            <strong>advisory only</strong>. Toggling a game here does not change what subscribers
-            are served today.
+            Assignment is a relationship, not a lifecycle state. It is also{" "}
+            <strong>live</strong>: enabling a game here serves it to that season&rsquo;s
+            subscribers, and disabling it removes the game from their lobby.
           </Note>
         </Section>
 

@@ -2247,6 +2247,21 @@ const GAME_CONFIGS = [
   { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", format:"Read" },
 ];
 
+// Which of the 7 games the active season actually serves. A null/empty slate
+// means no season config gates serving, so every game shows — that is the
+// pre-D4-retirement behaviour and the fail-safe the whole feature rests on.
+// Membership is by `type`, which IS game_catalog.runtime_key (D3).
+function seasonGames(slate) {
+  if (!Array.isArray(slate) || slate.length === 0) {
+    return new Set(GAME_CONFIGS.map(c => c.type));
+  }
+  const allow = new Set(slate);
+  const known = GAME_CONFIGS.filter(c => allow.has(c.type)).map(c => c.type);
+  // A slate matching none of the known games is a misconfiguration, not an
+  // instruction to show an empty lobby.
+  return known.length > 0 ? new Set(known) : new Set(GAME_CONFIGS.map(c => c.type));
+}
+
 // White card on cream, forest icon tile with the game's neon pictogram, hover
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
 // the tile turns forest green with a gold border and a "✓ Played" badge.
@@ -2293,8 +2308,10 @@ function GameTile({ config, onPlay, played, priorScore }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Renders the other six games as their homepage neon icons (GameIcon).
 // Tapping requests a switch; the parent confirms before discarding in-progress play.
-function GameSwitcher({ current, onSwitch }) {
-  const others = GAME_CONFIGS.filter(c => c.type !== current);
+function GameSwitcher({ current, onSwitch, slate }) {
+  // Only the games this season serves (D4 retired). null slate → all of them.
+  const inSeason = seasonGames(slate);
+  const others = GAME_CONFIGS.filter(c => c.type !== current && inSeason.has(c.type));
   return (
     <div role="group" aria-label="Switch to another game"
       style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap",
@@ -2542,11 +2559,13 @@ function NavGlyph({ name }) {
 //   { heading:"…" }      → a small uppercase group label (like the menu title)
 // The Account menu is auth-conditional (see the `email` branch).
 // Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
-function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut }) {
+function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, slate }) {
+  const inSeason = seasonGames(slate);
   return [
-    // All 7 games, in lobby-grid order (GAME_CONFIGS is the source of truth).
+    // The season's games, in lobby-grid order (GAME_CONFIGS orders them; the
+    // slate decides membership — D4 retired, the slate now gates serving).
     { id: "games", icon: "grid", label: "All Games", items:
-      GAME_CONFIGS.map(c => ({ label: c.type, onClick: () => onGame(c.type), current: c.type === activeGame })),
+      GAME_CONFIGS.filter(c => inSeason.has(c.type)).map(c => ({ label: c.type, onClick: () => onGame(c.type), current: c.type === activeGame })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
@@ -2759,6 +2778,9 @@ export default function DailyChallenge() {
   // FAR-388: per-game-type solve-time percentile bands, served alongside today's
   // puzzles. null until resolved → Market Reaction band uses seed par times.
   const [solveBands,   setSolveBands]   = useState(null);
+  // The season's enabled games (game_catalog.runtime_key list), from
+  // /api/challenge/today. null = no slate configured → show them all.
+  const [slate,        setSlate]        = useState(null);
 
   // Show the welcome splash once per browser. Runs on mount only, so it is
   // SSR-safe (localStorage is never touched during render).
@@ -2782,6 +2804,10 @@ export default function DailyChallenge() {
         if (data.puzzles && typeof data.puzzles === "object") setLivePuzzles(data.puzzles);
         if (data.tip) setTipOfTheDay(data.tip);
         if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
+        // Season slate (D4 retired): the list of games THIS season serves.
+        // null/absent → show every game, which is the pre-enforcement behaviour
+        // and what an older payload produces.
+        if (Array.isArray(data.slate)) setSlate(data.slate);
       })
       .catch(() => { /* keep mock fallback */ });
     return () => { cancelled = true; };
@@ -3142,6 +3168,7 @@ export default function DailyChallenge() {
   // switcher: picking another game mid-puzzle asks first instead of losing progress.
   const headerMenus = buildHeaderMenus({
     email,
+    slate,
     activeGame: screen === "game" ? activeGame : null,
     onGame: (type) => {
       const inLiveGame = screen === "game" && activeGame && !dailyResults[activeGame] && !todayCompletions[activeGame];
@@ -3286,7 +3313,7 @@ export default function DailyChallenge() {
             {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
               gap:"14px", padding:"28px 0 8px" }}>
-              {GAME_CONFIGS.map(config => {
+              {GAME_CONFIGS.filter(c => seasonGames(slate).has(c.type)).map(config => {
                 const attempt = todayCompletions[config.type] || dailyResults[config.type];
                 return (
                   <GameTile key={config.type} config={config}
@@ -3393,7 +3420,7 @@ export default function DailyChallenge() {
                 </div>
 
                 {/* Game switcher — only show in live game, not replay */}
-                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} />}
+                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} slate={slate} />}
               </div>
 
               {/* In-progress switch confirm */}

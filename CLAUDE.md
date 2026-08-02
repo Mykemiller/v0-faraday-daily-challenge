@@ -524,16 +524,35 @@ control, and which games are configured for which season. Ops note:
   cannot represent that. Allowed transitions (server-enforced in `checkTransition`):
   `new_idea→in_test`, `in_test→live|new_idea`, `live→retired`, `retired→live`. There is
   deliberately **no `new_idea→live`**. Every transition requires a reason.
-- **⚠️ THE SEASON SLATE IS ADVISORY (D4) — it does NOT gate serving.**
-  `/api/challenge/today` selects on publish state alone (`published='Live'`) and keys
-  games by the free-text name; it never reads `season_config`/`season_games`. Toggling a
-  game here changes what the console *says*, not what subscribers get. Enforcement is a
-  later phase behind the `DC_PUZZLE_SOURCE` cutover (CC-DC-SUPABASE-SERVING-1.0, PR #115
-  — merged, flag unset in prod). **`npm run test:advisory-only` (6) is the guard**: it
-  asserts the served set is identical before/after a slate toggle AND that no serving
-  module mentions `season_games`/`season_config`/`game_catalog`. If you deliberately wire
-  enforcement, update D4, the page copy and these docs in the same change — do not just
-  delete the test.
+- **⚠️ D4 IS RETIRED (Myke, 2026-08-02) — THE SLATE NOW GATES SERVING.** It used to be
+  advisory: `/api/challenge/today` selected on publish state alone and never read
+  `season_config`/`season_games`. It now narrows the day's Live puzzles to the ACTIVE
+  season's enabled games. `npm run test:advisory-only` is **replaced by
+  `npm run test:slate-enforced` (13)** — replaced, not deleted, because the old guard
+  asserted the served set could not change, which is now false. The new one keeps the
+  structural half INVERTED (the serve route MUST reference the slate), so silently
+  removing enforcement fails a test with the reason beside it.
+  - **Two fail-safes, both load-bearing — do not "simplify" them away.** Enforcement only
+    ever NARROWS a slate that resolved successfully; a null / empty / entirely-unmatched
+    slate serves EVERYTHING. This is not defensive padding: **3 of 6 prod seasons have no
+    active `season_config`**, so a naive implementation blacks out their lobby. The
+    resolver (`season-slate-server.ts`) never throws, and `DC_SLATE_ENFORCEMENT=off` is
+    the kill switch.
+  - **Filtering is applied to the RESULT of `getLivePuzzles()`**, which makes it
+    backend-agnostic — identical on the Airtable and Supabase paths, and independent of
+    the `DC_PUZZLE_SOURCE` cutover.
+  - **Resolution joins `game_catalog.runtime_key`, never `game_key`** (D3). `game_key` is
+    a slug nothing joins on; using it would match nothing and look like "no slate
+    configured" forever. Only a config in state `active` gates serving — never a draft or
+    scheduled version.
+  - **The client had to change too.** The lobby renders from the hardcoded `GAME_CONFIGS`
+    array and the bank fills missing types from MOCK data, so filtering the API alone left
+    all 7 tiles up serving mocks. `/api/challenge/today` now returns `slate`, and the
+    lobby grid, `GameSwitcher` and the All Games menu all render through `seasonGames()`.
+  - ⚠️ **Serving <7 games takes TWO edits.** Every config ships `games_per_day = 7`
+    against 7 enabled games, so disabling one trips `games_per_day_exceeds_slate` and
+    blocks promotion — `games_per_day` must be lowered in the season config editor too.
+    That validator is deliberately unchanged.
 - **⚠️ `short_code` and the Public ID prefix are TWO LIVE SYSTEMS (D8) — never derive one
   from the other.** `game_catalog.short_code` = RKL/SGD/STK/CIR/DKF/FRQ/BRF;
   `game_catalog.public_id_prefix` = RACK/SGNL/STAK/CIRC/FIBR/FREQ/BRIF, matching the
@@ -581,7 +600,7 @@ control, and which games are configured for which season. Ops note:
   `season_difficulty_mix` all have **RLS disabled**; every read is server-side service-role
   (5 call sites, no anon/authenticated path). Logged as a separate security item — do not
   enable RLS as a side effect of this surface.
-- Tests: `npm run test:game-library` (26) · `npm run test:advisory-only` (6).
+- Tests: `npm run test:game-library` (26) · `npm run test:slate-enforced` (13).
   `npm run build` green.
 
 ## League Office season configuration (CC-LO-SEASON-CONFIG-1.0, PR #120, 2026-07-30)
