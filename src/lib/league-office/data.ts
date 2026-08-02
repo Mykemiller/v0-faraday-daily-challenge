@@ -39,6 +39,8 @@ export type Team = {
   captain_id: string | null;
   league_id: string | null;
   conference_id: string | null;
+  is_active: boolean;
+  archived_at: string | null;
 };
 export type ConferenceDim = {
   id: string;
@@ -75,7 +77,7 @@ export type Subscriber = {
   created_at: string | null;
 };
 
-const teamCols = "id,code,name,captain_id,league_id,conference_id";
+const teamCols = "id,code,name,captain_id,league_id,conference_id,is_active,archived_at";
 const seasonCols =
   "id,slug,name,starts_on,ends_on,status,tz,locked_at,free_agency_start,free_agency_notice_start,playoff_starts_on,roster_freeze_on";
 const subCols =
@@ -272,7 +274,12 @@ export type TeamCard = Team & {
   pendingCount: number;
   captainHandle: string | null;
   conference: string | null;
+  archived: boolean;
 };
+
+function isArchived(t: Team): boolean {
+  return t.is_active === false || t.archived_at != null;
+}
 
 export async function listTeams(s: Svc): Promise<TeamCard[]> {
   const [teams, memberships, subMap, confs] = await Promise.all([
@@ -290,6 +297,7 @@ export async function listTeams(s: Svc): Promise<TeamCard[]> {
       pendingCount: mem.filter((m) => m.pending).length,
       captainHandle: t.captain_id ? handleOf(subMap[t.captain_id]) : null,
       conference: (t.conference_id && confMap.get(t.conference_id)?.name) || null,
+      archived: isArchived(t),
     };
   });
 }
@@ -297,18 +305,27 @@ export async function listTeams(s: Svc): Promise<TeamCard[]> {
 export type TeamDetail = {
   team: Team | null;
   conference: string | null;
+  archived: boolean;
   roster: { membershipId: string; subscriberId: string; handle: string; role: string }[];
   pending: { membershipId: string; subscriberId: string; handle: string }[];
+  /** Active subscribers not already on this team — options for "Add member". */
+  addable: { subscriberId: string; handle: string }[];
+  /** Other live (non-archived) teams — destinations for "Move member". */
+  otherTeams: { id: string; name: string }[];
 };
 
 export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
-  const [teams, memberships, subMap, confs] = await Promise.all([
+  const [teams, memberships, subMap, subs, confs] = await Promise.all([
     loadTeams(s),
     q<{ id: string; subscriber_id: string; pending: boolean }>(
       s,
       `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending`
     ),
     loadSubscriberMap(s),
+    q<{ id: string; handle: string | null; email: string; active: boolean | null }>(
+      s,
+      `dc_subscribers?select=id,handle,email,active&order=handle.asc`
+    ),
     loadConferenceDims(s),
   ]);
   const team = teams.find((t) => t.id === id) ?? null;
@@ -324,7 +341,26 @@ export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
   const pending = memberships
     .filter((m) => m.pending)
     .map((m) => ({ membershipId: m.id, subscriberId: m.subscriber_id, handle: handleOf(subMap[m.subscriber_id]) }));
-  return { team, conference: conf?.name ?? null, roster, pending };
+
+  // Everyone already attached to this team (confirmed OR pending) is off the add list.
+  const onTeam = new Set(memberships.map((m) => m.subscriber_id));
+  const addable = subs
+    .filter((sub) => sub.active !== false && !onTeam.has(sub.id))
+    .map((sub) => ({ subscriberId: sub.id, handle: handleOf(sub) }));
+
+  const otherTeams = teams
+    .filter((t) => t.id !== id && !isArchived(t))
+    .map((t) => ({ id: t.id, name: t.name }));
+
+  return {
+    team,
+    conference: conf?.name ?? null,
+    archived: team ? isArchived(team) : false,
+    roster,
+    pending,
+    addable,
+    otherTeams,
+  };
 }
 
 // ── Leagues & Conferences ────────────────────────────────────────────────────

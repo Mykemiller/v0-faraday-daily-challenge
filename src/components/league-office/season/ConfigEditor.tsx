@@ -501,7 +501,7 @@ export default function ConfigEditor({
               </Grid>
 
               <div style={{ marginTop: 16, overflowX: "auto" }}>
-                <div style={{ minWidth: 900 }}>
+                <div style={{ minWidth: 1140 }}>
                   <SlateHeader />
                   {games.map((g, i) => (
                     <SlateRow
@@ -1117,7 +1117,10 @@ export default function ConfigEditor({
 
 // ── slate table ──────────────────────────────────────────────────────────────
 
-const SLATE_COLS = "34px 30px 1.4fr 90px 78px 84px 108px 108px 150px 118px";
+// The game column gets a real minimum so the name never collapses to an ellipsis
+// (it used to share a 1.4fr slot that the fixed columns squeezed to ~28px inside
+// the 900px min-width — that is why names rendered as "T..").
+const SLATE_COLS = "34px 30px minmax(230px, 1.8fr) 90px 78px 84px 108px 108px 150px 118px";
 
 function SlateHeader() {
   return (
@@ -1217,10 +1220,27 @@ function SlateRow({
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: INK, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: 13, color: INK, fontWeight: 600, lineHeight: 1.25 }}>
           {game?.display_name ?? "Unknown game"}
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+        {game?.description ? (
+          <div
+            style={{
+              fontSize: 11,
+              color: MUTED,
+              marginTop: 2,
+              lineHeight: 1.35,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+            title={game.description}
+          >
+            {game.description}
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
           {game?.category ? (
             <span className="font-mono" style={{ fontSize: 8.5, letterSpacing: ".08em", textTransform: "uppercase", color: FAINT, border: "1px solid var(--color-cream-border)", borderRadius: 4, padding: "1px 4px" }}>
               {game.category}

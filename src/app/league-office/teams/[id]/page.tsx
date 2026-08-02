@@ -26,15 +26,18 @@ export default async function TeamDetailPage({
     );
   }
 
+  const canAdd = d.addable.length > 0;
+  const canMove = d.otherTeams.length > 0;
+
   return (
     <>
       <Link href="/league-office/teams" style={{ fontSize: 12.5, color: "var(--color-amber-dark)", textDecoration: "none" }}>← Teams</Link>
       <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "8px 0 6px" }}>
         <h1 className="font-serif" style={{ fontSize: 26, margin: 0 }}>{d.team.name}</h1>
-        <StatusChip label="Active" tone="green" />
+        {d.archived ? <StatusChip label="Disbanded" tone="gray" /> : <StatusChip label="Active" tone="green" />}
       </div>
       <div className="double-rule" />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0 20px", flexWrap: "wrap" }}>
         {d.conference ? (
           <span className="font-mono" style={{ fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", color: "#94560a" }}>{d.conference}</span>
         ) : (
@@ -62,14 +65,49 @@ export default async function TeamDetailPage({
           payload={{ action: "team.rename", teamId: d.team.id }}
           extraField={{ kind: "text", name: "name", label: "New name", initial: d.team.name }}
         />
-        <button disabled title="Deferred: destructive team deletion on live shared data — later pass"
-          style={{ fontSize: 12.5, padding: "7px 12px", borderRadius: 7, border: "1px solid var(--color-cream-border)", background: "#fff", color: "#d3a29a", cursor: "not-allowed" }}>
-          Force disband
-        </button>
+        {d.archived ? (
+          <ActionButton
+            label="Restore team"
+            variant="primary"
+            title="Restore team"
+            description={`Restore ${d.team.name}. It returns to the active directory with its roster and history intact.`}
+            confirmLabel="Restore"
+            payload={{ action: "team.restore", teamId: d.team.id }}
+          />
+        ) : (
+          <ActionButton
+            label="Disband"
+            variant="danger"
+            destructive
+            title="Disband team"
+            description={`Disband ${d.team.name}. The team is archived — its roster and scoring history are preserved and it can be restored later. It stops appearing in the active team directory.`}
+            confirmLabel="Disband"
+            payload={{ action: "team.archive", teamId: d.team.id }}
+          />
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }}>
         <Card title={`Roster · ${d.roster.length}`}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: d.roster.length ? 4 : 0 }}>
+            {canAdd ? (
+              <ActionButton
+                label="+ Add member"
+                title="Add a subscriber to this team"
+                description={`Add a subscriber to ${d.team.name} for the active season. They become a confirmed member immediately.`}
+                confirmLabel="Add member"
+                payload={{ action: "membership.add", teamId: d.team.id }}
+                extraField={{
+                  kind: "select",
+                  name: "subscriberId",
+                  label: "Subscriber",
+                  options: d.addable.map((a) => ({ value: a.subscriberId, label: `@${a.handle}` })),
+                }}
+              />
+            ) : (
+              <span style={{ fontSize: 11.5, color: "#8d8375" }}>Every active subscriber is already on this team.</span>
+            )}
+          </div>
           {d.roster.length === 0 ? (
             <EmptyState>No confirmed members.</EmptyState>
           ) : (
@@ -79,6 +117,21 @@ export default async function TeamDetailPage({
                   <span style={{ fontSize: 13, fontWeight: 600 }}>@{m.handle}</span>
                   {m.role === "Captain" ? <StatusChip label="Captain" tone="amber" /> : null}
                   <span style={{ flex: 1 }} />
+                  {canMove ? (
+                    <ActionButton
+                      label="Move"
+                      title="Move to another team"
+                      description={`Move @${m.handle} from ${d.team!.name} to another team, keeping their season. They are removed here and added to the destination.`}
+                      confirmLabel="Move"
+                      payload={{ action: "membership.move", membershipId: m.membershipId }}
+                      extraField={{
+                        kind: "select",
+                        name: "teamId",
+                        label: "Destination team",
+                        options: d.otherTeams.map((t) => ({ value: t.id, label: t.name })),
+                      }}
+                    />
+                  ) : null}
                   <ActionButton
                     label="Remove"
                     variant="danger"
