@@ -61,6 +61,8 @@ export type Season = {
   locked_at: string | null;
   free_agency_start: string | null;
   free_agency_notice_start: string | null;
+  playoff_starts_on: string | null;
+  roster_freeze_on: string | null;
 };
 export type Subscriber = {
   id: string;
@@ -75,7 +77,7 @@ export type Subscriber = {
 
 const teamCols = "id,code,name,captain_id,league_id,conference_id";
 const seasonCols =
-  "id,slug,name,starts_on,ends_on,status,tz,locked_at,free_agency_start,free_agency_notice_start";
+  "id,slug,name,starts_on,ends_on,status,tz,locked_at,free_agency_start,free_agency_notice_start,playoff_starts_on,roster_freeze_on";
 const subCols =
   "id,email,handle,active,play_streak,full_set_streak,last_seen_at,created_at";
 
