@@ -93,7 +93,7 @@ export function SeasonDatesCard({
   return (
     <div>
       {locked ? (
-        <Callout tone="locked">This season is locked — unlock it to edit its dates.</Callout>
+        <Callout tone="locked">This season is locked — the playoff and roster-freeze dates can still be edited; everything else is frozen until you unlock it.</Callout>
       ) : null}
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
@@ -101,7 +101,7 @@ export function SeasonDatesCard({
           {row("Playoff starts", playoffStartsOn)}
           {row("Roster freeze", rosterFreezeOn)}
         </div>
-        <MiniButton tone="gold" onClick={beginEdit} disabled={locked || busy}>
+        <MiniButton tone="gold" onClick={beginEdit} disabled={busy}>
           Edit dates
         </MiniButton>
       </div>
