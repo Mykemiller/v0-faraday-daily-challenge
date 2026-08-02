@@ -852,10 +852,20 @@ export async function updateSeason(
 
   if (!Object.keys(body).length) return err(422, "Nothing to update.");
 
-  // Editing the WINDOW of a locked season is refused for the same reason config
-  // edits are; lock/unlock itself is obviously still allowed.
-  if (before.locked_at && !input.op)
-    return err(423, "This season is locked. Unlock it before editing its details.");
+  // A locked season is frozen — EXCEPT the two scheduling dates (playoff start /
+  // roster freeze). Those are scheduling metadata the generation checklist
+  // requires, not roster/scoring config, so they stay editable while locked.
+  // Any OTHER field edit still requires an unlock; lock/unlock itself (input.op)
+  // is always allowed.
+  const LOCK_EXEMPT_FIELDS = new Set(["playoff_starts_on", "roster_freeze_on"]);
+  if (before.locked_at && !input.op) {
+    const touchesFrozen = Object.keys(body).some((k) => !LOCK_EXEMPT_FIELDS.has(k));
+    if (touchesFrozen)
+      return err(
+        423,
+        "This season is locked. Unlock it before editing anything other than the playoff and roster-freeze dates."
+      );
+  }
 
   if (body.starts_on && body.ends_on && String(body.ends_on) <= String(body.starts_on))
     return err(422, "The end date must be after the start date.");
