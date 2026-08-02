@@ -138,37 +138,58 @@ is byte-identical before flipping.
 
 ---
 
-### Phase B — Player → season resolution  ·  M  ·  unblocks everything else
+### Phase B — Player → season resolution  ·  S  ·  unblocks everything else
 
-Decide the model first; the code is small once decided.
+> **DECIDED (Myke, 2026-08-02): a player is in exactly ONE season at a time.**
+> This collapses what was the largest source of complexity in B and C.
 
-| Option | Player belongs to a season via | Handles teamless players? |
-|---|---|---|
-| **B-i** Enrollment table | explicit `dc_season_enrollments (season_id, subscriber_id)` | yes |
-| **B-ii** Team-derived | `team_memberships → teams.league_id → season` | **no** — 1 of 7 today |
-| **B-iii** Subscriber column | `dc_subscribers.league_id` | yes, but one season only |
+With one-season-at-a-time, the model is a **single nullable column**:
 
-**Recommendation: B-i.** It is the only one that supports a player in two
-concurrent seasons, gives capacity a natural home (Phase C), and doesn't force
-everyone onto a team. It also mirrors `team_memberships`, which is already the
-membership pattern people know.
+```sql
+alter table public.dc_subscribers
+  add column current_season_id uuid references public.seasons(id);
+```
 
-Then: a single `resolveSeasonForSubscriber(subscriberId)` helper, and the 18
-call sites move onto it. The 7 DB functions each gain a `p_season_id` argument
-with the current behaviour as default, so the RPC wire contract holds (the same
+No join table, no (season, subscriber) uniqueness to police, no "which of my
+seasons is this score for" ambiguity — the question is answerable from the
+subscriber row alone. `team_memberships.season_id` stays exactly as it is and
+remains the roster record; this column answers a different question ("which
+season is this player *playing*").
+
+**Why not the enrollment table** (the earlier recommendation): its only real
+advantage was supporting dual enrollment, which is now explicitly out. A table
+would still be the right call if history matters — "which seasons has this
+player been in" — but that is already reconstructable from `team_memberships`
+and `score_events` dates, so the column is enough.
+
+Then: one `resolveSeasonForSubscriber(subscriberId)` helper, and the 18 call
+sites move onto it. The 7 DB functions each gain a `p_season_id` argument
+defaulting to current behaviour, so the RPC wire contract holds (the same
 technique Part B used for `team_create`'s ignored args).
+
+**Open sub-decision:** what happens to a player whose season ends — does
+`current_season_id` go NULL (they pick a new season), or auto-roll to the next
+season in the same league? Affects the season-transition path, not this schema.
 
 ---
 
 ### Phase C — Enrollment + capacity  ·  S  ·  needs B
 
-- `dc_playoff_config`-style per-season row: `max_players`, `enrollment_mode`
-  (`open` | `invite` | `closed`).
-- Capacity check in the join/enroll path, next to `rosterFreezeGuard()` — same
-  two-layer shape (DB function + route guard), same reasoning about the
-  commissioner staying above it.
-- League Office surface: enrollment list, invite, remove; audited through
+- Per-season row (`dc_season_enrollment_config`, or columns on `seasons`):
+  `max_players`, `enrollment_mode` (`open` | `invite` | `closed`).
+- Capacity check on the one write that sets `current_season_id`. With B as a
+  single column this is **one** choke point, not a set of them — count
+  `dc_subscribers where current_season_id = X` against `max_players`.
+- Same two-layer shape as the roster freeze: a `SECURITY DEFINER` predicate
+  (fails closed under the deny-all RLS on `seasons`) plus a route guard, with
+  staff writes above it by construction.
+- League Office surface: roster list, invite, remove; audited through
   `executeAction` as `enrollment.*`, `domain='seasons'`.
+
+⚠️ **Capacity needs a race guard.** Two players enrolling simultaneously can
+both read count = 199 and both write. Either take a row lock on the season, or
+enforce with a counter column updated in the same statement. Cheap to get right
+up front, genuinely unpleasant to retrofit after a season overfills.
 
 Genuinely small **after B**. Impossible before it.
 
@@ -206,21 +227,31 @@ B and A are independent and can run concurrently; C needs B; D needs A.
 
 ---
 
-## 4. Decisions needed before any code
+## 4. Decisions
 
-1. **Enrollment model** — B-i / B-ii / B-iii. (Recommend **B-i**.)
-2. **What `season_id IS NULL` means in the bank** — shared pool, or legacy-only?
-   (Recommend shared pool.)
+### Settled
+
+1. ~~**Can one player be in two concurrent seasons?**~~ **NO** (Myke, 2026-08-02).
+   Phase B becomes a single `dc_subscribers.current_season_id` column; Phase C
+   gets one choke point instead of several. B drops M → S.
+
+### Still open
+
+2. **What `season_id IS NULL` means in the bank** — shared pool any season may
+   serve, or legacy-only? (Recommend **shared pool**: it preserves the 98
+   imported rows and lets a short season borrow puzzles instead of generating
+   its own.)
 3. **Which season an anonymous visitor sees.** Today everyone sees one global
-   set; with concurrent seasons that needs a defined default.
-4. **Can one player be in two concurrent seasons at once?** This is the single
-   biggest driver of complexity in B and C. If "no", B-iii becomes viable and
-   the whole scope shrinks materially.
-5. **Is D4 really being retired?** Enforcing the slate is a product decision, not
-   a cleanup. It changes what subscribers get.
+   set. With concurrent seasons this needs a defined default — likely the
+   platform-scoped season, but it is a product call.
+4. **Is D4 really being retired?** Enforcing the slate changes what subscribers
+   receive. If the answer is "not yet", A3 drops out and Phase A shrinks
+   materially — A1 and A2 still deliver per-season *puzzles*, just not per-season
+   *game lists*.
+5. **Season transition** — when a player's season ends, does `current_season_id`
+   go NULL or auto-roll to the next season in that league?
 
-Questions 4 and 5 are worth answering first — a "no" on 4 or a "not yet" on 5
-removes a meaningful fraction of this scope.
+**Question 4 is now the one that most changes the size of this work.**
 
 ---
 
