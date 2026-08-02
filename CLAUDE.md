@@ -1052,6 +1052,41 @@ investigation + final design: `docs/far393-intelligence-readiness/PHASE-0-FINDIN
   `rls_enabled_no_policy` INFO on `dc_streak_grants`; both new fns set `search_path`; **no
   new RLS gaps**. `npm run build` green.
 
+## Merch product preview grid (CC-DC-MERCH-1.0, claude/merch-product-grid-v4u07i, 2026-08-02)
+
+`/merch` still renders through `DcStubPage` ("Coming soon" — no cart, no pricing,
+no Stripe) but now carries a **static 3-tile product preview grid**: Faraday Cap ·
+Faraday Academy Polo · Faraday Academy Quarter-Zip.
+
+- **The product list is a hardcoded `PRODUCTS` array at the top of
+  `src/app/merch/page.tsx`** — no CMS, no Airtable, no data layer. A fourth item
+  is one object plus its `<slug>.webp`/`.jpg` pair in **`public/merch/`**
+  (1200×1200, trimmed and centered on white, ~6% pad, webp q88).
+- **First `next/image` call site in the repo.** `GameIcon.jsx` deliberately uses a
+  raw `<img>` (its comment explains why: no gain at ≤64px) — that stays. Local
+  `/public` files need **no `next.config.ts` change**; don't add one.
+- **The tiles are `aspect-square` + `fill` + `object-contain`**, so every tile is
+  uniform and reserves its own space (no CLS) regardless of the source photo's
+  aspect. The supplied art was three off-spec screenshots at three different
+  sizes; they were trimmed/padded/squared before commit. Don't hand-edit the
+  webp/jpg — re-derive from the masters.
+- **⚠️ Two spacing/contrast gotchas, both deliberate — don't "clean them up":**
+  the disclaimer uses `mb-6` on the `<ul>` rather than `mt-*` on itself, because
+  `DcStubPage` wraps children in `space-y-3` whose sibling selector outranks a
+  plain margin-top utility; and it uses `text-near-black/70`, not the `/50` used
+  for muted chrome elsewhere, because `/50` measures **3.46:1** at 11px and fails AA.
+- **Known pre-existing a11y defect, NOT introduced here:** `DcStubPage`'s
+  "← Back to the Daily Challenge" link is `text-near-black/50` at 11px = **3.46:1**,
+  a serious axe `color-contrast` violation on **every** stub page (`/about`,
+  `/share`, …), and the one remaining violation on `/merch`. One-word fix
+  (`/50` → `/70` in `src/components/DcStubPage.tsx`) — left alone because it is
+  outside this task's file scope and would restyle ~18 pages.
+- Verified: `npm run build` green · `npm run test:contrast` 29/29 · ESLint clean on
+  the route · headless pass at 375/768/1440 (1-up / 2-up / 3-up, no horizontal
+  scroll, 0 broken images, 0 missing alt, webp served via the image optimizer) ·
+  `prefers-reduced-motion: reduce` → no hover transform · back-link focus ring is
+  the global 2px gold `a:focus-visible`.
+
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
