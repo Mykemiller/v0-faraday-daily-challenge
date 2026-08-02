@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase";
 import OTPGate from "@/components/OTPGate";
 import BroadcastBanner from "@/components/BroadcastBanner";
+import PlayoffBanner from "@/components/PlayoffBanner";
 import MessageDock from "@/components/messaging/MessageDock";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
@@ -575,6 +576,13 @@ const SHARE_BTN_STYLE = {
 // consumer, nested inside all 7 game components.
 const SolveBandsContext = createContext(null);
 
+// True while the active season is inside its playoff window. Provided as context
+// rather than threaded as a prop because ScoreCard is rendered from all 7 game
+// components — a prop would mean touching every call site to relabel one line.
+// Defaults to false, so a season with no playoffs (every season but Hot Summer
+// today) reads exactly as it always has.
+const PlayoffPhaseContext = createContext(false);
+
 // FAR-385: games whose ScoreCard renders the Faraday Signal card. The matcher
 // computes matched_signal_id for ALL 7 games at sync time — enabling another
 // game is adding its type string here (CC-FAR385-2 adds Signal Drop, Rackl).
@@ -586,6 +594,10 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
   // Prefers per-game-type percentile bands when available; else seed par times.
   const solveBands = useContext(SolveBandsContext);
+  // Playoff framing: inside the playoff window the same points are playoff
+  // points, so the label says so. Scoring itself is unchanged — this is a
+  // relabel, not a different number.
+  const playoffsLive = useContext(PlayoffPhaseContext);
   const reaction = resolveMarketReaction(puzzleType, elapsedSec, solveBands);
   const reactionColor = reaction
     ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
@@ -622,7 +634,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
             /{dailyTotal}
           </div>
         </div>
-        <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>this game / today · {puzzleType}</div>
+        <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>
+          {playoffsLive ? "playoff points · " : ""}this game / today · {puzzleType}
+        </div>
       </div>
       {/* FAR-388: Market Reaction Speed — band label primary, seconds secondary.
           No countdown, no red/pressure states (D10). Hidden when unclassifiable. */}
@@ -2711,6 +2725,25 @@ export default function DailyChallenge() {
   const [sessionToken,     setSessionToken]     = useState(null);
   const [todayCompletions, setTodayCompletions] = useState({});
   const [lastDailyTotal,   setLastDailyTotal]   = useState(0);
+  // Server-derived playoff state (season's own timezone). Fetched ONCE here and
+  // shared with PlayoffBanner so the page makes one request, not two. Drives the
+  // banner and the ScoreCard relabel; defaults to null/false, so a season
+  // without playoffs renders exactly as it always has.
+  const [playoffState,     setPlayoffState]     = useState(null);
+  const playoffsLive = playoffState?.playoffs_live === true;
+
+  // One fetch on mount. Public and read-only — no token, no writes. Fails soft:
+  // the endpoint itself tolerates the playoff tables not existing yet, and any
+  // error here just leaves the banner hidden and the ScoreCard label unchanged.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/playoffs", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (alive && j && j.playoff_starts_on !== undefined) setPlayoffState(j); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   // Team leaderboard (teams_v1) wired to per-player Score: public standings, plus
   // the caller's team when signed in. Refreshed after each completion.
   const [leaderboard, setLeaderboard] = useState([]);
@@ -3215,6 +3248,14 @@ export default function DailyChallenge() {
           fixed) so it sits above the game surface without overlaying it. */}
       <BroadcastBanner sessionToken={sessionToken} tokens={C} />
 
+      {/* Playoff status — countdown, roster-freeze notice, or "playoffs are
+          live". Public and read-only (no token), and renders NOTHING when the
+          season configures no playoffs, which is every season but Hot Summer
+          today. Same in-flow placement as the broadcast banner. */}
+      <div style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
+        <PlayoffBanner tokens={C} state={playoffState} />
+      </div>
+
       {/* ── BODY ── */}
       <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
 
@@ -3386,7 +3427,9 @@ export default function DailyChallenge() {
                 // leaving stale tiles while the title/hints/scoring use the live
                 // puzzle. Falls back to a per-game key when there is no publicId.
                 <SolveBandsContext.Provider value={solveBands}>
-                  <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                  <PlayoffPhaseContext.Provider value={playoffsLive}>
+                    <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                  </PlayoffPhaseContext.Provider>
                 </SolveBandsContext.Provider>
               )}
             </div>
