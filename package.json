@@ -30,7 +30,7 @@
     "test:far287": "node --test scripts/far287/lib/run-bookkeeping.test.mjs scripts/far287/lib/puzzle-schema.test.mjs",
     "test:generation": "node --test src/lib/league-office/generation-logic.test.ts",
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",
-    "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts"
+    "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts"
   },
   "dependencies": {
     "next": "16.2.3",
