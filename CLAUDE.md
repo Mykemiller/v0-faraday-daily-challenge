@@ -114,14 +114,25 @@ dead weight costing 10 advisor findings.
 - `DailyChallenge` fetches `/api/playoffs` ONCE and passes it to the banner, so
   the page makes one request rather than two.
 
-### Status
-**NONE of the three migrations is applied to prod.** All proven in
-`BEGIN … ROLLBACK` with in-migration gates: Part 1 = 11/11 behavioural (incl. a
-staff write still succeeding while frozen) + 5/5 up/down; Part 2 = 10/10 (incl.
-a real-data split: regular 4283 + playoff 7932 = full 12215, originals
-unchanged); Part 3 = 16/16 (incl. no open-window matchup decided on points, and
-cached points === a fresh recomputation). They apply IN ORDER — Part 3 depends
-on Part 2's `fn_season_phase_window`. Tests: `npm run test:playoffs` (55).
+### Status — ALL THREE MIGRATIONS APPLIED to prod 2026-08-02 (Myke-approved)
+Applied in dependency order (Part 3 needs Part 2's `fn_season_phase_window`);
+every in-migration gate passed. Post-apply verification against the **live**
+functions, 9/9 in `BEGIN … ROLLBACK`: `team_join`/`team_leave` blocked with
+`FRZ01` while frozen · **a staff direct write still succeeded while frozen** ·
+regular 4283 + playoff 7932 = full 12215 · the original `global_leaderboard`
+still returns 12215 · a real 3-team bracket seeded to 2 decided / 1 undecided ·
+no open-window matchup decided on points · cached points === a fresh
+recomputation · recompute idempotent in one pass.
+
+**Advisor delta was exactly the prediction: +4 `rls_enabled_no_policy` INFO,
+one per new table, and nothing else** (886 → 894; ERROR 26 and WARN 244 both
+unchanged; `function_search_path_mutable` still 63; anon/authenticated
+`security_definer_function_executable` still 85/87 — the by-name revokes held).
+
+Prod data untouched throughout: 23 memberships, 234 score_events, 47 audit rows,
+0 rows in all four playoff tables. **The freeze is now live for Hot Summer
+(2026-08-17).** Down-migrations: `part1-down.sql` · `part2-down.sql` ·
+`part3-down.sql`. Tests: `npm run test:playoffs` (55).
 
 ## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
 
