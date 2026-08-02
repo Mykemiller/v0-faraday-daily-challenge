@@ -43,13 +43,15 @@ export function Toaster() {
 // ── modal + button ───────────────────────────────────────────────────────────
 export type ExtraField =
   | { kind: "text"; name: "name"; label: string; initial?: string; placeholder?: string }
-  | { kind: "select"; name: "captainSubscriberId" | "subscriberId" | "teamId"; label: string; options: { value: string; label: string }[]; initial?: string };
+  | { kind: "select"; name: "captainSubscriberId" | "subscriberId" | "teamId" | "conferenceId"; label: string; options: { value: string; label: string }[]; initial?: string };
 
 type Payload = {
   action: string;
   subscriberId?: string;
   membershipId?: string;
   teamId?: string;
+  leagueId?: string;
+  conferenceId?: string;
   auditId?: string;
   broadcastId?: string;
 };

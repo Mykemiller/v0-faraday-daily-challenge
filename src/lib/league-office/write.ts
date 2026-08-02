@@ -90,6 +90,39 @@ async function uniqueTeamCode(s: Svc, name: string): Promise<string> {
   return `${base.slice(0, 20)}-${Date.now()}`;
 }
 
+function slugCode(name: string, fallback: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || fallback;
+}
+async function freeCode(base: string, taken: Set<string>): Promise<string> {
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base.slice(0, 24)}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base.slice(0, 20)}-${Date.now()}`;
+}
+
+/** leagues.code is text-UNIQUE (global). */
+async function uniqueLeagueCode(s: Svc, name: string): Promise<string> {
+  const rows = await fetch(`${SUPABASE_URL}/rest/v1/leagues?select=code`, { headers: s.headers, cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => []);
+  const taken = new Set((Array.isArray(rows) ? rows : []).map((r: { code?: string }) => (r.code || "").toUpperCase()));
+  return freeCode(slugCode(name, "LEAGUE"), taken);
+}
+
+/** conferences.code is UNIQUE per (league_id, code). */
+async function uniqueConferenceCode(s: Svc, leagueId: string, name: string): Promise<string> {
+  const rows = await fetch(
+    `${SUPABASE_URL}/rest/v1/conferences?league_id=eq.${encodeURIComponent(leagueId)}&select=code`,
+    { headers: s.headers, cache: "no-store" }
+  )
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => []);
+  const taken = new Set((Array.isArray(rows) ? rows : []).map((r: { code?: string }) => (r.code || "").toUpperCase()));
+  return freeCode(slugCode(name, "CONF"), taken);
+}
+
 // ── audit ────────────────────────────────────────────────────────────────────
 export type AuditRow = {
   id: string;
@@ -134,6 +167,8 @@ export type ActionInput = {
   subscriberId?: string;
   membershipId?: string;
   teamId?: string;
+  leagueId?: string;
+  conferenceId?: string;
   captainSubscriberId?: string;
   name?: string;
   auditId?: string;
@@ -331,6 +366,89 @@ export async function executeAction(
       }
       await log("teams", "membership.move", "team_membership", id, before, { team_id: input.teamId, subscriber_id: before.subscriber_id, season_id: before.season_id }, false);
       return { ok: true, message: "Member moved — logged to Audit Log." };
+    }
+
+    // ── Leagues & Conferences (domain 'leagues') ─────────────────────────────
+    // Create/archive/restore the leagues + conferences tables, and assign a team
+    // to a conference via the teams.conference_id / league_id FK columns. The
+    // trigger-derived team_conference_memberships table is NEVER touched here.
+    case "league.create": {
+      const name = (input.name || "").trim();
+      if (!name) return { ok: false, message: "A league name is required." };
+      const code = await uniqueLeagueCode(s, name);
+      const created = await insert(s, "leagues", { name, code, league_type: "public", owner_email: staffEmail });
+      const id = (created?.[0] as { id?: string } | undefined)?.id;
+      if (!id) return { ok: false, message: "Create failed — nothing was written." };
+      await log("leagues", "league.create", "league", id, null, { name, code }, false);
+      return { ok: true, message: `League “${name}” created — logged to Audit Log.` };
+    }
+
+    case "league.archive":
+    case "league.restore": {
+      if (!input.leagueId) return { ok: false, message: "Missing league." };
+      const archiving = input.action === "league.archive";
+      const before = await getOne(s, `leagues?id=eq.${input.leagueId}&select=is_active,archived_at`);
+      if (!before) return { ok: false, message: "League not found." };
+      if (archiving && before.is_active === false) return { ok: false, message: "That league is already archived." };
+      if (!archiving && before.is_active !== false) return { ok: false, message: "That league is already active." };
+      const after = archiving ? { is_active: false, archived_at: new Date().toISOString() } : { is_active: true, archived_at: null };
+      const res = await patch(s, "leagues", `id=eq.${input.leagueId}`, after);
+      if (!res) return { ok: false, message: archiving ? "Archive failed." : "Restore failed." };
+      await log("leagues", input.action, "league", input.leagueId, before, after, true);
+      return { ok: true, message: archiving ? "League archived — logged to Audit Log." : "League restored — logged to Audit Log." };
+    }
+
+    case "conference.create": {
+      const name = (input.name || "").trim();
+      if (!input.leagueId) return { ok: false, message: "Missing league." };
+      if (!name) return { ok: false, message: "A conference name is required." };
+      const code = await uniqueConferenceCode(s, input.leagueId, name);
+      // type defaults to 'public' (org/private are assigned via a later editor).
+      const created = await insert(s, "conferences", { league_id: input.leagueId, name, code, type: "public" });
+      const id = (created?.[0] as { id?: string } | undefined)?.id;
+      if (!id) return { ok: false, message: "Create failed — nothing was written." };
+      await log("leagues", "conference.create", "conference", id, null, { league_id: input.leagueId, name, code }, false);
+      return { ok: true, message: `Conference “${name}” created — logged to Audit Log.` };
+    }
+
+    case "conference.archive":
+    case "conference.restore": {
+      if (!input.conferenceId) return { ok: false, message: "Missing conference." };
+      const archiving = input.action === "conference.archive";
+      const before = await getOne(s, `conferences?id=eq.${input.conferenceId}&select=is_active,archived_at`);
+      if (!before) return { ok: false, message: "Conference not found." };
+      if (archiving && before.is_active === false) return { ok: false, message: "That conference is already archived." };
+      if (!archiving && before.is_active !== false) return { ok: false, message: "That conference is already active." };
+      const after = archiving ? { is_active: false, archived_at: new Date().toISOString() } : { is_active: true, archived_at: null };
+      const res = await patch(s, "conferences", `id=eq.${input.conferenceId}`, after);
+      if (!res) return { ok: false, message: archiving ? "Archive failed." : "Restore failed." };
+      await log("leagues", input.action, "conference", input.conferenceId, before, after, true);
+      return { ok: true, message: archiving ? "Conference archived — logged to Audit Log." : "Conference restored — logged to Audit Log." };
+    }
+
+    case "team.set_conference": {
+      // Assign a team to a conference; the team's league is set to the
+      // conference's league so the two FK columns stay consistent.
+      if (!input.teamId || !input.conferenceId) return { ok: false, message: "Missing team or conference." };
+      const conf = await getOne(s, `conferences?id=eq.${input.conferenceId}&select=league_id,name`);
+      if (!conf) return { ok: false, message: "Conference not found." };
+      const before = await getOne(s, `teams?id=eq.${input.teamId}&select=conference_id,league_id`);
+      const after = { conference_id: input.conferenceId, league_id: conf.league_id };
+      const res = await patch(s, "teams", `id=eq.${input.teamId}`, after);
+      if (!res) return { ok: false, message: "Assignment failed." };
+      await log("leagues", "team.set_conference", "team", input.teamId, before, after, true);
+      return { ok: true, message: "Team assigned to conference — logged to Audit Log." };
+    }
+
+    case "team.clear_conference": {
+      // Remove a team from its conference (independent). league_id is left as-is.
+      if (!input.teamId) return { ok: false, message: "Missing team." };
+      const before = await getOne(s, `teams?id=eq.${input.teamId}&select=conference_id,league_id`);
+      if (!before) return { ok: false, message: "Team not found." };
+      const res = await patch(s, "teams", `id=eq.${input.teamId}`, { conference_id: null });
+      if (!res) return { ok: false, message: "Update failed." };
+      await log("leagues", "team.clear_conference", "team", input.teamId, before, { conference_id: null }, true);
+      return { ok: true, message: "Team removed from its conference — logged to Audit Log." };
     }
 
     // ── Announcements ────────────────────────────────────────────────────────
@@ -581,6 +699,8 @@ async function revertAction(
     dc_subscriber: { table: "dc_subscribers", col: "id" },
     team: { table: "teams", col: "id" },
     team_membership: { table: "team_memberships", col: "id" },
+    league: { table: "leagues", col: "id" },
+    conference: { table: "conferences", col: "id" },
   };
   const t = map[orig.target_type];
   if (!t) return { ok: false, message: "Unsupported revert target." };
