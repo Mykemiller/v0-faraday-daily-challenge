@@ -73,13 +73,55 @@ dead weight costing 10 advisor findings.
 > `revoke … from public` alone leaves the role grants intact. The Part 1
 > in-migration gate caught exactly this.
 
+### Part 3 — seeding + bracket (migration `20260802140000…`)
+- **Four tables**, all RLS-on / zero policies: `dc_playoff_config` (per-season
+  format · team|player · qualifier_count · seeding_source) · `dc_playoff_brackets`
+  (one per season, unique index) · `dc_playoff_seeds` · `dc_playoff_matchups`.
+- **Config is COPIED onto the bracket, not referenced**, and seed
+  `display_name`/`seed_points` are snapshotted — editing config or renaming a
+  team later must never reinterpret a bracket that has already been played.
+- **Advancement never fabricates.** A matchup decides only once its round's
+  window has **closed**; byes are the one exception. Ties → better seed; a tie
+  with no seeds stays UNDECIDED. Seeding reads the REGULAR window, so playoff
+  points can't feed back into the seeding that produced them.
+- **⚠️ `fn_playoff_recompute` iterates ROUND BY ROUND, never one cursor over all
+  matchups.** A single cursor snapshots its rows, so a round-2 row is read with
+  `participant_a` still NULL even after round 1 propagated a winner into it —
+  its points get cached against an empty slot. This was a real bug the
+  acceptance harness caught; the round-by-round form is what makes recompute
+  idempotent in ONE pass. Do not "simplify" it back.
+- **Tier 2 cases** `playoff.configure|seed|recompute|clear` → `playoff-write.ts`,
+  one `lo_audit_log` row each (`domain='playoffs'`). Re-seeding logs as
+  `playoff.reseed` with the replaced bracket as `before`; `recompute` logs ONLY
+  when something moved. **There is deliberately no "set winner" action.**
+  Surface: the "Playoffs" card on `/league-office/seasons/[id]`.
+- Error codes: `PLY01` no config · `PLY02` no seeding window · `PLY03` no
+  playoff window · `PLY04` <2 qualifiers · `PLY05` window shorter than rounds.
+
+### Part 4 — subscriber surfaces
+- **`GET /api/playoffs`** (public, read-only, token optional for "you" marking).
+  **FAILS SOFT on the bracket tables** — the phase/countdown half reads only
+  `seasons`, so the banner works before the Part 3 migration is applied.
+- **`PlayoffBanner`** beside `BroadcastBanner` in `DailyChallenge.jsx`; copy
+  logic is pure + tested in `src/lib/league-playoffs/banner.ts` (it lives in the
+  lib, not the `.tsx`, because the test runner can't load JSX). Precedence: live
+  playoffs > countdown (mentioning the freeze only within 7 days) > frozen.
+  Renders nothing when the season configures no playoffs.
+- **Read-only bracket** on the `/leaderboard` Playoffs tab; `?view=playoffs`
+  deep-links to it. **ScoreCard** prefixes "playoff points ·" inside the window
+  via `PlayoffPhaseContext` (context, not a prop — ScoreCard is rendered from
+  all 7 games). Scoring itself is unchanged; this is a relabel.
+- `DailyChallenge` fetches `/api/playoffs` ONCE and passes it to the banner, so
+  the page makes one request rather than two.
+
 ### Status
-**Neither migration is applied to prod.** Both are proven in `BEGIN … ROLLBACK`
-against prod with in-migration gates: Part 1 = 11/11 behavioural (incl. a staff
-write still succeeding while frozen) + 5/5 up/down round trip; Part 2 = 10/10
-(incl. a real-data split on the active season: regular 4283 + playoff 7932 =
-full 12215, and the originals unchanged by adding a playoff date). Phases 3
-(seeding + bracket) and 4 (subscriber surfaces) are not built yet.
+**NONE of the three migrations is applied to prod.** All proven in
+`BEGIN … ROLLBACK` with in-migration gates: Part 1 = 11/11 behavioural (incl. a
+staff write still succeeding while frozen) + 5/5 up/down; Part 2 = 10/10 (incl.
+a real-data split: regular 4283 + playoff 7932 = full 12215, originals
+unchanged); Part 3 = 16/16 (incl. no open-window matchup decided on points, and
+cached points === a fresh recomputation). They apply IN ORDER — Part 3 depends
+on Part 2's `fn_season_phase_window`. Tests: `npm run test:playoffs` (55).
 
 ## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
 

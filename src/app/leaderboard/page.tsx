@@ -58,6 +58,39 @@ interface PlayoffState {
  *  the page has always shown; `playoff` narrows to the playoff window. */
 type ScoringPhase = "full" | "playoff";
 
+/** /api/playoffs — the read-only bracket. Every field is derived server-side
+ *  from real score_events; nothing here is player-writable. */
+interface BracketMatchup {
+  id: string;
+  round: number;
+  slot: number;
+  seed_a: number | null;
+  seed_b: number | null;
+  participant_a: string | null;
+  participant_b: string | null;
+  name_a: string | null;
+  name_b: string | null;
+  points_a: number | null;
+  points_b: number | null;
+  winner_participant_id: string | null;
+  decided_reason: string | null;
+  round_starts_on: string;
+  round_ends_on: string;
+  is_you_a: boolean;
+  is_you_b: boolean;
+}
+
+interface BracketPayload {
+  bracket: {
+    participant_kind: string;
+    qualifier_count: number;
+    rounds: number;
+    status: string;
+    champion: { participant_id: string; display_name: string | null; is_you: boolean } | null;
+  } | null;
+  matchups: BracketMatchup[];
+}
+
 interface GlobalData {
   season: Season;
   phase?: ScoringPhase;
@@ -258,7 +291,13 @@ export default function LeaderboardPage() {
   // the useSearchParams/Suspense contract.
   useEffect(() => {
     try {
-      if (new URLSearchParams(window.location.search).get("view") === "teams") setTeamsView(true);
+      const view = new URLSearchParams(window.location.search).get("view");
+      if (view === "teams") setTeamsView(true);
+      // ?view=playoffs — where the in-app PlayoffBanner's CTA points. Opens the
+      // Playoffs phase on the Global board; the toggle itself only renders when
+      // the season configures playoffs, but selecting the phase is harmless
+      // either way (an unconfigured season yields an empty playoff window).
+      if (view === "playoffs") setPhase("playoff");
     } catch { /* no search */ }
   }, []);
 
@@ -354,6 +393,11 @@ export default function LeaderboardPage() {
             )}
           </div>
         )}
+
+        {/* The bracket, once a commissioner has seeded one. Read-only: players
+            never write playoff state. Absent bracket → nothing renders, which is
+            also what happens before the Part 3 migration is applied. */}
+        {phase === "playoff" && <PlayerBracket />}
 
         {/* Before the playoff window opens the Playoffs board would be empty and
             read as "everyone scored zero", which is wrong — so say what it is. */}
@@ -550,5 +594,110 @@ function TabChip({ label, active, onClick }: { label: string; active: boolean; o
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * Read-only playoff bracket.
+ *
+ * Fetches its own state from /api/playoffs — the endpoint fails soft when the
+ * bracket tables do not exist yet, so this renders nothing rather than erroring
+ * before the Part 3 migration is applied, and nothing when no commissioner has
+ * seeded a field.
+ *
+ * A matchup shows "—" for points and no winner until its round's window closes.
+ * That is the honest state, not a loading state: results are derived from play.
+ */
+function PlayerBracket() {
+  const [data, setData] = useState<BracketPayload | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const token = (() => {
+      try { return localStorage.getItem(SESSION_STORAGE_KEY); } catch { return null; }
+    })();
+    fetch(`/api/playoffs${token ? `?token=${encodeURIComponent(token)}` : ""}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j) setData(j as BracketPayload); })
+      .catch(() => { /* read-only surface — stay silent */ });
+    return () => { alive = false; };
+  }, []);
+
+  if (!data?.bracket || data.matchups.length === 0) return null;
+
+  const rounds = data.bracket.rounds;
+  const roundName = (r: number) =>
+    r === rounds ? "Final" : r === rounds - 1 ? "Semifinals" : r === rounds - 2 ? "Quarterfinals" : `Round ${r}`;
+
+  return (
+    <div className="mb-6">
+      {data.bracket.champion?.display_name && (
+        <div className="mb-4 rounded-lg border border-gold/40 bg-gold/10 p-4">
+          <div className="font-mono text-[10px] uppercase tracking-wide text-near-black/50">Champion</div>
+          <div className="font-serif text-xl font-bold text-forest">
+            {data.bracket.champion.display_name}
+            {data.bracket.champion.is_you && <span className="ml-2 text-sm text-gold">(you)</span>}
+          </div>
+        </div>
+      )}
+
+      {Array.from({ length: rounds }, (_, i) => i + 1).map((r) => {
+        const ms = data.matchups.filter((m) => m.round === r);
+        if (ms.length === 0) return null;
+        return (
+          <div key={r} className="mb-4">
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-near-black/50">
+              {roundName(r)} · {ms[0].round_starts_on} → {ms[0].round_ends_on}
+            </div>
+            {ms.map((m) => (
+              <div
+                key={m.id}
+                className={`mb-1.5 flex items-center gap-3 rounded border px-3 py-2 ${
+                  m.winner_participant_id ? "border-gold/30 bg-gold/[0.06]" : "border-warm-gray bg-white/40"
+                }`}
+              >
+                <BracketSide
+                  seed={m.seed_a} name={m.name_a} points={m.points_a}
+                  won={!!m.winner_participant_id && m.winner_participant_id === m.participant_a}
+                  isYou={m.is_you_a}
+                />
+                <span className="font-mono text-[10px] text-near-black/40">vs</span>
+                <BracketSide
+                  seed={m.seed_b} name={m.name_b} points={m.points_b}
+                  won={!!m.winner_participant_id && m.winner_participant_id === m.participant_b}
+                  isYou={m.is_you_b}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      <p className="font-mono text-[10.5px] text-near-black/40">
+        Matchups settle after each round&rsquo;s last day. Points shown are those earned inside
+        that round; ties go to the better seed.
+      </p>
+    </div>
+  );
+}
+
+function BracketSide({
+  seed, name, points, won, isYou,
+}: {
+  seed: number | null; name: string | null; points: number | null; won: boolean; isYou: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-baseline gap-2">
+      <span className="font-mono text-[10px] text-near-black/40" style={{ width: 22 }}>
+        {seed != null ? `#${seed}` : "—"}
+      </span>
+      <span className={`truncate text-[13px] ${won ? "font-bold text-forest" : name ? "text-near-black/80" : "text-near-black/40"}`}>
+        {name ?? "TBD"}
+        {isYou && name && <span className="ml-1.5 text-[11px] text-gold">(you)</span>}
+      </span>
+      <span className="ml-auto font-mono text-[11.5px] tabular-nums text-near-black/50">
+        {points != null ? points.toLocaleString() : "—"}
+      </span>
+    </div>
   );
 }
