@@ -63,6 +63,33 @@ const del = (s: Svc, table: string, filter: string) =>
 const insert = (s: Svc, table: string, body: Record<string, unknown>) =>
   rq(s, table, { method: "POST", body: JSON.stringify(body) });
 
+/** The single active season's id, or null if none is active. Roster placement is
+ *  season-scoped (team_memberships.season_id is NOT NULL) and the League Office
+ *  works against "the" active season, exactly like the rest of the console. */
+async function resolveActiveSeasonId(s: Svc): Promise<string | null> {
+  const row = await getOne(s, `seasons?status=eq.active&select=id&order=starts_on.desc&limit=1`);
+  return (row as { id?: string } | null)?.id ?? null;
+}
+
+/** teams.code is citext-UNIQUE with no default, so a created team needs a code.
+ *  Derive a readable slug from the name and append -2, -3, … until it is free. */
+async function uniqueTeamCode(s: Svc, name: string): Promise<string> {
+  const base =
+    name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "TEAM";
+  const rows = await fetch(`${SUPABASE_URL}/rest/v1/teams?select=code`, { headers: s.headers, cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => []);
+  const taken = new Set(
+    (Array.isArray(rows) ? rows : []).map((r: { code?: string }) => (r.code || "").toUpperCase())
+  );
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base.slice(0, 24)}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base.slice(0, 20)}-${Date.now()}`;
+}
+
 // ── audit ────────────────────────────────────────────────────────────────────
 export type AuditRow = {
   id: string;
@@ -197,6 +224,113 @@ export async function executeAction(
       if (!res) return { ok: false, message: "Reassign failed." };
       await log("teams", "team.reassign_captain", "team", input.teamId, before, { captain_id: input.captainSubscriberId }, true);
       return { ok: true, message: "Captain reassigned — logged to Audit Log." };
+    }
+
+    // ── Team lifecycle (create / archive / restore) ──────────────────────────
+    // A commissioner-created team is INDEPENDENT with no captain and no
+    // conference (conference/league assignment is a separate surface). `code` is
+    // citext-UNIQUE, so it is generated from the name and de-duplicated here.
+    case "team.create": {
+      const name = (input.name || "").trim();
+      if (!name) return { ok: false, message: "A team name is required." };
+      const leagueRow = await getOne(s, `leagues?code=eq.INDEPENDENT&select=id`);
+      const league_id = (leagueRow as { id?: string } | null)?.id ?? null;
+      const code = await uniqueTeamCode(s, name);
+      const created = await insert(s, "teams", {
+        name,
+        code,
+        created_by_email: staffEmail,
+        league_id,
+        // captain_id / conference_id left null — assigned via their own actions.
+      });
+      const id = (created?.[0] as { id?: string } | undefined)?.id;
+      if (!id) return { ok: false, message: "Create failed — nothing was written." };
+      await log("teams", "team.create", "team", id, null, { name, code, league_id }, false);
+      return { ok: true, message: `Team “${name}” created — logged to Audit Log.` };
+    }
+
+    case "team.archive": {
+      if (!input.teamId) return { ok: false, message: "Missing team." };
+      const before = await getOne(s, `teams?id=eq.${input.teamId}&select=is_active,archived_at`);
+      if (!before) return { ok: false, message: "Team not found." };
+      if (before.is_active === false) return { ok: false, message: "That team is already disbanded." };
+      const archived_at = new Date().toISOString();
+      const res = await patch(s, "teams", `id=eq.${input.teamId}`, { is_active: false, archived_at });
+      if (!res) return { ok: false, message: "Disband failed." };
+      // Reversible: the revert path restores the before-snapshot (is_active + archived_at).
+      await log("teams", "team.archive", "team", input.teamId, before, { is_active: false, archived_at }, true);
+      return { ok: true, message: "Team disbanded — its roster and history are preserved. Logged to Audit Log." };
+    }
+
+    case "team.restore": {
+      if (!input.teamId) return { ok: false, message: "Missing team." };
+      const before = await getOne(s, `teams?id=eq.${input.teamId}&select=is_active,archived_at`);
+      if (!before) return { ok: false, message: "Team not found." };
+      if (before.is_active !== false) return { ok: false, message: "That team is already active." };
+      const res = await patch(s, "teams", `id=eq.${input.teamId}`, { is_active: true, archived_at: null });
+      if (!res) return { ok: false, message: "Restore failed." };
+      await log("teams", "team.restore", "team", input.teamId, before, { is_active: true, archived_at: null }, true);
+      return { ok: true, message: "Team restored — logged to Audit Log." };
+    }
+
+    // ── Roster placement (add a subscriber · move to another team) ────────────
+    // Both scope to the ACTIVE season and INSERT (never UPDATE) so the
+    // team_conference_memberships autofill trigger fires for the destination.
+    case "membership.add": {
+      if (!input.teamId || !input.subscriberId) return { ok: false, message: "Missing team or subscriber." };
+      const seasonId = await resolveActiveSeasonId(s);
+      if (!seasonId) return { ok: false, message: "No active season — cannot place a member." };
+      const existing = await getOne(
+        s,
+        `team_memberships?team_id=eq.${input.teamId}&subscriber_id=eq.${input.subscriberId}&season_id=eq.${seasonId}&select=id`
+      );
+      if (existing) return { ok: false, message: "That subscriber is already on this team for the active season." };
+      const created = await insert(s, "team_memberships", {
+        team_id: input.teamId,
+        subscriber_id: input.subscriberId,
+        season_id: seasonId,
+        pending: false,
+        role: "player",
+      });
+      const id = (created?.[0] as { id?: string } | undefined)?.id;
+      if (!id) return { ok: false, message: "Add failed — nothing was written." };
+      await log("teams", "membership.add", "team_membership", id, null, { team_id: input.teamId, subscriber_id: input.subscriberId, season_id: seasonId }, false);
+      return { ok: true, message: "Subscriber added to the team — logged to Audit Log." };
+    }
+
+    case "membership.move": {
+      // membershipId = the row being moved; teamId = destination team.
+      if (!input.membershipId || !input.teamId) return { ok: false, message: "Missing membership or destination team." };
+      const before = await getOne(
+        s,
+        `team_memberships?id=eq.${input.membershipId}&select=team_id,subscriber_id,season_id,pending,role`
+      );
+      if (!before) return { ok: false, message: "Membership not found." };
+      if (before.team_id === input.teamId) return { ok: false, message: "That member is already on the destination team." };
+      const dupe = await getOne(
+        s,
+        `team_memberships?team_id=eq.${input.teamId}&subscriber_id=eq.${before.subscriber_id}&season_id=eq.${before.season_id}&pending=eq.${before.pending}&select=id`
+      );
+      if (dupe) return { ok: false, message: "That subscriber is already on the destination team for this season." };
+      // Delete the old row, then insert into the destination so the autofill
+      // trigger fires. Season/role/pending are carried over unchanged.
+      const removed = await del(s, "team_memberships", `id=eq.${input.membershipId}`);
+      if (!removed) return { ok: false, message: "Move failed — the member was not changed." };
+      const created = await insert(s, "team_memberships", {
+        team_id: input.teamId,
+        subscriber_id: before.subscriber_id,
+        season_id: before.season_id,
+        pending: before.pending,
+        role: before.role,
+      });
+      const id = (created?.[0] as { id?: string } | undefined)?.id;
+      if (!id) {
+        // Best-effort re-add to the origin so the member is never dropped on a failed move.
+        await insert(s, "team_memberships", { team_id: before.team_id, subscriber_id: before.subscriber_id, season_id: before.season_id, pending: before.pending, role: before.role });
+        return { ok: false, message: "Move failed — the member was returned to their team." };
+      }
+      await log("teams", "membership.move", "team_membership", id, before, { team_id: input.teamId, subscriber_id: before.subscriber_id, season_id: before.season_id }, false);
+      return { ok: true, message: "Member moved — logged to Audit Log." };
     }
 
     // ── Announcements ────────────────────────────────────────────────────────
