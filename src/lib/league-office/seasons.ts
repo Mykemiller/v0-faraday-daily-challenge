@@ -18,6 +18,9 @@ import { type Season } from "./data";
 import {
   configFingerprint, type ConfigState, type Finding,
 } from "./season-config-logic";
+import {
+  ASSIGNABLE_LIFECYCLE_STATES, type LifecycleState,
+} from "./game-library-logic";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -41,6 +44,7 @@ export type GameCatalogRow = {
   sort_order: number;
   launched_on: string | null;
   retired_on: string | null;
+  lifecycle_state: LifecycleState;
 };
 
 export type SeasonConfigRow = {
@@ -143,8 +147,18 @@ const CONFIG_COLS = "*";
 
 // ── primitive loads ──────────────────────────────────────────────────────────
 
+const ASSIGNABLE_FILTER = `lifecycle_state=in.(${ASSIGNABLE_LIFECYCLE_STATES.join(",")})`;
+
+/** THE season-slate catalog read. Filtered to assignable games, because every
+ *  caller feeds a surface that ends in a `season_games` row: the editor's slate,
+ *  the seasons index counts, the version diff, and `/api/lo/game-catalog`.
+ *
+ *  Still fully catalog-driven — promoting a game to live or in_test makes it
+ *  appear here with no code change, and demoting it removes it. The Game Library
+ *  console reads the WHOLE catalog through its own loader (game-library.ts); it
+ *  is the surface that is supposed to show new_idea concepts. */
 export const loadGameCatalog = (s: Svc) =>
-  q<GameCatalogRow>(s, `game_catalog?select=*&order=sort_order.asc`);
+  q<GameCatalogRow>(s, `game_catalog?${ASSIGNABLE_FILTER}&select=*&order=sort_order.asc`);
 
 export const loadConfigs = (s: Svc, seasonId: string) =>
   q<SeasonConfigRow>(
@@ -169,12 +183,16 @@ export const loadLeagues = (s: Svc) =>
 // ── RPC helper ───────────────────────────────────────────────────────────────
 
 /** POST to a PostgREST RPC. Returns null on any failure (with the upstream
- *  message when there is one) so callers can degrade rather than throw. */
+ *  message when there is one) so callers can degrade rather than throw.
+ *
+ *  `code` is the raw SQLSTATE. It is carried because the SQLSTATE — not string
+ *  matching on the message — is what lets a caller tell a lifecycle refusal
+ *  (23514) from a locked season (55P03) from anything else. */
 export async function rpc<T = unknown>(
   s: Svc,
   name: string,
   args: Record<string, unknown>
-): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
+): Promise<{ ok: true; data: T } | { ok: false; message: string; code: string | null }> {
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
       method: "POST",
@@ -184,14 +202,18 @@ export async function rpc<T = unknown>(
     });
     const j = await r.json().catch(() => null);
     if (!r.ok) {
+      const body = (j && typeof j === "object" ? j : {}) as Record<string, unknown>;
       const msg =
-        (j && typeof j === "object" && "message" in j && String((j as { message: unknown }).message)) ||
-        `${name} failed (${r.status}).`;
-      return { ok: false, message: msg };
+        (body.message !== undefined && String(body.message)) || `${name} failed (${r.status}).`;
+      return {
+        ok: false,
+        message: msg,
+        code: body.code === undefined || body.code === null ? null : String(body.code),
+      };
     }
     return { ok: true, data: j as T };
   } catch {
-    return { ok: false, message: `${name} failed — network error.` };
+    return { ok: false, message: `${name} failed — network error.`, code: null };
   }
 }
 

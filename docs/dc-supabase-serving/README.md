@@ -4,15 +4,24 @@ Repoints the Daily Challenge serving path onto `dc_puzzle_bank_staging` and
 (at Phase 5) retires the Airtable Puzzle Bank code path. Airtable stays in use
 everywhere else (Academy catalog, lexicon, FAR-287 generation corpus).
 
-## Status (2026-07-29)
+## Status (2026-08-01 — CC-LEAGUE-MODEL-1.0 Part C½)
 
 | Phase | State | Where |
 |---|---|---|
 | 1 — schema (public_id · approval gate · transactional rotator) | **DONE, applied to prod** | `supabase/migrations/20260729000001_dc_supabase_serving.sql` |
 | 2 — serving lib, same 4 exports | **DONE** (10 unit tests) | `src/lib/supabase-puzzle-bank.js` · `npm run test:puzzle-bank` |
 | 3 — `DC_PUZZLE_SOURCE` flag | **DONE** (default `airtable`) | `src/lib/puzzle-bank.js` + the 3 routes |
-| 4 — backfill script | **Script done; full `--apply` is an ops step** | `scripts/dc-migrate/backfill-airtable-to-staging.mjs` |
-| 5 — cutover | **Prepped, not executed** | parity: `scripts/dc-migrate/parity-check.mjs`; sync repoint: `day-content.ts` (flag-gated) |
+| 4 — import | **DONE — forward-only (Myke), 98 rows in prod staging** | `docs/league-model/PART-C-HALF-REPORT.md` |
+| 5 — cutover | **Ready: flip the flag (Myke, Vercel) → watch one rotation → delete Airtable path** | runbook below |
+
+**Step-1 change (Myke, 2026-08-01): "Forward only import."** The full
+historical backfill was descoped — the ~268 Retired rows never get imported
+(no runtime path resolves a retired public id; `getSignalDropAnswer` only
+searches Live rows). The 98 forward rows (7 Live 2026-08-01 + 91 Published
+2026-08-02..14, every original Public ID preserved) were imported via
+Airtable MCP + SQL with the backfill script's exact field mapping, except
+`theme_date = go_live_date` (real `dc_daily_theme` rows exist from
+2026-08-01). Full evidence: `docs/league-model/PART-C-HALF-REPORT.md`.
 
 Verified 2026-07-29:
 
@@ -61,12 +70,12 @@ Verified 2026-07-29:
 
 ## Cutover runbook (Phase 5 — do in order)
 
-1. **Full backfill**: `node scripts/dc-migrate/backfill-airtable-to-staging.mjs`
-   (dry run; check the reported max suffix < 365, re-seed if not), then
-   `--apply`. Needs `AIRTABLE_API_KEY` + `SUPABASE_SERVICE_ROLE_KEY`.
-2. **Parity**: `node --experimental-default-type=module scripts/dc-migrate/parity-check.mjs`
-   → must print `PARITY OK`. Comparison is deep-equality; the only accepted
-   delta class is jsonb object-key reordering (values must be identical).
+1. ~~Full backfill~~ **DONE 2026-08-01 as the forward-only import** (see
+   Status above). Do not run the backfill script `--apply` for history.
+2. ~~Parity~~ **DONE**: per-row RETURNING checks on all 98 imports (public_id
+   preserved, Signal Drop `answer_key = word`, jsonb parses) + a rolled-back
+   live `fn_dc_rotate_live_set('2026-08-02')` dry run (7 promote / 7 retire /
+   exactly 7 Live).
 3. **Flip** `DC_PUZZLE_SOURCE=supabase` in Vercel + redeploy. This switches all
    three routes AND the day-content sync source (D8) at once.
 4. **Watch one rotation cycle** (05:00/06:00 UTC crons): `/api/cron/rotate`
@@ -93,4 +102,7 @@ Verified 2026-07-29:
 - After cutover, `scripts/far287/sync-puzzle-bank-to-airtable.mjs` (staging →
   Airtable push) becomes vestigial; retire it with the Airtable path.
 - CC-2 (fill the bank) sequences BEFORE this cutover completes — this migration
-  does not fill the bank.
+  does not fill the bank. **The bank runs dry after 2026-08-14** (the last
+  Published day in Airtable AND in staging) — with or without the cutover,
+  2026-08-15 has nothing to promote. New days flow: insert/generate into
+  staging → `fn_dc_approve_puzzles` → nightly rotation.

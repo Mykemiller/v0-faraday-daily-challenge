@@ -503,11 +503,13 @@ export function MiniButton({
   onClick,
   disabled,
   tone = "neutral",
+  title,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   tone?: "neutral" | "gold" | "danger";
+  title?: string;
 }) {
   const palette =
     tone === "gold"
@@ -521,6 +523,7 @@ export function MiniButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className="font-mono"
       style={{
         fontSize: 10,

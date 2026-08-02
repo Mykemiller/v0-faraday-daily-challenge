@@ -22,6 +22,7 @@ const PRIMARY: Item[] = [
 ];
 const TOOLS: Item[] = [
   { icon: "⇄", label: "Trading & Free Agency" },
+  { icon: "✉", label: "Messages", href: "/league-office/messages" },
   { icon: "⚑", label: "Announcements", href: "/league-office/announcements" },
   { icon: "☲", label: "Audit Log", href: "/league-office/audit" },
   // Activated by CC-DC-MESSAGING-1.0 — the player message report queue.

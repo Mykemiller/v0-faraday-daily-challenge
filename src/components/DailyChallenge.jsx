@@ -3215,8 +3215,16 @@ export default function DailyChallenge() {
               <p style={{ fontSize:"15px", color:"rgba(20,18,16,0.68)", marginTop:"16px",
                 maxWidth:"52ch", lineHeight:1.6, ...sans }}>
                 Seven daily intelligence challenges for people who work in and around the AI data
-                center economy. Free to play. Two minutes.
+                center economy. Pick any 2-minute challenge, or complete the daily suite in 10&ndash;15 minutes.
               </p>
+              <button
+                onClick={() => startGame("Circuit")}
+                style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
+                  background:C.forest, border:"none", borderRadius:"9px",
+                  padding:"13px 28px", marginTop:"22px", cursor:"pointer",
+                  letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
+                Start now &rarr;
+              </button>
             </div>
 
             {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
@@ -3265,11 +3273,11 @@ export default function DailyChallenge() {
               padding:"28px 24px", margin:"28px 0 0" }}>
               <p style={{ ...sans, fontWeight:700, fontSize:"22px", lineHeight:1.35,
                 color:C.cream, margin:0 }}>
-                <span style={{ color:C.gold }}>1891 → 2080.</span> The news thinks in quarters. Faraday thinks in centuries.
+                The Daily Challenge is just the <span style={{ color:C.gold }}>front door</span>.
               </p>
               <p style={{ ...sans, fontWeight:400, fontSize:"15px", lineHeight:1.7,
                 color:C.cream, opacity:0.85, margin:"16px 0 0" }}>
-                Generators built in 1891 still power the grid today. The forecasts that matter run to 2080. The Daily Challenge is just the front door — behind it, Faraday maps and models 189 years of signal, across twenty-plus intelligence domains, jurisdiction by jurisdiction.
+                Behind it is something you&rsquo;ve never had before: the full picture of a market no one else can read — in your hands before anyone else&rsquo;s.
               </p>
               <p style={{ ...serif, fontStyle:"italic", fontSize:"16px", color:C.gold,
                 margin:"20px 0 0", paddingTop:"16px",

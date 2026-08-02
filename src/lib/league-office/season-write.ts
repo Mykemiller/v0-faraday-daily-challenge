@@ -16,14 +16,17 @@
 //   • an optimistic-concurrency fingerprint must match or the save 409s.
 
 import { type Svc } from "./service";
+import { seasonDayCount } from "./generation-logic";
 import {
-  bundleFingerprint, getConfigBundle, loadSeasonMemberships, pickFocusConfig, rpc,
+  bundleFingerprint, getConfigBundle, loadGameCatalog, loadSeasonMemberships,
+  pickFocusConfig, rpc,
   type DifficultyMixRow, type SeasonConfigRow, type SeasonGameRow, type ThemeMixRow,
 } from "./seasons";
 import {
-  countOverCap, defaultDifficultyMix, defaultThemeMix, editability,
-  findOverlappingSeason, normalizeDayMask, round2, sanitizeConfigPatch, slugify,
-  type SeasonRange,
+  buildScopeRows, configSaveMessage, countOverCap, defaultDifficultyMix,
+  defaultThemeMix, editability, findOverlappingSeason, normalizeDayMask, round2,
+  sanitizeConfigPatch, slugify,
+  type SeasonRange, type WizardScope,
 } from "./season-config-logic";
 
 const SUPABASE_URL =
@@ -155,11 +158,7 @@ async function assertSeasonUnlocked(s: Svc, seasonId: string): Promise<WriteErr 
 
 // ── create season (wizard submit) ────────────────────────────────────────────
 
-export type WizardScope = {
-  mode: "platform" | "leagues" | "conferences";
-  refIds?: string[];
-  excludeIds?: string[];
-};
+export { type WizardScope };
 
 export type CreateSeasonInput = {
   name: string;
@@ -269,36 +268,17 @@ export async function createSeason(
   };
 }
 
-/** Replace a season's scope set. `platform` with a null ref means ALL (the DB
- *  CHECK enforces that pairing, so the shapes here are not optional). */
+/** Replace a season's scope set. Used where the scope is written on its own
+ *  (season creation, Section B); the config editor routes scopes through the
+ *  bundle RPC instead so they share the save's transaction. */
 async function writeScopeRows(s: Svc, seasonId: string, scope: WizardScope): Promise<void> {
   await del(s, "season_scopes", `season_id=eq.${seasonId}`);
-
-  const rows: Record<string, unknown>[] = [];
-  if (scope.mode === "platform") {
-    rows.push({ season_id: seasonId, scope_type: "platform", scope_ref_id: null, is_excluded: false });
-  } else {
-    const type = scope.mode === "leagues" ? "league" : "conference";
-    for (const id of dedupe(scope.refIds))
-      rows.push({ season_id: seasonId, scope_type: type, scope_ref_id: id, is_excluded: false });
-    // A scope with no inclusions would silently match nothing; fall back to
-    // platform so a half-filled wizard step can never produce a dead season.
-    if (!rows.length)
-      rows.push({ season_id: seasonId, scope_type: "platform", scope_ref_id: null, is_excluded: false });
-  }
-
-  for (const id of dedupe(scope.excludeIds)) {
-    const type = scope.mode === "conferences" ? "conference" : "league";
-    rows.push({ season_id: seasonId, scope_type: type, scope_ref_id: id, is_excluded: true });
-  }
-
+  const rows = buildScopeRows(scope).map((r) => ({ season_id: seasonId, ...r }));
   if (rows.length) await insert(s, "season_scopes", rows);
 }
 
-const dedupe = (xs?: string[]) => [...new Set((xs ?? []).filter(Boolean))];
-
-/** The defaults starting point: full slate from the ACTIVE game catalog, an even
- *  theme mix across the Theaters, and the 30/50/20 difficulty split. */
+/** The defaults starting point: full slate from the ASSIGNABLE game catalog, an
+ *  even theme mix across the Theaters, and the 30/50/20 difficulty split. */
 async function createDefaultsConfig(
   s: Svc,
   seasonId: string,
@@ -317,16 +297,17 @@ async function createDefaultsConfig(
   const configId = (created?.[0] as { id?: string } | undefined)?.id;
   if (!configId) return null;
 
-  const catalog = await fetchJson<{ id: string; sort_order: number; retired_on: string | null; is_active: boolean }[]>(
-    s, `game_catalog?select=id,sort_order,retired_on,is_active&order=sort_order.asc`
-  );
-  const live = (catalog ?? []).filter((g) => g.is_active && !g.retired_on);
+  // Filter on lifecycle_state, NOT is_active/retired_on. Every catalog row is
+  // is_active — including the 11 new_idea concepts — so the old filter emitted
+  // 18 rows and trg_season_games_assignable rejected the whole INSERT, leaving a
+  // brand-new season with an empty slate.
+  const catalog = await loadGameCatalog(s);
 
-  if (live.length)
+  if (catalog.length)
     await insert(
       s,
       "season_games",
-      live.map((g) => ({ season_config_id: configId, game_id: g.id, is_enabled: true, weight: 1, sort_order: g.sort_order }))
+      catalog.map((g) => ({ season_config_id: configId, game_id: g.id, is_enabled: true, weight: 1, sort_order: g.sort_order }))
     );
 
   await insert(
@@ -390,17 +371,24 @@ async function copyConfigAcrossSeasons(
   const configId = (created?.[0] as { id?: string } | undefined)?.id;
   if (!configId) return null;
 
-  const [games, theme, difficulty] = await Promise.all([
+  const [games, theme, difficulty, assignable] = await Promise.all([
     fetchJson<SeasonGameRow[]>(s, `season_games?season_config_id=eq.${source.id}&select=*`),
     fetchJson<ThemeMixRow[]>(s, `season_theme_mix?season_config_id=eq.${source.id}&select=*`),
     fetchJson<DifficultyMixRow[]>(s, `season_difficulty_mix?season_config_id=eq.${source.id}&select=*`),
+    loadGameCatalog(s),
   ]);
 
-  if (games?.length)
+  // The source season may hold a game that has since been retired. Copying it
+  // forward would be a NEW assignment, which trg_season_games_assignable
+  // refuses — taking the whole slate insert down with it. Drop it instead.
+  const assignableIds = new Set(assignable.map((g) => g.id));
+  const carriedGames = (games ?? []).filter((g) => assignableIds.has(g.game_id));
+
+  if (carriedGames.length)
     await insert(
       s,
       "season_games",
-      games.map((g) => ({
+      carriedGames.map((g) => ({
         season_config_id: configId,
         game_id: g.game_id,
         is_enabled: g.is_enabled,
@@ -513,51 +501,45 @@ export async function saveConfigDraft(
       );
   }
 
-  // 1. the config row itself
-  if (payload.config) {
-    const clean = sanitizeConfigPatch(payload.config);
-    if (Object.keys(clean).length) {
-      const res = await patch(s, "season_config", `id=eq.${configId}`, clean);
-      if (!res) return err(400, "Saving the configuration failed — no changes were written.");
-    }
+  // ONE transaction for all five tables (CC-LO-SLATE-FILTER-1.0 FIX 3). These
+  // used to be five separate PostgREST calls, which is how config 667c488f ended
+  // up with its mixes committed and its slate deleted: a mid-sequence refusal
+  // left the earlier writes already durable. A NULL argument means "leave that
+  // set alone", matching the PATCH semantics the editor already relies on.
+  const r = await rpc<SaveBundleResult | SaveBundleResult[]>(s, "season_config_save_bundle", {
+    p_config_id: configId,
+    p_config: payload.config ? sanitizeConfigPatch(payload.config) : null,
+    p_games: payload.games
+      ? payload.games
+          .map((g) => normalizeGameRow(configId, g))
+          .filter((g): g is Record<string, unknown> => g !== null)
+      : null,
+    p_theme: payload.themeMix
+      ? payload.themeMix
+          .map((t) => normalizeThemeRow(configId, t))
+          .filter((t): t is Record<string, unknown> => t !== null)
+      : null,
+    p_difficulty: payload.difficultyMix
+      ? payload.difficultyMix
+          .map((d) => normalizeDifficultyRow(configId, d))
+          .filter((d): d is Record<string, unknown> => d !== null)
+      : null,
+    p_scopes: payload.scope ? buildScopeRows(payload.scope) : null,
+  });
+
+  if (!r.ok) {
+    // The bundle's `catalog` is filtered to assignable games, so it cannot name
+    // the game a lifecycle refusal is about. Read the WHOLE catalog — only on
+    // the failure path, and only to turn a uuid into a name.
+    const all =
+      (await fetchJson<{ id: string; display_name: string }[]>(
+        s, `game_catalog?select=id,display_name`
+      )) ?? [];
+    const mapped = configSaveMessage(r.code, r.message, all);
+    return err(mapped.status, mapped.message);
   }
 
-  // 2..4. children: replace the set, never partial-write a mix (spec §3).
-  if (payload.games) {
-    const rows = payload.games
-      .map((g) => normalizeGameRow(configId, g))
-      .filter((g): g is Record<string, unknown> => g !== null);
-    await del(s, "season_games", `season_config_id=eq.${configId}`);
-    if (rows.length) {
-      const res = await insert(s, "season_games", rows);
-      if (!res) return err(400, "Saving the game slate failed. Reload before editing further — the slate may be incomplete.");
-    }
-  }
-
-  if (payload.themeMix) {
-    const rows = payload.themeMix
-      .map((t) => normalizeThemeRow(configId, t))
-      .filter((t): t is Record<string, unknown> => t !== null);
-    await del(s, "season_theme_mix", `season_config_id=eq.${configId}`);
-    if (rows.length) {
-      const res = await insert(s, "season_theme_mix", rows);
-      if (!res) return err(400, "Saving the theme mix failed. Reload before editing further.");
-    }
-  }
-
-  if (payload.difficultyMix) {
-    const rows = payload.difficultyMix
-      .map((d) => normalizeDifficultyRow(configId, d))
-      .filter((d): d is Record<string, unknown> => d !== null);
-    await del(s, "season_difficulty_mix", `season_config_id=eq.${configId}`);
-    if (rows.length) {
-      const res = await insert(s, "season_difficulty_mix", rows);
-      if (!res) return err(400, "Saving the difficulty mix failed. Reload before editing further.");
-    }
-  }
-
-  // 5. scope (lives on the season, edited from Section B)
-  if (payload.scope) await writeScopeRows(s, bundle.config.season_id, payload.scope);
+  const written = (Array.isArray(r.data) ? r.data[0] : r.data) ?? null;
 
   const after = await getConfigBundle(s, configId);
   await writeAudit(s, {
@@ -574,9 +556,22 @@ export async function saveConfigDraft(
   return {
     ok: true,
     message: "Draft saved — logged to Audit Log.",
-    data: { fingerprint: after?.fingerprint ?? null, findings: after?.findings ?? [] },
+    data: {
+      fingerprint: after?.fingerprint ?? null,
+      findings: after?.findings ?? [],
+      slate: written?.games ?? null,
+    },
   };
 }
+
+type SaveBundleResult = {
+  config_id: string;
+  games: number;
+  theme: number;
+  difficulty: number;
+  scopes: number;
+  dropped_games: string[];
+};
 
 function snapshot(b: {
   config: SeasonConfigRow;
@@ -809,6 +804,10 @@ export async function cancelConfigVersion(
 // them here would make every season PATCH that touched them fail outright.
 const SEASON_FIELDS = [
   "name", "starts_on", "ends_on", "status", "tz",
+  // Playoff + roster-freeze dates. The generation checklist (condition 2)
+  // REQUIRES these before a season can generate, but nothing wrote them — they
+  // had no editor. They live on `seasons`, not season_config.
+  "playoff_starts_on", "roster_freeze_on",
 ] as const;
 
 export type SeasonPatchInput = {
@@ -860,6 +859,30 @@ export async function updateSeason(
 
   if (body.starts_on && body.ends_on && String(body.ends_on) <= String(body.starts_on))
     return err(422, "The end date must be after the start date.");
+
+  // Playoff + roster-freeze ordering — the same rules the generation checklist
+  // enforces (generation-logic condition 2), applied here so the API is the
+  // fence and the commissioner gets the real reason, not a later silent block.
+  // Validate against the EFFECTIVE window (a patch may touch only one field).
+  const eff = (k: string) => (k in body ? body[k] : before[k]) as string | null;
+  const startsOn = eff("starts_on");
+  const endsOn = eff("ends_on");
+  const playoff = eff("playoff_starts_on");
+  const freeze = eff("roster_freeze_on");
+  if (playoff && startsOn && endsOn && (playoff <= startsOn || playoff > endsOn))
+    return err(422, "Playoff start must fall inside the season window.");
+  if (freeze && playoff && freeze > playoff)
+    return err(422, "Roster freeze must be on or before the playoff start.");
+  if (freeze && startsOn && endsOn) {
+    const dayCount = seasonDayCount(startsOn, endsOn);
+    if (dayCount != null) {
+      const quarter = Math.floor((dayCount - 1) / 4);
+      const t = new Date(startsOn + "T12:00:00Z");
+      t.setUTCDate(t.getUTCDate() + quarter);
+      if (freeze < t.toISOString().slice(0, 10))
+        return err(422, "Roster freeze must be at least a quarter of the way into the season.");
+    }
+  }
 
   const res = await patch(s, "seasons", `id=eq.${seasonId}`, body);
   if (!res) return err(400, "Update failed.");

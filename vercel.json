@@ -6,6 +6,7 @@
     { "path": "/api/cron/sync-day-content",               "schedule": "10 6 * * *" },
     { "path": "/api/cron/recompute-solve-bands",          "schedule": "40 6 * * *" },
     { "path": "/api/cron/season-config-apply",             "schedule": "5 * * * *" },
+    { "path": "/api/cron/generation-worker",              "schedule": "*/10 * * * *" },
     { "path": "/api/pipelines/agenda-watch/crawl",        "schedule": "0 6 * * 6" },
     { "path": "/api/pipelines/puc/crawl",                 "schedule": "0 12 * * 6" },
     { "path": "/api/pipelines/data365/fetch",             "schedule": "0 18 * * 6" },

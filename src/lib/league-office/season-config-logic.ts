@@ -578,3 +578,86 @@ export function countOverCap(
   }
   return { over, worst };
 }
+
+// ── CC-LO-SLATE-FILTER-1.0: save-path pure logic ─────────────────────────────
+
+/** Where a season's play is offered. Lives here rather than in season-write so
+ *  the row builder below stays testable without a Supabase client. */
+export type WizardScope = {
+  mode: "platform" | "leagues" | "conferences";
+  refIds?: string[];
+  excludeIds?: string[];
+};
+
+const dedupeIds = (xs?: string[]) => [...new Set((xs ?? []).filter(Boolean))];
+
+/** The scope rows a WizardScope resolves to. `platform` with a null ref means
+ *  ALL (the DB CHECK enforces that pairing, so the shapes here are not
+ *  optional). Pure — `season_id` is stamped by the caller, so the same rows can
+ *  be handed to a direct insert OR to season_config_save_bundle. */
+export function buildScopeRows(scope: WizardScope): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  if (scope.mode === "platform") {
+    rows.push({ scope_type: "platform", scope_ref_id: null, is_excluded: false });
+  } else {
+    const type = scope.mode === "leagues" ? "league" : "conference";
+    for (const id of dedupeIds(scope.refIds))
+      rows.push({ scope_type: type, scope_ref_id: id, is_excluded: false });
+    // A scope with no inclusions would silently match nothing; fall back to
+    // platform so a half-filled wizard step can never produce a dead season.
+    if (!rows.length)
+      rows.push({ scope_type: "platform", scope_ref_id: null, is_excluded: false });
+  }
+
+  for (const id of dedupeIds(scope.excludeIds)) {
+    const type = scope.mode === "conferences" ? "conference" : "league";
+    rows.push({ scope_type: type, scope_ref_id: id, is_excluded: true });
+  }
+
+  return rows;
+}
+
+/** Turn the bundle RPC's refusal into something a commissioner can act on.
+ *
+ *  This replaces a set of catch-all messages that reported every distinct
+ *  failure as "saving the … failed", which is how a lifecycle refusal surfaced
+ *  as a concurrency conflict: the first save half-committed, the fingerprint
+ *  moved, and every retry after that hit the (perfectly genuine) 409. The
+ *  concurrency message is now reachable ONLY from the real fingerprint check —
+ *  no branch below can produce it. */
+export function configSaveMessage(
+  code: string | null,
+  raw: string,
+  catalog: { id: string; display_name: string }[] = []
+): { status: number; message: string } {
+  // 55P03 — fn_season_config_locked_guard / fn_season_config_child_locked_guard.
+  if (code === "55P03" || /is locked — configuration is frozen|locked season/i.test(raw))
+    return { status: 423, message: "This season is locked; configuration is frozen." };
+
+  // 23514 — fn_season_games_assignable. Surface the trigger's OWN message; it
+  // already names the offending game, so only swap the uuid for a display name.
+  if (code === "23514" && /lifecycle state/i.test(raw))
+    return { status: 409, message: nameGamesInMessage(raw, catalog) };
+
+  // 23503 — a game_id that is not in the catalog at all.
+  if (code === "23503") return { status: 409, message: nameGamesInMessage(raw, catalog) };
+
+  // Raised by season_config_save_bundle itself.
+  if (code === "42501") return { status: 409, message: raw };
+  if (code === "P0002") return { status: 404, message: "Config not found." };
+
+  return { status: 400, message: `Saving the configuration failed — nothing was written. (${raw})` };
+}
+
+/** Postgres can only name the offending row by uuid. Substitute the display name
+ *  so the commissioner reads “Grid Lock”, not a uuid they have to go look up. */
+function nameGamesInMessage(raw: string, catalog: { id: string; display_name: string }[]): string {
+  const byId = new Map(catalog.map((g) => [g.id, g.display_name]));
+  return raw.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    (id) => {
+      const name = byId.get(id.toLowerCase());
+      return name ? `“${name}”` : id;
+    }
+  );
+}

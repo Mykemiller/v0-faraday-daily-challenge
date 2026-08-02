@@ -19,6 +19,18 @@ export function isLifecycleState(v: unknown): v is LifecycleState {
   return typeof v === "string" && (LIFECYCLE_STATES as readonly string[]).includes(v);
 }
 
+/** The states a game may be ASSIGNED to a season in — the same set
+ *  `fn_season_games_assignable()` enforces in the database.
+ *
+ *  This is the ONLY correct assignability test. Matching is_active or is_beta
+ *  instead is what shipped the CC-LO-SLATE-FILTER-1.0 bug: every catalog row is
+ *  is_active, including the concepts that have no puzzle bank, so the slate
+ *  offered 18 games and the DB refused all 18. */
+export const ASSIGNABLE_LIFECYCLE_STATES = ["live", "in_test"] as const;
+
+export const isAssignableGame = (g: { lifecycle_state?: string | null }): boolean =>
+  (ASSIGNABLE_LIFECYCLE_STATES as readonly string[]).includes(String(g.lifecycle_state));
+
 /** Human labels for the badge + the transition menu. */
 export const LIFECYCLE_LABEL: Record<LifecycleState, string> = {
   new_idea: "New idea",

@@ -38,6 +38,50 @@ now 28,280, exactly the projection.** Full evidence + execution record:
   safe to re-run as a sweep if ever needed.
 - Scratch evidence tables were dropped after sign-off (0 remaining).
 
+## Artifact tagging spine (CC-ARTIFACT-TAGGING-SPINE-1.0, claude/artifact-tagging-spine-xd930e, 2026-08-01)
+
+Three tagging axes (IDF domain/sub-domain · citation · jurisdiction) made measurable.
+Migration `20260801120000_artifact_tagging_spine.sql` (**APPLIED to prod 2026-08-01**,
+additive only, advisor delta = 4 intended `rls_enabled_no_policy` INFOs); full findings:
+`docs/artifact-tagging-spine/REPORT.md`. **No writes to `artifacts`/`entities`/
+`artifact_entities`** — every §6 STOP condition held.
+
+- **Domain tags are lane labels, not content truth: 42.3% strict precision** (200-row
+  stratified hand-check; no domain reaches 90%; D15 0%, D18/D19 22%). AUTO-199 is
+  **94.6% of the corpus** and stamps `ifs_domains` from `source_registry.idf_domains`
+  per SOURCE — its local-gov-watch lanes stamp `[D13,D18]` on obituaries. Treat
+  `ifs_domains` as collection provenance until enrichment-stage re-verification lands.
+- **Sub-domain 2.9% root cause = never attempted for AUTO-199** (dedicated crawlers
+  AUTO-060+ are already 100% tagged; that path is fully harvested). v1 keyword rules
+  (`tagspine_subdomain_rules`, 31 rules) staged **6,919 candidates on 5,993 artifacts**
+  in `artifact_subdomain_candidates` — measured **69.5% strict / 90.0% lenient**, below
+  the 90% bar, so they are **STAGED ONLY — never bulk-write `artifacts.ifs_subdomains`
+  without Myke sign-off**. Per-rule: D3.4 100%, D7.2 100%, D18.2 89% · D13.3 47%,
+  D2.5 0% strict. ⚠️ `ifs_subdomains` is `'{}'` (empty array, NOT null) on untagged
+  rows — guard with `coalesce(cardinality(...),0)=0`, never `array_length(...)=0`.
+- **Jurisdiction axis exists: `artifact_jurisdictions`** (confidence + method on every
+  row, never denormalised onto artifacts) — **17,970 pairs / 14,807 artifacts (5.4%)**,
+  populated ONLY via the entity path: `tagspine_geo_entity_map` classifies all 270
+  geography entities (146 resolved · 78 held_ambiguous · 46 non_jurisdictional).
+  75-pair hand-check: **0 wrong** (61 correct / 14 plausible) — passes the bar.
+  **The lane_scope shortcut (gsearch:loc-* → target place) measured 49% aboutness and
+  was REJECTED** — do not populate it; Google News city queries drift to wrong-state
+  homonyms and statewide stories. Honest ceiling ~6.5% until jurisdiction resolution
+  runs at entity-extraction time. Spine gotchas: names carry LSAD suffixes
+  ("Columbus city"), **no CDP rows** (Ashburn VA unresolvable), metro tier has corrupt
+  `state_abbr` (Northern Virginia→TN).
+- **`v_artifact_tagging_health`** (service-role only): per-domain axis coverage +
+  readiness predicates. All consumers require **citable** (= the 20260801091150
+  contract). Ready today: **Library/Academy 7,880 · JW 3,721** (of 275,393).
+- **Citability moved mid-task 13,117 → 28,280** — the CC-INGEST-METADATA-EXTRACTION
+  backfill landed during execution. **D18 stays effectively uncitable (278/31,045,
+  0.9%)**: it is one lane of Google News redirect stubs; Opposition Register /
+  Permitting Denial cannot ship until loc-lane ingest resolves real publisher URLs —
+  tagging cannot fix an uncitable source.
+- **Myke queue:** approve/deny promoting the ≥85%-strict rule subset (~2,400 artifacts);
+  set the JW confidence threshold (view reports ≥0.8); dispose of the 78 held entities
+  (Ashburn, Georgia-state-vs-country first); D18 ship/hold decision.
+
 ## League model Part A — seasons join leagues (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
 
 Part A of the league → conference → durable-team restructure. Migration
@@ -142,6 +186,93 @@ diff was ZERO rows); full evidence: `docs/league-model/PART-C-REPORT.md`.
 - **⚠️ Repo-only `20260728000001_lo_reset_season_scoring.sql` was never
   applied to prod** and targets the old column name — rewrite it against
   `legacy_season_id` before ever applying.
+
+## League model Part C½ — puzzle serving Airtable → Supabase (CC-LEAGUE-MODEL-1.0, claude/league-model-supabase-cutover-i5t9q2, 2026-08-01)
+
+Part C½: `dc_puzzle_bank_staging` holds the complete forward serve set; the
+only remaining cutover step is **Myke setting `DC_PUZZLE_SOURCE=supabase` in
+Vercel + redeploy** (rollback = unset + redeploy). Evidence:
+`docs/league-model/PART-C-HALF-REPORT.md`; updated runbook:
+`docs/dc-supabase-serving/README.md`.
+
+- **⚠️ HARD DEADLINE: the bank runs dry after 2026-08-14** — Airtable AND
+  staging both end there. CC-2 (fill the bank: insert → `fn_dc_approve_puzzles`
+  → rotation) must land before 2026-08-15 regardless of the flag.
+- **"Forward only import" (Myke 2026-08-01):** 98 rows imported (7 Live
+  2026-08-01 + 91 Published 2026-08-02..14, 7 types × 14 days), the ~268
+  Retired/historical rows deliberately skipped — no runtime path resolves a
+  retired public id. All original Public IDs preserved (`dc_public_id_seq`
+  untouched at 365; the mint trigger skips rows arriving with an id). The
+  historical `--apply` backfill in `backfill-airtable-to-staging.mjs` is
+  **superseded — do not run it** (header comment says so).
+- Import ran as Airtable MCP reads → per-day SQL INSERTs (container egress is
+  policy-blocked; no AIRTABLE_API_KEY exists server-side), transcribing the
+  backfill script's exact mapping, except **forward rows carry
+  `theme_date = go_live_date`** (real dc_daily_theme rows exist from 08-01).
+  Aug 8–11 rows have NULL hints — faithful to Airtable (never authored).
+  98/98 per-row RETURNING checks green; rolled-back
+  `fn_dc_rotate_live_set('2026-08-02')` dry run promoted/retired 7/7.
+- **`dc_puzzle_bank_staging.season_id`** (uuid NULL → seasons, migration
+  `20260801000005…`, **APPLIED to prod 2026-08-01**) — forward hook only; the
+  serve path never reads it; season slates stay `season_config`/`season_games`.
+- `puzzle-bank.js` `PUZZLE_TYPES` re-export repointed onto
+  `supabase-puzzle-bank.js` so the Phase-5 Airtable-lib deletion can't orphan
+  the facade. **The Airtable lib itself is still in tree — delete only after
+  the flag flip + one watched rotation cycle** (guardrail unchanged).
+- AC6 (Signal Drop answer/`answer_key` never in client payloads) is asserted
+  by `npm run test:puzzle-bank`; AC7 re-verified: zero anon/authed policies
+  on any `dc_*` table.
+
+## League model Part D — season builder + generation worker (CC-FARADAY-LEAGUE-1.0, claude/faraday-league-model-91w9rf, 2026-08-01)
+
+Part D: calendar-wide pre-generation is retired; a commissioner configures a
+season and generates its puzzles from `/league-office/seasons/[id]` ("Puzzle
+generation" card). Migration `20260801140000_league_model_part_d_season_generation.sql`
+(**APPLIED to prod 2026-08-01**, Myke-approved); full evidence + Hot Summer
+runbook: `docs/league-model/PART-D-REPORT.md`.
+
+- **Themes are season-scoped**: `dc_daily_theme.season_id` (the 500 NULL-season
+  rows are the reusable CORPUS — never served, never deleted). ⚠️ The old
+  `UNIQUE(theme_date)` + simple staging FK are GONE — replaced by unique
+  `(season_id, theme_date)` + partial unique on corpus dates + the composite
+  MATCH SIMPLE FK `dc_staging_theme_fk` (the 98 season-less C½ import rows skip
+  it, documented). Run `34dd26f6` is superseded (DEC-3) — never resume it.
+- **Worker = Vercel Node routes** (Myke's "vercel edge function" call, 2026-08-01
+  — literal Edge can't run 60s batches): one engine
+  (`src/lib/generation/worker.ts`), two triggers — staff `POST
+  /api/lo/generation/worker` and cron `/api/cron/generation-worker` (*/10,
+  `maxDuration=300`). Bounded slices; heartbeat + `phase_cursor` + honest
+  counters checkpointed per batch; pilot = 1 puzzle/game (DEC-5) on the first
+  globally-free date; zero-progress sweep → `failed_short` (stops + reports);
+  full completion stamps `seasons.generated_at`. Generated rows are ALWAYS
+  Draft/Unpublished with `public_id` NULL (trigger mints on publish, DEC-6).
+- **Validation is server-side once** (`generation-logic.ts` pure +
+  `generation-status.ts` loader): conditions 1–10 mapped onto the live model —
+  slate = `season_games`→`game_catalog` live/runtime_key (Logo Match =
+  `dead_game`, Myke re-confirmed it never existed); NEW `season_games.
+  puzzle_count` (NULL = day count; `<` errors, `>` only WARNS — the global
+  `UNIQUE(puzzle_type, go_live_date)` makes DEC-2 surplus unrepresentable in
+  the v1 single-league bank); **theme-mix `sector_code`s ARE the D1–D23 codes**
+  and are checked live against the Domain Registry (fail-soft to corpus).
+- **Locked seasons reject config mutation AT THE DB** (`55P03` triggers on
+  season_config + all three child tables) with ONE exemption: state-machine
+  bookkeeping UPDATEs (`state/effective_from/effective_to/applied_at`) still
+  pass so promote/apply_due survive a lock. Do not "tighten" that exemption —
+  it keeps the hourly cron from aborting on locked seasons.
+- **Tier 2 cases** `season.generate_pilot|generate_full|approve_pilot|
+  approve_puzzles` → `generation-write.ts` (each re-derives the status before
+  writing; one audit row, `domain='seasons'`). Approve calls
+  `fn_dc_approve_puzzles(dates, actor)` with the SEASON's draft dates.
+- **Alarms**: stall banner (heartbeat >30 min) + the bank-minimum alert (any
+  configured game <14 days Published/Live ahead — AUTO-031's role, now real).
+- **DEC-7 guard is a test**: `npm run test:generation-readonly` — Airtable
+  access exists ONLY in `src/lib/generation/corpus.ts` and is GET-only; also
+  asserts the worker never writes `public_id`/Published. Logic tests:
+  `npm run test:generation` (17). Ports `src/lib/generation/{puzzle-schema,
+  prompts}.js` are verbatim copies of the far287 lib (script stays for local use).
+- **Critical path**: Hot Summer needs config → pilot (lands 2026-08-15; Aug
+  3–14 are covered by the import) → approve → full (~147 puzzles) → approve →
+  lock, before 2026-08-15. Needs Anthropic credit on the Vercel key.
 
 ## Messaging — captain broadcast + 1:1 DMs (CC-DC-MESSAGING-1.0, claude/dc-messaging-ad1e0b, 2026-07-31)
 
