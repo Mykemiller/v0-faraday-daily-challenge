@@ -17,6 +17,12 @@
 // /api/teams. The route key is teams.id (uuid) — the identifier the whole
 // leaderboard data layer already keys on.
 
+import {
+  isDbRosterFrozenError,
+  rosterFreezeGuard,
+  SEASON_PLAYOFF_COLUMNS,
+} from '@/lib/league-playoffs/server';
+
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
 
@@ -67,7 +73,7 @@ async function resolveSubscriber(
 
 async function activeSeason(h: Svc) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=id,name,ends_on,locked_at&limit=1`,
+    `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&limit=1`,
     { headers: h, cache: 'no-store' }
   );
   const rows = await r.json().catch(() => null);
@@ -346,6 +352,11 @@ export async function POST(
   if (action === 'leave') {
     if (!isMember) return Response.json({ error: 'not_a_member' }, { status: 403 });
     if (!viewer.email) return Response.json({ error: 'subscriber_not_found' }, { status: 400 });
+    // Playoff roster freeze. team_leave enforces this at the DB too (migration
+    // 20260802120000) — checking here first turns a raw PostgREST 500 into the
+    // same {error:'roster_frozen'} shape the other player routes return.
+    const frozen = rosterFreezeGuard(season);
+    if (frozen) return frozen;
     // Reuse the canonical team_leave RPC: season-scoped delete + captaincy roll +
     // last-member team cleanup (company-with-children preserved). Preserves the
     // subscriber's historical scores — only the membership is removed.
@@ -356,6 +367,13 @@ export async function POST(
     });
     if (!rpcR.ok) {
       const err = await rpcR.text();
+      // The freeze can flip between the guard above and this call (a midnight
+      // boundary, or a commissioner setting the date mid-request). Surface the
+      // DB's rejection in the same shape rather than as a generic 500.
+      if (isDbRosterFrozenError(err)) {
+        return rosterFreezeGuard({ ...season, roster_freeze_on: season.roster_freeze_on }) ??
+          Response.json({ error: 'roster_frozen' }, { status: 403 });
+      }
       console.error('team leave failed', err);
       return Response.json({ error: 'leave_failed' }, { status: 500 });
     }
