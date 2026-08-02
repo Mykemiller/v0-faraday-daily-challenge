@@ -67,14 +67,11 @@ export default function AboutPage() {
 
         <Section kicker="The rest of Faraday" title="Beyond the daily games">
           <p>
-            The Daily Challenge is one surface. Faraday Intelligence spans a family of products for
-            people who build, finance, power, and site AI infrastructure — from live market signals
-            to grounded, cited answers about the corpus.
+            The Daily Challenge is one surface of something larger. Faraday Intelligence is a service
+            built for the people powering the AI era — and there is more of it than the games let on.
           </p>
           <p>
-            The full lineup lives on the{" "}
-            <Link href="/" className="font-medium text-forest underline hover:text-gold">Faraday Intelligence homepage</Link>.
-            Curious who&rsquo;s behind the briefings? Meet{" "}
+            The rest reveals itself in time. Curious who&rsquo;s behind the briefings? Meet{" "}
             <Link href="/who-is-faraday" className="font-medium text-forest underline hover:text-gold">Gil Faraday</Link>.
           </p>
         </Section>
