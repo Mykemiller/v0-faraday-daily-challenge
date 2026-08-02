@@ -17,10 +17,12 @@
 // /api/teams. The route key is teams.id (uuid) — the identifier the whole
 // leaderboard data layer already keys on.
 
+import { parseScoringPhase } from '@/lib/league-playoffs/phase';
 import {
   isDbRosterFrozenError,
   rosterFreezeGuard,
   SEASON_PLAYOFF_COLUMNS,
+  statusFor,
 } from '@/lib/league-playoffs/server';
 
 const SUPABASE_URL =
@@ -116,6 +118,12 @@ export async function GET(
 
   const { searchParams } = new URL(request.url);
   const token = searchParams.get('token') ?? '';
+  // phase=full keeps calling the ORIGINAL RPCs, so this route stays correct even
+  // if the Part 2 migration has not been applied yet.
+  const phase = parseScoringPhase(searchParams.get('phase'));
+  const phaseArg = phase === 'full' ? {} : { p_phase: phase };
+  const boardRpc = phase === 'full' ? 'team_leaderboard_season' : 'team_leaderboard_phase';
+  const totalRpc = phase === 'full' ? 'team_total_score' : 'team_total_score_phase';
 
   const season = await activeSeason(h);
   if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
@@ -144,10 +152,10 @@ export async function GET(
 
   // Season points per member (scored members only).
   const seasonPointsMap = new Map<string, number>();
-  const lbR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/team_leaderboard_season`, {
+  const lbR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${boardRpc}`, {
     method: 'POST',
     headers: { ...h, Prefer: 'return=representation' },
-    body: JSON.stringify({ p_team_id: teamId, p_season_id: season.id }),
+    body: JSON.stringify({ p_team_id: teamId, p_season_id: season.id, ...phaseArg }),
   });
   if (lbR.ok) {
     const rows = await lbR.json().catch(() => []);
@@ -175,10 +183,20 @@ export async function GET(
   }
 
   // Team aggregate season total (authoritative RPC).
-  const totR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/team_total_score`, {
+  // Derived playoff state, computed once in the season's own timezone.
+  const status = statusFor(season);
+  const playoffState = {
+    phase: status.phase,
+    playoffs_live: status.playoffsLive,
+    playoff_starts_on: status.playoffStartsOn,
+    days_until_playoffs: status.daysUntilPlayoffs,
+    roster_frozen: status.roster.frozen,
+  };
+
+  const totR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${totalRpc}`, {
     method: 'POST',
     headers: { ...h, Prefer: 'return=representation' },
-    body: JSON.stringify({ p_team_id: teamId, p_season_id: season.id }),
+    body: JSON.stringify({ p_team_id: teamId, p_season_id: season.id, ...phaseArg }),
   });
   const teamTotal = totR.ok ? ((await totR.json().catch(() => 0)) as number) || 0 : 0;
   const teamTodayTotal = ids.reduce((s, id) => s + (todayMap.get(id) ?? 0), 0);
@@ -252,6 +270,8 @@ export async function GET(
 
   return Response.json({
     season: { id: season.id, name: season.name },
+    phase,
+    playoff: playoffState,
     team: {
       id: team.id,
       name: team.name,

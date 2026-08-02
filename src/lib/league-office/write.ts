@@ -27,6 +27,13 @@ import {
   approveSeasonPuzzles,
   type GenLogFn,
 } from "./generation-write";
+import {
+  savePlayoffConfig,
+  seedPlayoffField,
+  recomputePlayoffBracket,
+  clearPlayoffBracket,
+  type PlayoffLogFn,
+} from "./playoff-write";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -187,6 +194,10 @@ export type ActionInput = {
   category?: string;
   description?: string;
   patch?: unknown;
+  // Playoffs (domain 'playoffs')
+  participantKind?: string;
+  qualifierCount?: number;
+  seedingSource?: string;
 };
 
 /** Cap on the CTA button label — it renders inside a single banner row. */
@@ -554,6 +565,36 @@ export async function executeAction(
           return approvePilot(s, genLog, { seasonId: input.seasonId });
         default:
           return approveSeasonPuzzles(s, genLog, staffEmail, { seasonId: input.seasonId });
+      }
+    }
+
+    // ── Playoffs (domain 'playoffs') ─────────────────────────────────────────
+    // The bracket is never hand-edited: seed/recompute call the SQL functions,
+    // which derive everything from real score_events. There is deliberately NO
+    // "set winner" action — a result a commissioner could type in is not a
+    // result. See src/lib/league-playoffs/bracket.ts for the rules.
+    case "playoff.configure":
+    case "playoff.seed":
+    case "playoff.recompute":
+    case "playoff.clear": {
+      const plyLog: PlayoffLogFn = (action, targetType, targetId, before, after, reversible) =>
+        log("playoffs", action, targetType, targetId, before, after, reversible);
+
+      switch (input.action) {
+        case "playoff.configure":
+          return savePlayoffConfig(s, plyLog, {
+            seasonId: input.seasonId,
+            participantKind: input.participantKind,
+            qualifierCount: input.qualifierCount,
+            seedingSource: input.seedingSource,
+            staffEmail,
+          });
+        case "playoff.seed":
+          return seedPlayoffField(s, plyLog, { seasonId: input.seasonId, staffEmail });
+        case "playoff.recompute":
+          return recomputePlayoffBracket(s, plyLog, { seasonId: input.seasonId });
+        default:
+          return clearPlayoffBracket(s, plyLog, { seasonId: input.seasonId });
       }
     }
 

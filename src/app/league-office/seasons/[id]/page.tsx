@@ -12,6 +12,7 @@ import { SeasonVersions } from "@/components/league-office/season/SeasonVersions
 import { SeasonActionBar } from "@/components/league-office/season/SeasonActionBar";
 import { SeasonDatesCard } from "@/components/league-office/season/SeasonDatesCard";
 import { GenerationPanel } from "@/components/league-office/season/GenerationPanel";
+import { PlayoffPanel } from "@/components/league-office/season/PlayoffPanel";
 import { dayMaskLabel } from "@/lib/league-office/season-config-logic";
 
 function dnum(d: string | null): number | null {
@@ -84,6 +85,12 @@ export default async function SeasonDetailPage({
             playoffStartsOn={s.playoff_starts_on}
             rosterFreezeOn={s.roster_freeze_on}
           />
+        </Card>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Card title="Playoffs">
+          <PlayoffPanel seasonId={s.id} />
         </Card>
       </div>
 
