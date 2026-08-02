@@ -101,8 +101,8 @@ export function SeasonMatrix({
           <Legend kind="disabled" label="Disabled" />
           <Legend kind="unassigned" label="Not assigned" />
           <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <StatusChip label="advisory only" tone="amber" />
-            <span>season config does not affect what is served today</span>
+            <StatusChip label="live" tone="green" />
+            <span>enabled games are what subscribers are served</span>
           </span>
         </div>
       </div>

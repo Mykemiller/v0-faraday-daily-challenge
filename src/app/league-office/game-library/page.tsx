@@ -83,10 +83,11 @@ export default async function GameLibraryPage() {
       </Card>
 
       <p style={{ fontSize: 11.5, color: "#8d8375", marginTop: 18, lineHeight: 1.6, maxWidth: 760 }}>
-        <strong>Advisory only.</strong> The season slate records intent; it does not gate serving.{" "}
-        <code>/api/challenge/today</code> returns whatever the puzzle bank has Live for the date,
-        keyed by the runtime name — it does not consult season configuration. Enforcement is a
-        separate phase behind the <code>DC_PUZZLE_SOURCE</code> cutover.
+        <strong>The slate gates serving.</strong> A game enabled here is served to subscribers;
+        a game disabled here is not — it loses its lobby tile and cannot be played.{" "}
+        <code>/api/challenge/today</code> narrows the day&rsquo;s Live puzzles to the active
+        season&rsquo;s enabled games. A season with no active configuration serves everything,
+        so an unconfigured season can never go dark.
       </p>
 
       <Toaster />

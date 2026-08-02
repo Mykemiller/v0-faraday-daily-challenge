@@ -24,6 +24,12 @@
 
 // DC_PUZZLE_SOURCE selects airtable (default) or supabase — see puzzle-bank.js.
 import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
+// Season slate enforcement (retires D4 — the slate used to be advisory). Applied
+// to the RESULT of getLivePuzzles(), so it is backend-agnostic: it works
+// identically on the Airtable and Supabase paths, and does not wait on the
+// DC_PUZZLE_SOURCE cutover.
+import { filterToSlate } from "@/lib/season-slate";
+import { resolveActiveSeasonSlate } from "@/lib/season-slate-server";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -139,12 +145,18 @@ async function fetchSolveBands() {
 
 export async function GET() {
   try {
-    const [puzzles, tip, takes, solveBands] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate] = await Promise.all([
       getLivePuzzles(),
       getTipOfTheDay(),
       fetchTodaysTakes(),
       fetchSolveBands(),
+      resolveActiveSeasonSlate(),
     ]);
+
+    // Narrow to the season's enabled games. A null slate leaves the set
+    // untouched — see season-slate.ts for the two fail-safes and why they are
+    // load-bearing (3 of 6 prod seasons have no active config).
+    const puzzles = filterToSlate(livePuzzles, slate);
     // Attach the take + signal to each puzzle by type (spoiler-safe: both are
     // rendered only on the completion screen, after the player has solved that
     // puzzle — and the signal carries no answer material by construction).
@@ -157,9 +169,12 @@ export async function GET() {
         if (entry.signal) puzzles[type].signal = entry.signal;
       }
     }
-    return Response.json({ puzzles, tip, solveBands }, { headers: NO_STORE });
+    // `slate` rides along so the lobby can render the season's games rather than
+    // its hardcoded GAME_CONFIGS list — without it a disabled game keeps its
+    // tile and falls through to mock data when tapped. null = show everything.
+    return Response.json({ puzzles, tip, solveBands, slate }, { headers: NO_STORE });
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
-    return Response.json({ puzzles: {}, tip: null, solveBands: {} }, { headers: NO_STORE });
+    return Response.json({ puzzles: {}, tip: null, solveBands: {}, slate: null }, { headers: NO_STORE });
   }
 }
