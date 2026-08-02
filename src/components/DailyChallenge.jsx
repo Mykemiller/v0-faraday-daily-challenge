@@ -3215,8 +3215,16 @@ export default function DailyChallenge() {
               <p style={{ fontSize:"15px", color:"rgba(20,18,16,0.68)", marginTop:"16px",
                 maxWidth:"52ch", lineHeight:1.6, ...sans }}>
                 Seven daily intelligence challenges for people who work in and around the AI data
-                center economy. Free to play. Two minutes.
+                center economy. Pick any 2-minute challenge, or complete the daily suite in 10&ndash;15 minutes.
               </p>
+              <button
+                onClick={() => startGame("Circuit")}
+                style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
+                  background:C.forest, border:"none", borderRadius:"9px",
+                  padding:"13px 28px", marginTop:"22px", cursor:"pointer",
+                  letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
+                Start now &rarr;
+              </button>
             </div>
 
             {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
