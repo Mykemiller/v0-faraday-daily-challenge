@@ -1,5 +1,86 @@
 @AGENTS.md
 
+## League Playoffs (CC-LEAGUE-PLAYOFFS-1.0, claude/league-playoffs-implementation-b78mg6, 2026-08-02)
+
+`seasons.playoff_starts_on` / `roster_freeze_on` were pure metadata — a full DB
+sweep found **zero** functions, views, triggers or crons reading them; the only
+behavioural reader was `generation-logic.ts` condition 2. They are now
+load-bearing. Phase 0 findings: `docs/league-playoffs/PHASE-0-FINDINGS.md`;
+Part 1 evidence: `PART-1-REPORT.md`. Down-migrations: `part1-down.sql`,
+`part2-down.sql`.
+
+- **⚠️ `season_config.roster_lock_on` is a DIFFERENT column** from
+  `seasons.roster_freeze_on` (versioned config, shown as "Roster lock" in the LO,
+  still read by nothing). Never conflate them. The freeze keys on
+  `seasons.roster_freeze_on` — what the DB CHECKs and the generation gate agree on.
+- **All phase/freeze dates resolve in `seasons.tz`** (per-season IANA zone,
+  fallback `America/Chicago`) — before this, no date math honoured that column.
+  Derived state is computed **server-side once** and handed to clients
+  (`/api/season/active`, `/api/leaderboard/*`); a browser must never re-derive it
+  or two timezones will disagree about the boundary day.
+- **Single source of truth for the rules:** `src/lib/league-playoffs/phase.ts`
+  (pure) + `server.ts` (loading + the route guard). `npm run test:playoffs` (21).
+  ⚠️ `phaseWindow()` there and `fn_season_phase_window()` in SQL implement the
+  SAME rules — **keep them in sync**; the TS copy drives UI, the SQL copy drives
+  what actually gets summed.
+
+### Part 1 — roster freeze (migration `20260802120000…`)
+- Once `today >= roster_freeze_on`, players cannot join/leave/create teams for
+  the rest of the season. No freeze date → never frozen (inert for 5 of 6
+  seasons; only *Hot summer Final Beta*, freeze 2026-08-17, is affected).
+  **Frozen and locked are independent** — the freeze lands first, so its copy
+  takes precedence in the UI.
+- **⚠️ The guard is deliberately NOT a table trigger.** LO `membership.add` /
+  `membership.move` write `team_memberships` directly over service-role
+  PostgREST, so a trigger would freeze the **commissioner** out of their own
+  override. Instead: `fn_season_roster_frozen()` inside `team_join` /
+  `team_leave` / `team_create` (raises **`FRZ01`**), **plus** `rosterFreezeGuard()`
+  in the four player routes (`/api/teams` create · join_by_token · upsert, and
+  `/api/leaderboard/team/[teamId]` leave) — which bypass the RPCs entirely and
+  would otherwise leak. Staff writes touch neither layer, so the exemption falls
+  out by construction. **Do not consolidate this into a trigger.**
+- `fn_season_roster_frozen` is **SECURITY DEFINER** because `seasons` is RLS-on
+  with zero policies — an invoker read sees no row and the guard would fail
+  **open**. Wire code = `roster_frozen` (403), message
+  "Rosters are frozen for the playoffs."
+
+### Part 2 — phase-windowed scoring (migration `20260802130000…`)
+- **`fn_season_phase_window(season, phase)`** → inclusive `[from_on, to_on]`:
+  `full` = starts→ends (the legacy behaviour), `regular` = starts→playoff−1,
+  `playoff` = playoff→ends. **ZERO ROWS means the phase does not exist for that
+  season — never widen it to the full season**, or regular-season points get
+  reported as playoff points.
+- Three **new sibling RPCs** — `global_leaderboard_phase`,
+  `team_leaderboard_phase`, `team_total_score_phase`. **The three originals are
+  untouched** (same names, signatures, results); each sibling is its original
+  with only the date predicate swapped for a window join. Membership still keys
+  on the SEASON, not the phase.
+- **`?phase=` on `/api/leaderboard/season` and `/api/leaderboard/team/[teamId]`.**
+  `phase=full` (the default, and anything unrecognised) calls the **ORIGINAL**
+  RPCs — so the app is safe to deploy before the migration is applied.
+- `/leaderboard` gains a **Season · Playoffs** toggle, rendered only when the
+  season configures playoffs, and a "Playoffs begin <date>" state so an
+  unopened playoff board never reads as "everyone scored zero".
+
+### Grants — deliberately narrower than the older RPCs
+All five new functions are **`service_role` only**. Verified: anon/authenticated
+see 0 rows in `seasons`/`dc_subscribers`, and the team_* RPCs raise
+`subscriber not found` before the freeze check, so wider grants are unreachable
+dead weight costing 10 advisor findings.
+> **⚠️ anon/authenticated must be revoked BY NAME.** Supabase ships
+> `ALTER DEFAULT PRIVILEGES` granting EXECUTE on every new public function to
+> PUBLIC, anon, authenticated, postgres and service_role **at CREATE time**, so
+> `revoke … from public` alone leaves the role grants intact. The Part 1
+> in-migration gate caught exactly this.
+
+### Status
+**Neither migration is applied to prod.** Both are proven in `BEGIN … ROLLBACK`
+against prod with in-migration gates: Part 1 = 11/11 behavioural (incl. a staff
+write still succeeding while frozen) + 5/5 up/down round trip; Part 2 = 10/10
+(incl. a real-data split on the active season: regular 4283 + playoff 7932 =
+full 12215, and the originals unchanged by adding a playoff date). Phases 3
+(seeding + bracket) and 4 (subscriber surfaces) are not built yet.
+
 ## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
 
 Recovers title/publisher metadata already stored in `public.artifacts` so the

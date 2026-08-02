@@ -44,8 +44,24 @@ interface MyTeam {
   team_name: string;
 }
 
+/** Server-derived playoff state (computed in the season's own timezone by
+ *  /api/leaderboard/season — never re-derived from dates in the browser). */
+interface PlayoffState {
+  phase: "pre" | "regular" | "playoff" | "post";
+  playoffs_live: boolean;
+  playoff_starts_on: string | null;
+  days_until_playoffs: number | null;
+  roster_frozen: boolean;
+}
+
+/** Which slice of the season is being scored. `full` is the whole-season board
+ *  the page has always shown; `playoff` narrows to the playoff window. */
+type ScoringPhase = "full" | "playoff";
+
 interface GlobalData {
   season: Season;
+  phase?: ScoringPhase;
+  playoff?: PlayoffState;
   you: LeaderboardRow | null;
   my_teams: MyTeam[];
   leaderboard: LeaderboardRow[];
@@ -53,6 +69,8 @@ interface GlobalData {
 
 interface TeamData {
   season: Season;
+  phase?: ScoringPhase;
+  playoff?: PlayoffState;
   team_id: string;
   team_total: number;
   team_today_total: number;
@@ -151,6 +169,9 @@ export default function LeaderboardPage() {
   const [globalData, setGlobalData] = useState<GlobalData | null>(null);
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  // Season vs Playoffs. Orthogonal to the Global/Teams/per-team tabs above — it
+  // re-scores whichever board is open, rather than replacing it.
+  const [phase, setPhase] = useState<ScoringPhase>("full");
   const [token, setToken] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
@@ -190,7 +211,10 @@ export default function LeaderboardPage() {
   const loadGlobal = useCallback(async () => {
     setStatus("loading");
     const token = getToken();
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    const p = new URLSearchParams();
+    if (token) p.set("token", token);
+    if (phase !== "full") p.set("phase", phase);
+    const qs = p.toString() ? `?${p.toString()}` : "";
     try {
       const res = await fetch(`/api/leaderboard/season${qs}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -202,13 +226,14 @@ export default function LeaderboardPage() {
     } catch {
       setStatus("error");
     }
-  }, []);
+  }, [phase]);
 
   const loadTeam = useCallback(async (teamId: string) => {
     setStatus("loading");
     const token = getToken();
     const qs = new URLSearchParams({ team_id: teamId });
     if (token) qs.set("token", token);
+    if (phase !== "full") qs.set("phase", phase);
     try {
       const res = await fetch(`/api/leaderboard/season?${qs.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -218,7 +243,7 @@ export default function LeaderboardPage() {
     } catch {
       setStatus("error");
     }
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     if (activeTab === "global") {
@@ -239,6 +264,10 @@ export default function LeaderboardPage() {
 
   const myTeams = globalData?.my_teams ?? [];
   const season = globalData?.season ?? teamData?.season ?? null;
+  // Prefer whichever payload is currently loaded; both carry the same derived
+  // state. Absent (older payload / season without playoffs) → the toggle and the
+  // pre-playoff notice simply never render.
+  const playoffState = globalData?.playoff ?? teamData?.playoff ?? null;
 
   const leaderboard = activeTab === "global"
     ? (globalData?.leaderboard ?? [])
@@ -311,6 +340,40 @@ export default function LeaderboardPage() {
             />
           ))}
         </div>
+
+        {/* Season · Playoffs — only rendered when the season actually configures
+            playoffs, so every season that doesn't looks exactly as before. */}
+        {playoffState?.playoff_starts_on && (
+          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+            <TabChip label="Season" active={phase === "full"} onClick={() => setPhase("full")} />
+            <TabChip label="Playoffs" active={phase === "playoff"} onClick={() => setPhase("playoff")} />
+            {playoffState.playoffs_live && (
+              <span className="ml-1 rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-gold">
+                Playoffs live
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Before the playoff window opens the Playoffs board would be empty and
+            read as "everyone scored zero", which is wrong — so say what it is. */}
+        {phase === "playoff" && playoffState && !playoffState.playoffs_live && (
+          <div className="mb-5 rounded-lg border border-forest/20 bg-warm-cream/60 p-4">
+            <p className="font-serif text-lg font-bold text-forest">
+              {playoffState.phase === "post"
+                ? "The playoffs are over."
+                : `Playoffs begin ${playoffState.playoff_starts_on}`}
+            </p>
+            <p className="mt-1 text-sm text-near-black/60">
+              {playoffState.phase === "post"
+                ? "Final playoff standings are below."
+                : playoffState.days_until_playoffs != null && playoffState.days_until_playoffs > 0
+                ? `${playoffState.days_until_playoffs} day${playoffState.days_until_playoffs === 1 ? "" : "s"} to go. ` +
+                  "Only points scored from that date onward count toward the playoff standings."
+                : "Only points scored in the playoff window count toward the playoff standings."}
+            </p>
+          </div>
+        )}
 
         {/* Team aggregate score */}
         {status === "ready" && activeTab !== "global" && teamData && (
