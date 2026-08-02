@@ -48,6 +48,15 @@ export type ConferenceDim = {
   name: string;
   type: string;
   league_id: string | null;
+  is_active: boolean;
+  archived_at: string | null;
+};
+export type LeagueDim = {
+  id: string;
+  code: string;
+  name: string;
+  league_type: string;
+  is_active: boolean;
   archived_at: string | null;
 };
 export type Season = {
@@ -85,7 +94,9 @@ const subCols =
 
 export const loadTeams = (s: Svc) => q<Team>(s, `teams?select=${teamCols}&order=name.asc`);
 export const loadConferenceDims = (s: Svc) =>
-  q<ConferenceDim>(s, `conferences?select=id,code,name,type,league_id,archived_at&order=name.asc`);
+  q<ConferenceDim>(s, `conferences?select=id,code,name,type,league_id,is_active,archived_at&order=name.asc`);
+export const loadLeagueDims = (s: Svc) =>
+  q<LeagueDim>(s, `leagues?select=id,code,name,league_type,is_active,archived_at&order=name.asc`);
 export const loadSeasons = (s: Svc) =>
   q<Season>(s, `seasons?select=${seasonCols}&order=starts_on.desc`);
 
@@ -407,6 +418,93 @@ export async function getLeagues(s: Svc): Promise<Conference[]> {
     });
   }
   return conferences;
+}
+
+// ── League tree (management view) ────────────────────────────────────────────
+// leagues → conferences → teams, plus league-level "no conference" teams and a
+// synthetic "Independent (no league)" bucket. Archived leagues/conferences are
+// INCLUDED (flagged) so staff can restore them. Team↔conference assignment is
+// the teams.conference_id / league_id FK columns; team_conference_memberships
+// (trigger-derived from play) is deliberately NOT read here.
+export type TeamLite = { id: string; name: string; members: number; archived: boolean };
+export type ConfNode = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  archived: boolean;
+  teams: TeamLite[];
+};
+export type LeagueNode = {
+  id: string;
+  code: string;
+  name: string;
+  league_type: string;
+  archived: boolean;
+  conferences: ConfNode[];
+  looseTeams: TeamLite[]; // in this league, no conference
+};
+export type LeagueTree = {
+  leagues: LeagueNode[];
+  independentTeams: TeamLite[]; // no league_id at all
+  /** Active conferences across all leagues — options for team assignment. */
+  assignTargets: { id: string; label: string }[];
+};
+
+export async function getLeagueTree(s: Svc): Promise<LeagueTree> {
+  const [teams, memberships, confs, leagues] = await Promise.all([
+    loadTeams(s),
+    q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
+    loadConferenceDims(s),
+    loadLeagueDims(s),
+  ]);
+  const memByTeam = new Map<string, number>();
+  for (const m of memberships) if (!m.pending) memByTeam.set(m.team_id, (memByTeam.get(m.team_id) ?? 0) + 1);
+
+  const teamLite = (t: Team): TeamLite => ({
+    id: t.id,
+    name: t.name,
+    members: memByTeam.get(t.id) ?? 0,
+    archived: t.is_active === false || t.archived_at != null,
+  });
+  const confArchived = (c: ConferenceDim) => c.is_active === false || c.archived_at != null;
+  const leagueArchived = (l: LeagueDim) => l.is_active === false || l.archived_at != null;
+
+  const leagueNodes: LeagueNode[] = leagues.map((l) => {
+    const leagueConfs = confs.filter((c) => c.league_id === l.id);
+    const conferences: ConfNode[] = leagueConfs.map((c) => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      type: c.type,
+      archived: confArchived(c),
+      teams: teams.filter((t) => t.conference_id === c.id).map(teamLite),
+    }));
+    const looseTeams = teams
+      .filter((t) => t.league_id === l.id && !t.conference_id)
+      .map(teamLite);
+    return {
+      id: l.id,
+      code: l.code,
+      name: l.name,
+      league_type: l.league_type,
+      archived: leagueArchived(l),
+      conferences,
+      looseTeams,
+    };
+  });
+
+  const independentTeams = teams.filter((t) => !t.league_id).map(teamLite);
+
+  const assignTargets = confs
+    .filter((c) => !confArchived(c))
+    .map((c) => {
+      const league = leagues.find((l) => l.id === c.league_id);
+      return { id: c.id, label: `${league?.name ?? "—"} · ${c.name}` };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return { leagues: leagueNodes, independentTeams, assignTargets };
 }
 
 // ── Seasons ──────────────────────────────────────────────────────────────────
