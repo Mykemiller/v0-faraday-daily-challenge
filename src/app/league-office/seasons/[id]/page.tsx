@@ -10,6 +10,7 @@ import { getSeasonConfigDetail, resolveScopeTeamCount } from "@/lib/league-offic
 import { PageHeading, Card, KpiCard, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { SeasonVersions } from "@/components/league-office/season/SeasonVersions";
 import { SeasonActionBar } from "@/components/league-office/season/SeasonActionBar";
+import { SeasonDatesCard } from "@/components/league-office/season/SeasonDatesCard";
 import { GenerationPanel } from "@/components/league-office/season/GenerationPanel";
 import { dayMaskLabel } from "@/lib/league-office/season-config-logic";
 
@@ -71,6 +72,19 @@ export default async function SeasonDetailPage({
 
       <div style={{ marginBottom: 20 }}>
         <SeasonActionBar seasonId={s.id} locked={!!s.locked_at} status={s.status} />
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Card title="Playoff & roster dates">
+          <SeasonDatesCard
+            seasonId={s.id}
+            locked={!!s.locked_at}
+            startsOn={s.starts_on}
+            endsOn={s.ends_on}
+            playoffStartsOn={s.playoff_starts_on}
+            rosterFreezeOn={s.roster_freeze_on}
+          />
+        </Card>
       </div>
 
       <div style={{ marginBottom: 16 }}>

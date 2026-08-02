@@ -16,6 +16,7 @@
 //   • an optimistic-concurrency fingerprint must match or the save 409s.
 
 import { type Svc } from "./service";
+import { seasonDayCount } from "./generation-logic";
 import {
   bundleFingerprint, getConfigBundle, loadGameCatalog, loadSeasonMemberships,
   pickFocusConfig, rpc,
@@ -803,6 +804,10 @@ export async function cancelConfigVersion(
 // them here would make every season PATCH that touched them fail outright.
 const SEASON_FIELDS = [
   "name", "starts_on", "ends_on", "status", "tz",
+  // Playoff + roster-freeze dates. The generation checklist (condition 2)
+  // REQUIRES these before a season can generate, but nothing wrote them — they
+  // had no editor. They live on `seasons`, not season_config.
+  "playoff_starts_on", "roster_freeze_on",
 ] as const;
 
 export type SeasonPatchInput = {
@@ -854,6 +859,30 @@ export async function updateSeason(
 
   if (body.starts_on && body.ends_on && String(body.ends_on) <= String(body.starts_on))
     return err(422, "The end date must be after the start date.");
+
+  // Playoff + roster-freeze ordering — the same rules the generation checklist
+  // enforces (generation-logic condition 2), applied here so the API is the
+  // fence and the commissioner gets the real reason, not a later silent block.
+  // Validate against the EFFECTIVE window (a patch may touch only one field).
+  const eff = (k: string) => (k in body ? body[k] : before[k]) as string | null;
+  const startsOn = eff("starts_on");
+  const endsOn = eff("ends_on");
+  const playoff = eff("playoff_starts_on");
+  const freeze = eff("roster_freeze_on");
+  if (playoff && startsOn && endsOn && (playoff <= startsOn || playoff > endsOn))
+    return err(422, "Playoff start must fall inside the season window.");
+  if (freeze && playoff && freeze > playoff)
+    return err(422, "Roster freeze must be on or before the playoff start.");
+  if (freeze && startsOn && endsOn) {
+    const dayCount = seasonDayCount(startsOn, endsOn);
+    if (dayCount != null) {
+      const quarter = Math.floor((dayCount - 1) / 4);
+      const t = new Date(startsOn + "T12:00:00Z");
+      t.setUTCDate(t.getUTCDate() + quarter);
+      if (freeze < t.toISOString().slice(0, 10))
+        return err(422, "Roster freeze must be at least a quarter of the way into the season.");
+    }
+  }
 
   const res = await patch(s, "seasons", `id=eq.${seasonId}`, body);
   if (!res) return err(400, "Update failed.");
