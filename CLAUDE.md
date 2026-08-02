@@ -1,5 +1,43 @@
 @AGENTS.md
 
+## Artifact envelope metadata backfill (CC-INGEST-METADATA-EXTRACTION-1.0, claude/artifact-metadata-extraction-go9os8, 2026-08-01)
+
+Recovers title/publisher metadata already stored in `public.artifacts` so the
+`match_artifacts` v1.2 citability predicate can see it. **Both migrations
+APPLIED to prod 2026-08-01 (Myke-approved), all gates passed — citable pool
+now 28,280, exactly the projection.** Full evidence + execution record:
+`docs/ingest-metadata-extraction/REPORT.md`; rollback:
+`docs/ingest-metadata-extraction/down.sql`.
+
+- **Canonical envelope keys = `title`/`summary`/`source`** (what v1.2 already
+  reads; the 13k legacy faraday-crawl rows already conform). Poller keys
+  `source_name`/`source_key`/`license`/`license_status`/`idf_domains`/
+  `confidence_cap` are preserved verbatim — additive normalisation, fill-gaps
+  only, nothing overwritten. **`match_artifacts` itself is unchanged.**
+- **Migration `20260801130000…` (Part 1, direct publishers):** 15,336 rows
+  where `source_name` is a real publisher — title = first line of
+  `raw_content` (the publisher's own headline; 173 unbroken-body rows
+  correctly get none), summary = post-`\n\n` text, source = `source_name`.
+  Citable pool 13,117 → **~28,280** (gap to the ticket's 28,453 = the 173
+  headline-less rows). Proven in BEGIN..ROLLBACK against prod.
+- **Migration `20260801130001…` (Part 2, stub titles — Myke-optional):** the
+  245k Google News stubs gain their real headline as `title` (Google's
+  `" - Publisher"` suffix kept, never parsed). **They NEVER gain a `source`**
+  — their `source_name` is the crawler's search query, and the DB gate raises
+  if any stub ends up with one. Citability unchanged by construction (stub
+  URL fails the predicate). Multi-minute runtime — apply via
+  `apply_migration`/psql, not a 60s interactive window.
+- **The ~1.6k "bare" rows (LinkedIn posts, ISO filings) are deliberately
+  untouched**: measured first-line-as-title precision ~55% vs the 98% bar.
+  Write-set sample precision (200 rows hand-checked, stratified): **156/156**.
+- **Write path is canonical at the source since 2026-08-01:**
+  `source-poller` **v1.4** (deployed BEFORE the backfill — no gap window)
+  writes `title`/`summary` on every insert and `source` only when
+  `scope <> 'query_feed'`. Its VCS record now lives in the **Faraday repo**
+  (`supabase/functions/source-poller/`). Both migrations stay idempotent —
+  safe to re-run as a sweep if ever needed.
+- Scratch evidence tables were dropped after sign-off (0 remaining).
+
 ## Artifact tagging spine (CC-ARTIFACT-TAGGING-SPINE-1.0, claude/artifact-tagging-spine-xd930e, 2026-08-01)
 
 Three tagging axes (IDF domain/sub-domain · citation · jurisdiction) made measurable.
