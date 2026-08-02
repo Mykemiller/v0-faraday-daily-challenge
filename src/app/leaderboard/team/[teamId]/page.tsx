@@ -167,9 +167,14 @@ export default function TeamPage() {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        setActionErr((json as { error?: string }).error === "season_locked"
-          ? "The season is locked — you can't leave right now."
-          : "Couldn't leave the team. Try again.");
+        const code = (json as { error?: string }).error;
+        setActionErr(
+          code === "roster_frozen"
+            ? "Rosters are frozen for the playoffs — you can't leave until next season."
+            : code === "season_locked"
+            ? "The season is locked — you can't leave right now."
+            : "Couldn't leave the team. Try again."
+        );
         setLeaving(false);
         setConfirmLeave(false);
         return;

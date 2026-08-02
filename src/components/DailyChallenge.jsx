@@ -1759,9 +1759,15 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [createTeamError, setCreateTeamError] = useState("");
 
   const isLocked = season?.locked_at && new Date() > new Date(season.locked_at);
+  // Playoff roster freeze — server-derived in the season's own timezone by
+  // /api/season/active, never recomputed here (a client in another zone would
+  // otherwise disagree about the boundary day).
+  const isRosterFrozen = season?.roster_frozen === true;
   // Players manage teams (join up to MAX_ACCOUNT_TEAMS, leave) any time unless the
-  // season is hard-locked. Joins are immediate — the Free Agency deferral is retired.
-  const canEditTeams = sessionToken && !isLocked;
+  // season is hard-locked or rosters are frozen for the playoffs. Joins are
+  // immediate — the Free Agency deferral is retired. Hiding the picker is never
+  // the enforcement point: /api/teams re-checks both server-side on every write.
+  const canEditTeams = sessionToken && !isLocked && !isRosterFrozen;
   const atMaxTeams = myTeams.length >= MAX_ACCOUNT_TEAMS;
 
   useEffect(() => {
@@ -2143,8 +2149,17 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           </>
         )}
 
+        {/* Playoff roster freeze — takes precedence over the lock message: the
+            freeze lands well before the season locks, so it is the state a player
+            hits first, and it has a concrete reason and end. */}
+        {isRosterFrozen && sessionToken && (
+          <div style={{ ...mono, fontSize:"11px", color:C.gold, fontWeight:600, marginTop:"4px" }}>
+            Rosters are frozen for the playoffs — your teams are locked in for the rest of the season.
+          </div>
+        )}
+
         {/* Locked status message — only when the season is hard-locked */}
-        {isLocked && sessionToken && myTeams.length > 0 && (
+        {isLocked && !isRosterFrozen && sessionToken && myTeams.length > 0 && (
           <div style={{ ...mono, fontSize:"11px", color:"rgba(28,52,36,0.45)", marginTop:"4px" }}>
             The season is locked — team changes reopen next season.
           </div>

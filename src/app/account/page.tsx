@@ -83,6 +83,12 @@ interface Season {
   free_agency_start: string | null;
   free_agency_notice_start: string | null;
   locked_at: string | null;
+  // Playoff state, derived server-side by /api/season/active in the season's tz.
+  roster_frozen?: boolean;
+  days_until_roster_freeze?: number | null;
+  season_phase?: "pre" | "regular" | "playoff" | "post";
+  playoffs_live?: boolean;
+  days_until_playoffs?: number | null;
 }
 
 const MAX_TEAMS = 5;
@@ -175,9 +181,15 @@ export default function AccountPage() {
   }, [token, loadAccount, loadSubState, loadSeason, loadMyTeams]);
 
   const isLocked = season?.locked_at != null && new Date() > new Date(season.locked_at);
+  // Playoff roster freeze — server-derived in the season's own timezone by
+  // /api/season/active, never recomputed here (a client in another zone would
+  // otherwise disagree about the boundary day).
+  const isRosterFrozen = season?.roster_frozen === true;
   // Players manage teams (join up to MAX_TEAMS, leave any time) unless the season
-  // is hard-locked at end-of-season. Joins are immediate — no Free Agency deferral.
-  const canEditTeams = !!token && !isLocked;
+  // is hard-locked at end-of-season or rosters are frozen for the playoffs.
+  // Joins are immediate — no Free Agency deferral. Hiding the picker is never the
+  // enforcement point: /api/teams re-checks both server-side on every write.
+  const canEditTeams = !!token && !isLocked && !isRosterFrozen;
   const atMaxTeams = myTeams.length >= MAX_TEAMS;
 
   // Load available teams when editing is open
@@ -493,7 +505,17 @@ export default function AccountPage() {
             </>
           )}
 
-          {isLocked && myTeams.length > 0 && (
+          {/* Frozen takes precedence in the copy: it is the state a player hits
+              first (the freeze lands well before the season locks), and it has a
+              concrete reason and end. */}
+          {isRosterFrozen && (
+            <p className="mt-2 font-mono text-[11px] font-semibold text-gold">
+              Rosters are frozen for the playoffs — your teams are locked in for
+              the rest of the season.
+            </p>
+          )}
+
+          {isLocked && !isRosterFrozen && myTeams.length > 0 && (
             <p className="mt-2 font-mono text-[11px] text-near-black/40">
               The season is locked — team changes reopen next season.
             </p>

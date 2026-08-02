@@ -4,6 +4,15 @@
 // GET /api/teams?scope=my&token=...     → player's current memberships + pending
 // POST /api/teams                       → upsert memberships (respects Free Agency gate)
 //   body: { token, team_ids: string[], season_id: string }
+//
+// ⚠️ Every POST path here writes `team_memberships` DIRECTLY over service-role
+// PostgREST — it does not go through the team_join / team_leave RPCs. The playoff
+// roster freeze added in migration 20260802120000 lives in those RPCs, so it does
+// NOT cover this route: the guards below are the matching fence, using the same
+// predicate from the same pure module. Add a guard to any NEW write path here.
+
+import { rosterFreezeGuard } from '@/lib/league-playoffs/server';
+import { SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -112,7 +121,7 @@ export async function POST(request: Request) {
 
     // Active season
     const seasonR = await fetch(
-      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=id,locked_at&limit=1`,
+      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&limit=1`,
       { headers: h, cache: 'no-store' }
     );
     const seasonRows = await seasonR.json().catch(() => null);
@@ -121,6 +130,11 @@ export async function POST(request: Request) {
     if (season.locked_at && new Date() > new Date(season.locked_at)) {
       return Response.json({ error: 'season_locked' }, { status: 403 });
     }
+    // Joining by invite link is a roster change — frozen once the playoffs field
+    // is set. Independent of the lock check above: a season can be frozen and
+    // unlocked, or locked and unfrozen.
+    const frozen = rosterFreezeGuard(season);
+    if (frozen) return frozen;
 
     // Resolve the team by its invite token
     const teamR = await fetch(
@@ -162,7 +176,8 @@ export async function POST(request: Request) {
 
   // Fetch season details (needed for both actions)
   const seasonR = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?id=eq.${seasonId}&select=id,name,ends_on,free_agency_start,locked_at&limit=1`,
+    `${SUPABASE_URL}/rest/v1/seasons?id=eq.${seasonId}` +
+      `&select=${SEASON_PLAYOFF_COLUMNS},free_agency_start&limit=1`,
     { headers: h, cache: 'no-store' }
   );
   const seasonRows = await seasonR.json().catch(() => null);
@@ -171,6 +186,13 @@ export async function POST(request: Request) {
 
   const isLocked = season.locked_at && new Date() > new Date(season.locked_at);
   if (isLocked) return Response.json({ error: 'season_locked' }, { status: 403 });
+
+  // Playoff roster freeze — covers BOTH remaining actions below (`create`, which
+  // self-joins the new team, and the default membership upsert, which is how a
+  // player joins AND leaves from the pickers). Placed once here so neither path
+  // can be added to later without inheriting the guard.
+  const frozenGuard = rosterFreezeGuard(season);
+  if (frozenGuard) return frozenGuard;
   // Joins are immediate — the Free Agency deferral (pending) has been retired.
   // Players may hold up to 5 teams and edits take effect right away.
   const pending = false;
