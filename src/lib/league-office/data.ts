@@ -10,6 +10,7 @@
 import { q, type Svc } from "./service";
 import { GAMES } from "./constants";
 import {
+  groupRosterBySubscriber,
   memberCountsPath,
   tallyMemberCounts,
   type MemberCounts,
@@ -335,24 +336,50 @@ export async function listTeams(s: Svc, seasonId?: string): Promise<TeamCard[]> 
   }));
 }
 
+/** One membership ROW — i.e. one season of one person's tenure on this team. */
+export type RosterSeason = { membershipId: string; seasonId: string; seasonName: string };
+
+export type RosterEntry = {
+  subscriberId: string;
+  handle: string;
+  role: string;
+  /** Every row this person holds on this team within the resolved scope, one
+   *  per season, newest first. Length is always 1 when a season is selected;
+   *  it can exceed 1 only under "All Seasons". The destructive actions key on
+   *  a SINGLE membership id, so the UI must make the caller pick one whenever
+   *  this is longer than one — see the team detail page. */
+  seasons: RosterSeason[];
+};
+
 export type TeamDetail = {
   team: Team | null;
   conference: string | null;
   archived: boolean;
-  roster: { membershipId: string; subscriberId: string; handle: string; role: string }[];
-  pending: { membershipId: string; subscriberId: string; handle: string }[];
-  /** Active subscribers not already on this team — options for "Add member". */
+  /** ONE ENTRY PER PERSON — never one per (person, season). */
+  roster: RosterEntry[];
+  pending: { membershipId: string; subscriberId: string; handle: string; seasonName: string }[];
+  /** Active subscribers addable to this team. `membership.add` writes for the
+   *  ACTIVE season, so this excludes only people already on the team IN THAT
+   *  season — not everyone who was ever on it. */
   addable: { subscriberId: string; handle: string }[];
   /** Other live (non-archived) teams — destinations for "Move member". */
   otherTeams: { id: string; name: string }[];
 };
 
-export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
-  const [teams, memberships, subMap, subs, confs] = await Promise.all([
+export async function getTeam(s: Svc, id: string, seasonId?: string): Promise<TeamDetail> {
+  const [teams, allRows, subMap, subs, confs, seasons] = await Promise.all([
     loadTeams(s),
-    q<{ id: string; subscriber_id: string; pending: boolean }>(
+    // ⚠️ Season-keyed: one row per (subscriber, season). Rows are grouped by
+    // person below — rendering them raw is what listed 8 roster entries for 3
+    // people and offered each of them 2–3 times in the captain picker.
+    //
+    // Deliberately fetched UNSCOPED and narrowed in JS: the roster follows the
+    // header's season, but `addable` must always reflect the ACTIVE season
+    // (that is the only season `membership.add` writes to). One query, two
+    // readings — a season-filtered fetch could not serve both.
+    q<{ id: string; subscriber_id: string; pending: boolean; season_id: string }>(
       s,
-      `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending`
+      `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending,season_id&left_at=is.null`
     ),
     loadSubscriberMap(s),
     q<{ id: string; handle: string | null; email: string; active: boolean | null }>(
@@ -360,25 +387,52 @@ export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
       `dc_subscribers?select=id,handle,email,active&order=handle.asc`
     ),
     loadConferenceDims(s),
+    loadSeasons(s),
   ]);
   const team = teams.find((t) => t.id === id) ?? null;
   const conf = team?.conference_id ? confs.find((c) => c.id === team.conference_id) : undefined;
-  const roster = memberships
+
+  // loadSeasons() is ordered starts_on desc, so grouping in fetch order leaves
+  // each person's seasons newest-first.
+  const seasonName = new Map(seasons.map((x) => [x.id, x.name]));
+  const order = new Map(seasons.map((x, i) => [x.id, i]));
+  // The roster follows the header's season scope; `allRows` stays whole for the
+  // active-season add list below.
+  const memberships = seasonId ? allRows.filter((m) => m.season_id === seasonId) : allRows;
+  const confirmed = memberships
     .filter((m) => !m.pending)
+    .sort((a, b) => (order.get(a.season_id) ?? 99) - (order.get(b.season_id) ?? 99));
+  const roster: RosterEntry[] = groupRosterBySubscriber(confirmed).map(({ subscriberId, rows }) => ({
+    subscriberId,
+    handle: handleOf(subMap[subscriberId]),
+    role: team?.captain_id === subscriberId ? "Captain" : "Member",
+    seasons: rows.map((m) => ({
+      membershipId: m.id,
+      seasonId: m.season_id,
+      seasonName: seasonName.get(m.season_id) ?? "Unknown season",
+    })),
+  }));
+
+  // Pending stays one row per REQUEST — each is a distinct season's request and
+  // approve/deny act on exactly that row — but it now names the season.
+  const pending = memberships
+    .filter((m) => m.pending)
     .map((m) => ({
       membershipId: m.id,
       subscriberId: m.subscriber_id,
       handle: handleOf(subMap[m.subscriber_id]),
-      role: team?.captain_id === m.subscriber_id ? "Captain" : "Member",
+      seasonName: seasonName.get(m.season_id) ?? "Unknown season",
     }));
-  const pending = memberships
-    .filter((m) => m.pending)
-    .map((m) => ({ membershipId: m.id, subscriberId: m.subscriber_id, handle: handleOf(subMap[m.subscriber_id]) }));
 
-  // Everyone already attached to this team (confirmed OR pending) is off the add list.
-  const onTeam = new Set(memberships.map((m) => m.subscriber_id));
+  // `membership.add` resolves the ACTIVE season and refuses a duplicate there,
+  // so the add list must be filtered on that same season. Filtering on "ever on
+  // this team" instead made a Season-1-only member permanently un-re-addable.
+  const activeSeasonId = seasons.find((x) => x.status === "active")?.id;
+  const onTeamThisSeason = new Set(
+    allRows.filter((m) => !activeSeasonId || m.season_id === activeSeasonId).map((m) => m.subscriber_id)
+  );
   const addable = subs
-    .filter((sub) => sub.active !== false && !onTeam.has(sub.id))
+    .filter((sub) => sub.active !== false && !onTeamThisSeason.has(sub.id))
     .map((sub) => ({ subscriberId: sub.id, handle: handleOf(sub) }));
 
   const otherTeams = teams
