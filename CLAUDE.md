@@ -1,5 +1,66 @@
 @AGENTS.md
 
+## ⚠️ `team_memberships` is SEASON-KEYED — never COUNT(*) it (CC-LO-TEAM-COUNTS-1.0, claude/league-office-member-counts-xp9bj3, 2026-08-03)
+
+**One row per (subscriber, team, season).** A player on a team for three seasons owns
+three rows. **Any** headcount over this table must be
+`COUNT(DISTINCT subscriber_id)` **scoped to a season** — never `COUNT(*)`, never
+`rows.length`. This is the SECOND bug caused by that table's shape in one day (the
+first was the season-scope work above); treat a row count over `team_memberships` as
+a defect on sight.
+
+- What it cost: League Office rendered **8 members** beside Cloud and Platforms —
+  `ipadfun` and `justcoolyo` ×3 seasons, `myke_testid` ×2 — while its leaderboard
+  score came from **3** players. Correct scoring looked broken; it burned real
+  diagnostic time on 2026-08-03.
+- **The rule lives in `src/lib/league-office/member-counts.ts`** (pure:
+  `memberCountsPath(seasonId)` + `tallyMemberCounts(rows)`), tested by
+  `npm run test:member-counts` (7). `data.ts` `loadMemberCounts()` is the only
+  reader, and **both** `listTeams()` and `getLeagueTree()` go through it — they used
+  to carry two independent tallies, which is why the Teams and Leagues pages could
+  disagree. A **third** copy lived in a `getLeagues()` reader with zero callers; it
+  was deleted, not repaired.
+- **Filters mirror `team_leaderboard` EXACTLY, because the leaderboard is correct and
+  the console aligns to it** — `pending` split into its own bucket, `left_at IS NULL`,
+  and **deliberately NO `dc_subscribers.active` filter.** The ticket's D5 asked for one
+  citing `team_leaderboard_season`; that is the per-player board *inside* a team.
+  `team_leaderboard` — the function these counts reconcile against — has no `active`
+  predicate, so adding one would desync the two surfaces the day an opted-out
+  subscriber holds an active-season membership. Dropping D5 is also what makes
+  Team_Sheba read **5** (the opted-out `darkhorse` counts), matching the ticket's own
+  acceptance table. **Do not "harden" this by re-adding an active filter.**
+- **The header SEASON selector (`?season`) now drives these counts.** It was
+  URL-state read by exactly one page (the dashboard, and only to label a card), so
+  changing it moved nothing. A specific season ⇒ distinct members **in that season**;
+  "All Seasons" (`""`) ⇒ distinct people who have **ever** been on the team. Both page
+  headings state which reading is on screen — a count that silently changes meaning is
+  the original complaint.
+- **`resolveSeasonScope()` is a fail-safe, not ceremony.** An unrecognised season id
+  degrades to All Seasons. Without it a stale/bogus id reaches PostgREST, 400s, and
+  `q()` swallows it to `[]` — every team would read **0 members** and look like a data
+  loss.
+- Verified 2026-08-03 against live prod: All Seasons — Cloud and Platforms 3 ·
+  Team_Sheba 5 · Deloitte 3 · Strategy & Growth 3 · Independent players 2 ·
+  Lonely hearts 1. Hot summer Final Beta — Cloud and Platforms 3 · Team_Sheba 1 ·
+  Deloitte 2 · Strategy & Growth 1 · Network Edge 0 · Grid Champions 2. Active-season
+  counts match `team_leaderboard(NULL,50).members` **1:1 for all 8 teams it returns**;
+  the only absentees are **Lonely hearts** and **Network Edge**, both at 0 Hot-summer
+  members — the permitted mismatches.
+- **⚠️ Container egress to `*.supabase.co` is policy-blocked**, so the pages cannot be
+  driven over HTTP from a session container. Verification ran two ways instead: SQL
+  against live prod via the Supabase MCP, and the real `listTeams`/`getLeagueTree`
+  against the real 35 prod rows through a strict PostgREST interpreter that throws on
+  any filter it doesn't recognise (66/66 checks).
+- **STILL BROKEN — same root, deliberately out of this ticket's scope.** Fix next:
+  - `getTeam()` — the **team detail roster lists a row per (subscriber, season)**.
+    Cloud and Platforms shows 8 roster entries for 3 people and the "Reassign captain"
+    `<select>` offers each person 2–3 times. Worse than a wrong count.
+  - `listSubscribers()` `teamCount` — `ipadfun` reads **9** teams (really 6),
+    `justcoolyo` **8** (really 4).
+  - `getSubscriber()` — memberships list duplicates a team per season; `totals.teams`
+    counts rows.
+  - `getDashboard()` `pendingRequests` — counts pending rows (0 today, so latent).
+
 ## Season scoping (CC-LO-SEASON-SCOPE-1.0, claude/lo-season-scope, 2026-08-03)
 
 **A season is scoped by a SET of include/exclude rules, resolved at read time.**

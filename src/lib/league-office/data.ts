@@ -9,6 +9,12 @@
 
 import { q, type Svc } from "./service";
 import { GAMES } from "./constants";
+import {
+  memberCountsPath,
+  tallyMemberCounts,
+  type MemberCounts,
+  type MembershipRow,
+} from "./member-counts";
 
 // ── CT date helpers (engine boundary is America/Chicago) ─────────────────────
 export function ctToday(): string {
@@ -103,6 +109,25 @@ export const loadSeasons = (s: Svc) =>
 function handleOf(sub: { handle: string | null; email: string } | undefined) {
   if (!sub) return "—";
   return sub.handle || sub.email.split("@")[0];
+}
+
+// ── Member counts (CC-LO-TEAM-COUNTS-1.0) ────────────────────────────────────
+// The rule itself — DISTINCT subscriber_id, scoped to a season, never a row
+// count — lives in ./member-counts (pure, tested). This is just the read.
+async function loadMemberCounts(s: Svc, seasonId?: string): Promise<MemberCounts> {
+  return tallyMemberCounts(await q<MembershipRow>(s, memberCountsPath(seasonId)));
+}
+
+/** Resolve the header's `?season` param to a real season, or null for "All
+ *  Seasons". An id that matches no season degrades to All Seasons — filtering
+ *  on a bogus id would 400 the PostgREST read and silently zero every count. */
+export async function resolveSeasonScope(
+  s: Svc,
+  seasonId?: string
+): Promise<Season | null> {
+  if (!seasonId) return null;
+  const seasons = await loadSeasons(s);
+  return seasons.find((x) => x.id === seasonId) ?? null;
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -292,25 +317,22 @@ function isArchived(t: Team): boolean {
   return t.is_active === false || t.archived_at != null;
 }
 
-export async function listTeams(s: Svc): Promise<TeamCard[]> {
-  const [teams, memberships, subMap, confs] = await Promise.all([
+export async function listTeams(s: Svc, seasonId?: string): Promise<TeamCard[]> {
+  const [teams, counts, subMap, confs] = await Promise.all([
     loadTeams(s),
-    q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
+    loadMemberCounts(s, seasonId),
     loadSubscriberMap(s),
     loadConferenceDims(s),
   ]);
   const confMap = new Map(confs.map((c) => [c.id, c]));
-  return teams.map((t) => {
-    const mem = memberships.filter((m) => m.team_id === t.id);
-    return {
-      ...t,
-      memberCount: mem.filter((m) => !m.pending).length,
-      pendingCount: mem.filter((m) => m.pending).length,
-      captainHandle: t.captain_id ? handleOf(subMap[t.captain_id]) : null,
-      conference: (t.conference_id && confMap.get(t.conference_id)?.name) || null,
-      archived: isArchived(t),
-    };
-  });
+  return teams.map((t) => ({
+    ...t,
+    memberCount: counts.members(t.id),
+    pendingCount: counts.pending(t.id),
+    captainHandle: t.captain_id ? handleOf(subMap[t.captain_id]) : null,
+    conference: (t.conference_id && confMap.get(t.conference_id)?.name) || null,
+    archived: isArchived(t),
+  }));
 }
 
 export type TeamDetail = {
@@ -374,53 +396,12 @@ export async function getTeam(s: Svc, id: string): Promise<TeamDetail> {
   };
 }
 
-// ── Leagues & Conferences ────────────────────────────────────────────────────
-export type Conference = {
-  id: string;
-  name: string;
-  teamCount: number;
-  memberCount: number;
-  teams: { id: string; name: string; members: number }[];
-};
-
-export async function getLeagues(s: Svc): Promise<Conference[]> {
-  // Part B: conferences are REAL rows now (the org/private/public groupings in
-  // `conferences`), not teams.group_type='company' — that hierarchy is retired.
-  const [teams, memberships, confs] = await Promise.all([
-    loadTeams(s),
-    q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
-    loadConferenceDims(s),
-  ]);
-  const memByTeam = new Map<string, number>();
-  for (const m of memberships) if (!m.pending) memByTeam.set(m.team_id, (memByTeam.get(m.team_id) ?? 0) + 1);
-  const conferences = confs
-    .filter((c) => !c.archived_at)
-    .map((c) => {
-      const members = teams.filter((t) => t.conference_id === c.id);
-      const teamRows = members.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 }));
-      return {
-        id: c.id,
-        name: c.name,
-        teamCount: members.length,
-        memberCount: teamRows.reduce((a, b) => a + b.members, 0),
-        teams: teamRows,
-      };
-    });
-  // Teams without a home conference grouped under a synthetic bucket.
-  const homeless = teams.filter((t) => !t.conference_id);
-  if (homeless.length) {
-    conferences.push({
-      id: "no-conference",
-      name: "No conference",
-      teamCount: homeless.length,
-      memberCount: homeless.reduce((a, t) => a + (memByTeam.get(t.id) ?? 0), 0),
-      teams: homeless.map((t) => ({ id: t.id, name: t.name, members: memByTeam.get(t.id) ?? 0 })),
-    });
-  }
-  return conferences;
-}
-
 // ── League tree (management view) ────────────────────────────────────────────
+//
+// NOTE: a `getLeagues()` reader used to sit here, carrying a THIRD copy of the
+// row-counting member tally. It had zero callers (the Leagues & Conferences
+// page renders from getLeagueTree below), so it was removed rather than
+// repaired — CC-LO-TEAM-COUNTS-1.0.
 // leagues → conferences → teams, plus league-level "no conference" teams and a
 // synthetic "Independent (no league)" bucket. Archived leagues/conferences are
 // INCLUDED (flagged) so staff can restore them. Team↔conference assignment is
@@ -451,20 +432,19 @@ export type LeagueTree = {
   assignTargets: { id: string; label: string }[];
 };
 
-export async function getLeagueTree(s: Svc): Promise<LeagueTree> {
-  const [teams, memberships, confs, leagues] = await Promise.all([
+export async function getLeagueTree(s: Svc, seasonId?: string): Promise<LeagueTree> {
+  const [teams, counts, confs, leagues] = await Promise.all([
     loadTeams(s),
-    q<{ team_id: string; pending: boolean }>(s, `team_memberships?select=team_id,pending`),
+    // Same reader the Teams page uses, so the two surfaces cannot disagree.
+    loadMemberCounts(s, seasonId),
     loadConferenceDims(s),
     loadLeagueDims(s),
   ]);
-  const memByTeam = new Map<string, number>();
-  for (const m of memberships) if (!m.pending) memByTeam.set(m.team_id, (memByTeam.get(m.team_id) ?? 0) + 1);
 
   const teamLite = (t: Team): TeamLite => ({
     id: t.id,
     name: t.name,
-    members: memByTeam.get(t.id) ?? 0,
+    members: counts.members(t.id),
     archived: t.is_active === false || t.archived_at != null,
   });
   const confArchived = (c: ConferenceDim) => c.is_active === false || c.archived_at != null;

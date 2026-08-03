@@ -9,14 +9,22 @@
 
 import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
-import { getLeagueTree, type TeamLite } from "@/lib/league-office/data";
+import { getLeagueTree, resolveSeasonScope, type TeamLite } from "@/lib/league-office/data";
 import { PageHeading, Card, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { ActionButton } from "@/components/league-office/actions";
 
-export default async function LeaguesPage() {
+export default async function LeaguesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ season?: string }>;
+}) {
   const staff = await requireStaff();
   if (!staff.ok) return <PendingScreen />;
-  const { leagues, independentTeams, assignTargets } = await getLeagueTree(staff.s);
+  const { season } = await searchParams;
+  // Same season scope as the Teams page, resolved through the same helper, so
+  // the per-team member figures on the two surfaces always agree.
+  const scope = await resolveSeasonScope(staff.s, season);
+  const { leagues, independentTeams, assignTargets } = await getLeagueTree(staff.s, scope?.id);
 
   const activeLeagues = leagues.filter((l) => !l.archived);
   const archivedLeagues = leagues.filter((l) => l.archived);
@@ -26,7 +34,10 @@ export default async function LeaguesPage() {
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <PageHeading title="Leagues & Conferences" sub={`${activeLeagues.length} active league${activeLeagues.length === 1 ? "" : "s"}${archivedLeagues.length ? ` · ${archivedLeagues.length} archived` : ""}`} />
+          <PageHeading
+            title="Leagues & Conferences"
+            sub={`${activeLeagues.length} active league${activeLeagues.length === 1 ? "" : "s"}${archivedLeagues.length ? ` · ${archivedLeagues.length} archived` : ""} · member counts ${scope ? `for ${scope.name}` : "across all seasons"}`}
+          />
         </div>
         <div style={{ marginTop: 4 }}>
           <ActionButton
@@ -177,7 +188,7 @@ function TeamGrid({ teams, confOptions, inConference }: { teams: TeamLite[]; con
       {teams.map((t) => (
         <div key={t.id} style={{ border: "1px solid var(--color-cream-line)", borderRadius: 8, padding: "9px 12px", display: "flex", alignItems: "center", gap: 8, opacity: t.archived ? 0.6 : 1 }}>
           <Link href={`/league-office/teams/${t.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#141210", textDecoration: "none" }}>{t.name}</Link>
-          <span className="font-mono" style={{ fontSize: 11, color: "#8d8375" }}>{t.members}</span>
+          <span className="font-mono" style={{ fontSize: 11, color: "#8d8375" }} title={`${t.members} distinct member${t.members === 1 ? "" : "s"}`}>{t.members}</span>
           <span style={{ flex: 1 }} />
           {confOptions.length > 0 ? (
             <ActionButton
