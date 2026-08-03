@@ -3,21 +3,26 @@
 
 import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
-import { listTeams, type TeamCard } from "@/lib/league-office/data";
+import { listTeams, resolveSeasonScope, type TeamCard } from "@/lib/league-office/data";
 import { PageHeading, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { ActionButton } from "@/components/league-office/actions";
 
 export default async function TeamsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; season?: string }>;
 }) {
   const staff = await requireStaff();
   if (!staff.ok) return <PendingScreen />;
-  const { q = "" } = await searchParams;
+  const { q = "", season } = await searchParams;
   const needle = q.trim().toLowerCase();
 
-  let teams = await listTeams(staff.s);
+  // The header's SEASON selector decides what a member count MEANS: a specific
+  // season → distinct members in that season; "All Seasons" → distinct people
+  // who have ever been on the team. team_memberships is season-keyed, so the
+  // scope is not optional — see CC-LO-TEAM-COUNTS-1.0.
+  const scope = await resolveSeasonScope(staff.s, season);
+  let teams = await listTeams(staff.s, scope?.id);
   if (needle) teams = teams.filter((t) => t.name.toLowerCase().includes(needle) || (t.conference ?? "").toLowerCase().includes(needle));
 
   const active = teams.filter((t) => !t.archived);
@@ -27,7 +32,10 @@ export default async function TeamsPage({
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <PageHeading title="Teams" sub={`${active.length} active${archived.length ? ` · ${archived.length} disbanded` : ""}${needle ? ` matching “${q}”` : ""}`} />
+          <PageHeading
+            title="Teams"
+            sub={`${active.length} active${archived.length ? ` · ${archived.length} disbanded` : ""}${needle ? ` matching “${q}”` : ""} · member counts ${scope ? `for ${scope.name}` : "across all seasons"}`}
+          />
         </div>
         <div style={{ marginTop: 4 }}>
           <ActionButton
