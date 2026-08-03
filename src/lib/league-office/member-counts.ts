@@ -42,6 +42,29 @@ export function memberCountsPath(seasonId?: string): string {
   return `team_memberships?select=team_id,subscriber_id,pending&left_at=is.null${season}`;
 }
 
+/** Group one team's season-keyed rows into ONE entry per person, each carrying
+ *  every season row that person holds.
+ *
+ *  The team detail roster renders these. Rendering the raw rows instead is what
+ *  listed 8 roster entries for 3 people on Cloud and Platforms and offered each
+ *  of them 2–3 times in the "Reassign captain" picker.
+ *
+ *  ⚠️ `membership.deny` / `membership.move` each act on a SINGLE membership id
+ *  — one season. So a grouped entry with more than one season is genuinely
+ *  ambiguous, and the caller must make the operator choose rather than picking
+ *  a row for them. `rows` is expected pre-sorted newest season first. */
+export function groupRosterBySubscriber<T extends { id: string; subscriber_id: string }>(
+  rows: T[]
+): { subscriberId: string; rows: T[] }[] {
+  const byPerson = new Map<string, T[]>();
+  for (const r of rows) {
+    const seen = byPerson.get(r.subscriber_id);
+    if (seen) seen.push(r);
+    else byPerson.set(r.subscriber_id, [r]);
+  }
+  return [...byPerson].map(([subscriberId, group]) => ({ subscriberId, rows: group }));
+}
+
 /** Roll season-keyed membership rows up into per-team DISTINCT headcounts. */
 export function tallyMemberCounts(rows: MembershipRow[]): MemberCounts {
   const confirmed = new Map<string, Set<string>>();

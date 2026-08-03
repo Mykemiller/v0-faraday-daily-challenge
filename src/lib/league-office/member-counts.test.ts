@@ -11,7 +11,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { memberCountsPath, tallyMemberCounts, type MembershipRow } from "./member-counts.ts";
+import {
+  groupRosterBySubscriber,
+  memberCountsPath,
+  tallyMemberCounts,
+  type MembershipRow,
+} from "./member-counts.ts";
 
 const S1 = "season-1";
 const S2 = "season-2";
@@ -78,6 +83,41 @@ test("a team with no rows reads 0, never undefined/NaN", () => {
   const counts = tallyMemberCounts([]);
   assert.equal(counts.members("nobody"), 0);
   assert.equal(counts.pending("nobody"), 0);
+});
+
+// ── Roster grouping (team detail) ────────────────────────────────────────────
+
+test("roster groups to ONE entry per person, keeping every season row", () => {
+  // The real Cloud and Platforms shape: 8 rows, 3 people.
+  const rows = CLOUD_AND_PLATFORMS.map((r, i) => ({ ...r, id: `mem-${i}` }));
+  const grouped = groupRosterBySubscriber(rows);
+  assert.equal(grouped.length, 3, "3 roster entries, not 8");
+  assert.deepEqual(
+    grouped.map((g) => [g.subscriberId, g.rows.length]),
+    [["ipadfun", 3], ["justcoolyo", 3], ["myke_testid", 2]]
+  );
+  // No membership row is lost — each stays individually addressable, because
+  // membership.deny/move act on exactly one of them.
+  assert.equal(grouped.reduce((a, g) => a + g.rows.length, 0), 8);
+  assert.equal(new Set(grouped.flatMap((g) => g.rows.map((r) => r.id))).size, 8);
+});
+
+test("grouping preserves input order, so a pre-sorted newest-first list stays so", () => {
+  const rows = [
+    { id: "hot", team_id: "cloud", subscriber_id: "ipadfun", pending: false },
+    { id: "s2", team_id: "cloud", subscriber_id: "ipadfun", pending: false },
+    { id: "s1", team_id: "cloud", subscriber_id: "ipadfun", pending: false },
+  ];
+  assert.deepEqual(groupRosterBySubscriber(rows)[0].rows.map((r) => r.id), ["hot", "s2", "s1"]);
+});
+
+test("a single-season member groups to exactly one row — the unambiguous case", () => {
+  // This is what lets the UI keep Move/Remove live: one row means one
+  // membershipId, so the destructive action cannot pick the wrong season.
+  const rows = [{ id: "only", team_id: "t", subscriber_id: "solo", pending: false }];
+  const grouped = groupRosterBySubscriber(rows);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].rows.length, 1);
 });
 
 test("the query filters left_at and scopes by season — and nothing else", () => {

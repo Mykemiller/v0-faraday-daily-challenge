@@ -51,10 +51,27 @@ a defect on sight.
   against live prod via the Supabase MCP, and the real `listTeams`/`getLeagueTree`
   against the real 35 prod rows through a strict PostgREST interpreter that throws on
   any filter it doesn't recognise (66/66 checks).
-- **STILL BROKEN — same root, deliberately out of this ticket's scope.** Fix next:
-  - `getTeam()` — the **team detail roster lists a row per (subscriber, season)**.
-    Cloud and Platforms shows 8 roster entries for 3 people and the "Reassign captain"
-    `<select>` offers each person 2–3 times. Worse than a wrong count.
+- **`getTeam()` — FIXED in the follow-up (same branch name, second PR).** The team
+  detail roster is now **one entry per person**, grouped by
+  `groupRosterBySubscriber()` in `member-counts.ts`, and follows the same `?season`
+  scope as the cards — so a card reading "3 members" can no longer open a roster of 8.
+  The "Reassign captain" `<select>` is one option per person (it offered each of them
+  2–3 times).
+  - ⚠️ **`membership.deny` / `membership.move` each delete/relocate ONE membership
+    row — one season.** So the pre-fix duplicated roster was not merely cosmetic:
+    "Remove" on a 3-season member deleted a single season and left them on the
+    roster. Grouping does NOT change that contract — instead, a grouped entry with
+    >1 season makes the operator choose: **Remove** renders a "Season to remove"
+    `<select>` whose option VALUES are the membership ids (this is why `membershipId`
+    was added to the `ExtraField` select union), and **Move** — whose one extra field
+    is already spent on the destination team — is replaced by a "Pick a season to
+    move" hint. **Never auto-pick a season for a destructive action.**
+  - Also fixed there: `addable` filtered on "ever on this team in ANY season", but
+    `membership.add` writes for the **ACTIVE** season and already rejects a duplicate
+    there — so a Season-1-only member was permanently un-re-addable. `getTeam` now
+    fetches the team's rows **unscoped** and derives two readings from them (roster =
+    header scope, addable = active season); a season-filtered fetch cannot serve both.
+- **STILL BROKEN — same root, deliberately out of scope.** Fix next:
   - `listSubscribers()` `teamCount` — `ipadfun` reads **9** teams (really 6),
     `justcoolyo` **8** (really 4).
   - `getSubscriber()` — memberships list duplicates a team per season; `totals.teams`
