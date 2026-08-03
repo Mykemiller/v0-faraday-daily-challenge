@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/league-office/service";
 import { getSeason, ctToday } from "@/lib/league-office/data";
-import { getSeasonConfigDetail, resolveScopeTeamCount } from "@/lib/league-office/seasons";
+import { getSeasonConfigDetail, getScopeSummary } from "@/lib/league-office/seasons";
 import { PageHeading, Card, KpiCard, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { SeasonVersions } from "@/components/league-office/season/SeasonVersions";
 import { SeasonActionBar } from "@/components/league-office/season/SeasonActionBar";
@@ -37,7 +37,7 @@ export default async function SeasonDetailPage({
     getSeason(staff.s, id),
     getSeasonConfigDetail(staff.s, id),
   ]);
-  const scopeTeamCount = await resolveScopeTeamCount(staff.s, cfg.scopes);
+  const scopeTeamCount = (await getScopeSummary(staff.s, id))?.team_count ?? 0;
 
   if (!d.season) {
     return (

@@ -583,18 +583,39 @@ export function countOverCap(
 
 /** Where a season's play is offered. Lives here rather than in season-write so
  *  the row builder below stays testable without a Supabase client. */
+export type ScopeRefType = "platform" | "league" | "conference" | "team";
+
+/** An exclusion carries its OWN type. It used to be a bare id whose type was
+ *  inferred from the include mode — which is exactly how three TEAM ids came to
+ *  be stored as `league` rows for `Hot summer Final Beta`. The type now travels
+ *  with the id from the picker that produced it. */
+export type ScopeExclusion = { type: "league" | "conference" | "team"; id: string };
+
 export type WizardScope = {
   mode: "platform" | "leagues" | "conferences";
   refIds?: string[];
-  excludeIds?: string[];
+  excludes?: ScopeExclusion[];
 };
 
 const dedupeIds = (xs?: string[]) => [...new Set((xs ?? []).filter(Boolean))];
 
+const dedupeExclusions = (xs?: ScopeExclusion[]) => {
+  const seen = new Set<string>();
+  return (xs ?? []).filter((x) => {
+    if (!x?.id || !x?.type) return false;
+    const k = `${x.type}:${x.id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
 /** The scope rows a WizardScope resolves to. `platform` with a null ref means
  *  ALL (the DB CHECK enforces that pairing, so the shapes here are not
- *  optional). Pure — `season_id` is stamped by the caller, so the same rows can
- *  be handed to a direct insert OR to season_config_save_bundle. */
+ *  optional). Pure — `season_id` is stamped by the caller.
+ *
+ *  These rows go to lo_set_season_scope() and nowhere else.
+ *  season_config_save_bundle no longer accepts them. */
 export function buildScopeRows(scope: WizardScope): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   if (scope.mode === "platform") {
@@ -609,12 +630,31 @@ export function buildScopeRows(scope: WizardScope): Record<string, unknown>[] {
       rows.push({ scope_type: "platform", scope_ref_id: null, is_excluded: false });
   }
 
-  for (const id of dedupeIds(scope.excludeIds)) {
-    const type = scope.mode === "conferences" ? "conference" : "league";
-    rows.push({ scope_type: type, scope_ref_id: id, is_excluded: true });
-  }
+  for (const x of dedupeExclusions(scope.excludes))
+    rows.push({ scope_type: x.type, scope_ref_id: x.id, is_excluded: true });
 
   return rows;
+}
+
+/** Rows → form state, for re-opening a saved scope in the editor. */
+export function scopeFromRows(
+  rows: { scope_type: string; scope_ref_id: string | null; is_excluded: boolean }[]
+): WizardScope {
+  const included = rows.filter((r) => !r.is_excluded);
+  const mode: WizardScope["mode"] =
+    !included.length || included.some((r) => r.scope_type === "platform")
+      ? "platform"
+      : included[0].scope_type === "conference"
+        ? "conferences"
+        : "leagues";
+
+  return {
+    mode,
+    refIds: included.filter((r) => r.scope_ref_id).map((r) => r.scope_ref_id as string),
+    excludes: rows
+      .filter((r) => r.is_excluded && r.scope_ref_id)
+      .map((r) => ({ type: r.scope_type as ScopeExclusion["type"], id: r.scope_ref_id as string })),
+  };
 }
 
 /** Turn the bundle RPC's refusal into something a commissioner can act on.

@@ -5,7 +5,7 @@
 // itself stays available so the freeze is always reversible by a commissioner.
 
 import { guard, missingReason, readJson, requireReason, respond } from "@/lib/league-office/api-guard";
-import { getSeasonConfigDetail, resolveScopeTeamCount } from "@/lib/league-office/seasons";
+import { getSeasonConfigDetail, getScopeSummary } from "@/lib/league-office/seasons";
 import { updateSeason, updateSeasonScope, type WizardScope } from "@/lib/league-office/season-write";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,11 @@ export async function GET(
   if (!detail.season)
     return Response.json({ ok: false, message: "Season not found." }, { status: 404 });
 
-  const scopeTeamCount = await resolveScopeTeamCount(g.s, detail.scopes);
-  return Response.json({ ok: true, ...detail, scopeTeamCount });
+  // CC-LO-SEASON-SCOPE-1.0: resolved in SQL by fn_season_scope_summary, not
+  // reimplemented here. The old TS resolver read teams.conference_id only and
+  // had no idea conference membership is per-season.
+  const scope = await getScopeSummary(g.s, detail.season?.id ?? "");
+  return Response.json({ ok: true, ...detail, scope, scopeTeamCount: scope?.team_count ?? 0 });
 }
 
 export async function PATCH(
