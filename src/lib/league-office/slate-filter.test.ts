@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { configSaveMessage, buildScopeRows } from "./season-config-logic.ts";
+import { configSaveMessage, buildScopeRows, scopeFromRows } from "./season-config-logic.ts";
 import { ASSIGNABLE_LIFECYCLE_STATES, isAssignableGame } from "./game-library-logic.ts";
 
 const CATALOG = [
@@ -110,7 +110,11 @@ test("platform scope is one row with a null ref", () => {
 });
 
 test("league scope dedupes and keeps exclusions last", () => {
-  const rows = buildScopeRows({ mode: "leagues", refIds: ["a", "a", "b"], excludeIds: ["c"] });
+  const rows = buildScopeRows({
+    mode: "leagues",
+    refIds: ["a", "a", "b"],
+    excludes: [{ type: "league", id: "c" }],
+  });
   assert.deepEqual(rows, [
     { scope_type: "league", scope_ref_id: "a", is_excluded: false },
     { scope_type: "league", scope_ref_id: "b", is_excluded: false },
@@ -124,6 +128,74 @@ test("an empty inclusion set falls back to platform, never to nothing", () => {
 });
 
 test("scope rows carry no season_id — the caller stamps it", () => {
-  for (const r of buildScopeRows({ mode: "conferences", refIds: ["x"], excludeIds: ["y"] }))
+  for (const r of buildScopeRows({
+    mode: "conferences",
+    refIds: ["x"],
+    excludes: [{ type: "conference", id: "y" }],
+  }))
     assert.equal("season_id" in r, false);
+});
+
+// CC-LO-SEASON-SCOPE-1.0 — an exclusion carries its own type.
+//
+// The regression this pins: excludeIds used to be bare ids whose scope_type was
+// inferred from the INCLUDE mode, so picking three teams to exclude while the
+// mode was "leagues" wrote three `league` rows pointing at team ids. That is
+// exactly the shape recorded in the season.create audit row for
+// `Hot summer Final Beta`.
+test("exclusions keep their own type, independent of the include mode", () => {
+  const rows = buildScopeRows({
+    mode: "leagues",
+    refIds: ["league-1"],
+    excludes: [
+      { type: "team", id: "team-1" },
+      { type: "conference", id: "conf-1" },
+      { type: "league", id: "league-2" },
+    ],
+  });
+  assert.deepEqual(rows, [
+    { scope_type: "league", scope_ref_id: "league-1", is_excluded: false },
+    { scope_type: "team", scope_ref_id: "team-1", is_excluded: true },
+    { scope_type: "conference", scope_ref_id: "conf-1", is_excluded: true },
+    { scope_type: "league", scope_ref_id: "league-2", is_excluded: true },
+  ]);
+});
+
+test("a platform scope may carry exclusions — that is 'everyone except X'", () => {
+  const rows = buildScopeRows({
+    mode: "platform",
+    excludes: [{ type: "team", id: "team-1" }],
+  });
+  assert.deepEqual(rows, [
+    { scope_type: "platform", scope_ref_id: null, is_excluded: false },
+    { scope_type: "team", scope_ref_id: "team-1", is_excluded: true },
+  ]);
+});
+
+test("exclusions dedupe on (type, id), not on id alone", () => {
+  const rows = buildScopeRows({
+    mode: "platform",
+    excludes: [
+      { type: "team", id: "dup" },
+      { type: "team", id: "dup" },
+      { type: "league", id: "dup" },
+    ],
+  });
+  assert.equal(rows.filter((r) => r.is_excluded).length, 2);
+});
+
+test("scopeFromRows round-trips a typed exclusion set", () => {
+  const original = {
+    mode: "conferences" as const,
+    refIds: ["conf-1"],
+    excludes: [{ type: "team" as const, id: "team-1" }],
+  };
+  const rows = buildScopeRows(original).map((r, i) => ({
+    id: String(i),
+    season_id: "s",
+    scope_type: r.scope_type as string,
+    scope_ref_id: r.scope_ref_id as string | null,
+    is_excluded: r.is_excluded as boolean,
+  }));
+  assert.deepEqual(scopeFromRows(rows), original);
 });

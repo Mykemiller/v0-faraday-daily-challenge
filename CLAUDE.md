@@ -1,5 +1,87 @@
 @AGENTS.md
 
+## Season scoping (CC-LO-SEASON-SCOPE-1.0, claude/lo-season-scope, 2026-08-03)
+
+**A season is scoped by a SET of include/exclude rules, resolved at read time.**
+Not by a column, not by a materialised team list.
+
+- Rules live in `season_scopes (season_id, scope_type, scope_ref_id, is_excluded)`.
+  `scope_type` is `platform | league | conference | team`.
+- **Includes** may be `platform`, `league` or `conference`. Never `team` — a season is
+  scoped by league or conference, and named teams are how you carve one out.
+- **Excludes** may be `league`, `conference` or `team`, and each carries its OWN type.
+  Never infer an exclusion's type from the include mode: that is exactly how three
+  TEAM ids came to be stored as `league` rows for `Hot summer Final Beta`.
+
+**Exclusion always wins (D3).** A team excluded directly, or through its conference, or
+through its league, is out — even if separately included. There is no "most specific
+wins" tie-break to reason about.
+
+**No include rows ⇒ the whole platform (D4).** An explicit non-excluded `platform` row
+means the same thing. A `platform` include may coexist with exclusions ("everyone except
+X"); it may not coexist with league/conference/team includes, and the writer rejects that
+combination.
+
+**Archived teams ARE in scope.** Myke's call, 2026-08-03. `team_leaderboard` has no
+`is_active`/`archived_at` filter and `Lonely hearts` (archived) ranks 5th in Season 1 and
+3rd in Season 2; filtering would silently re-rank two closed seasons. Exclude an archived
+team by name if you want it gone. Correspondingly, the ref-validation trigger rejects an
+archived ref on an INCLUDE row only — archived EXCLUDES are legal and necessary.
+
+**Conference membership is per-season (D6).** Resolve a team's conference from
+`team_conference_memberships` **for that season**, falling back to `teams.conference_id`
+only when the team has no row for it. `teams.conference_id` alone is NOT sufficient —
+`Strategy & Growth` is in Independent's GENERAL for Seasons 1–2 and Deloitte-2026's
+DELOITTE for the active season.
+
+### The single writer
+
+`lo_set_season_scope(p_season_id, p_scopes, p_staff_email, p_reason)` is the **only** thing
+that writes `season_scopes`. It validates, replaces the set, and writes exactly one
+`lo_audit_log` row (`season.set_scope`) carrying the resolved before/after including the
+team list. `p_reason` is mandatory and must never be defaulted or auto-filled —
+`lo_audit_log.reason` is NOT NULL and the value IS the audit trail.
+
+- `season_config_save_bundle(p_scopes := …)` **raises**. It used to delete a season's whole
+  scope set and rewrite it as a side effect of a slate save, and its `snapshot()` never
+  recorded scopes — so the rewrite left no trace. Do not re-add it.
+- HTTP: `POST /api/lo/seasons/[id]/scope`. `PATCH /api/lo/configs/[configId]` no longer
+  accepts a `scope` key.
+- Closed seasons are refused. Active seasons return a 409 + `scopeWarning` naming every
+  team entering and leaving; the UI must show that and re-POST with `confirm:true`.
+  `locked_at` does NOT gate scope — scope belongs to the season, not to the frozen puzzle
+  config, and every approved season is locked.
+
+### Reading it
+
+| Function | Use |
+|---|---|
+| `fn_season_scope_resolve(season, rules)` | THE implementation. Everything else delegates. |
+| `fn_season_scope_teams(season)` | The saved-rules wrapper. **This is what read paths filter on.** |
+| `fn_season_scope_summary(season)` | Saved scope + names + team list. |
+| `fn_season_scope_preview(season, rules)` | Unsaved rules, no write. `season` may be NULL (create wizard). |
+
+Consumers already wired: `team_leaderboard`, `fn_company_team_standings`,
+`fn_company_standings`, `fn_season_roster_carry_forward` (which also returns
+`{carried, skipped_out_of_scope, from_season}` — it used to return `integer`).
+`global_leaderboard` / `_phase` deliberately are **not** — FAR-415.
+
+Never resolve scope in TypeScript. The old `resolveScopeTeamCount` did, against
+`teams.conference_id` only, and disagreed with the engine for any team that changed
+conference between seasons. It is gone.
+
+### `seasons.league_id` is legacy — for scoping
+
+**Never use it to decide which teams a season covers.** It is *not* dead, though, and must
+not be dropped casually — it is still read by `fn_season_roster_carry_forward` (default
+source-season selection), the generation `no_league` gate, and the
+`seasons_no_overlap_per_league` exclusion constraint. See the column comment.
+
+### RLS
+
+`season_scopes`, `leagues` and `conferences` have RLS **disabled**. Known, tracked
+separately, deliberately untouched by this work.
+
 ## League Playoffs (CC-LEAGUE-PLAYOFFS-1.0, claude/league-playoffs-implementation-b78mg6, 2026-08-02)
 
 `seasons.playoff_starts_on` / `roster_freeze_on` were pure metadata — a full DB
