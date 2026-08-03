@@ -127,10 +127,14 @@ export type DifficultyMixRow = {
   applies_to_game_id: string | null;
 };
 
+/** CC-LO-SEASON-SCOPE-1.0: `team` joined the enum so the one exclusion the
+ *  commissioner actually reached for — three TEAMS — can be expressed. */
+export type ScopeRefType = "platform" | "league" | "conference" | "team";
+
 export type ScopeRow = {
   id: string;
   season_id: string;
-  scope_type: "platform" | "league" | "conference";
+  scope_type: ScopeRefType;
   scope_ref_id: string | null;
   is_excluded: boolean;
 };
@@ -141,6 +145,7 @@ export type ConferenceRow = {
   name: string;
   league_id: string | null;
   is_active: boolean;
+  archived_at: string | null;
 };
 
 const CONFIG_COLS = "*";
@@ -470,46 +475,69 @@ export async function getSeasonConfigDetail(s: Svc, seasonId: string): Promise<S
 export type ScopeOptions = {
   leagues: { id: string; name: string; code: string }[];
   conferences: { id: string; name: string; code: string; league_id: string | null }[];
+  /** Exclusion-only. Teams are never offered as an INCLUDE — a season is scoped
+   *  by league or conference, and named teams are how you carve one out. */
+  teams: { id: string; name: string; code: string; league_id: string | null; conference_id: string | null }[];
 };
 
+/** Every option is a live id read straight from `leagues` / `conferences` /
+ *  `teams`, filtered to the not-archived rows. This is what makes the dangling
+ *  ref structurally impossible: before Part B this read `teams?parent_id=is.null`
+ *  and called the results "leagues", which is how a top-level team id
+ *  (6346a188-…) ended up stored as a `league` scope and then orphaned when Part
+ *  B deleted the row. */
 export async function getScopeOptions(s: Svc): Promise<ScopeOptions> {
-  const [leagues, conferences] = await Promise.all([loadLeagues(s), loadConferences(s)]);
+  const [leagues, conferences, teams] = await Promise.all([
+    loadLeagues(s),
+    loadConferences(s),
+    q<{ id: string; name: string; code: string; league_id: string | null; conference_id: string | null }>(
+      s,
+      `teams?is_active=eq.true&archived_at=is.null&select=id,name,code,league_id,conference_id&order=name.asc`
+    ),
+  ]);
   return {
     leagues,
     conferences: conferences
-      .filter((c) => c.is_active)
+      .filter((c) => c.is_active && !c.archived_at)
       .map((c) => ({ id: c.id, name: c.name, code: c.code, league_id: c.league_id })),
+    teams,
   };
 }
 
-/** Live "member teams resolved from this scope" count for Section B. A platform
- *  scope resolves to every team; a league scope to teams whose league_id is in
- *  scope; a conference scope to teams whose conference_id is in scope.
- *  Exclusions (by team, league, or conference id) are subtracted last. */
-export async function resolveScopeTeamCount(s: Svc, scopes: ScopeRow[]): Promise<number> {
-  const teams = await q<{ id: string; league_id: string | null; conference_id: string | null }>(
-    s,
-    `teams?select=id,league_id,conference_id`
-  );
-  const included = scopes.filter((x) => !x.is_excluded);
-  const excludedIds = new Set(scopes.filter((x) => x.is_excluded).map((x) => x.scope_ref_id));
-  const isExcluded = (t: { id: string; league_id: string | null; conference_id: string | null }) =>
-    excludedIds.has(t.id) || excludedIds.has(t.league_id) || excludedIds.has(t.conference_id);
-
-  if (!included.length) return 0;
-  if (included.some((x) => x.scope_type === "platform")) {
-    return teams.filter((t) => !isExcluded(t)).length;
-  }
-
-  const roots = new Set(included.map((x) => x.scope_ref_id).filter(Boolean) as string[]);
-  return teams.filter(
-    (t) =>
-      (roots.has(t.id) ||
-        (t.league_id != null && roots.has(t.league_id)) ||
-        (t.conference_id != null && roots.has(t.conference_id))) &&
-      !isExcluded(t)
-  ).length;
+/** The resolved scope for a season, straight from the database. Replaces the
+ *  hand-rolled `resolveScopeTeamCount`, which reimplemented resolution in
+ *  TypeScript against `teams.conference_id` only — it had no idea conference
+ *  membership is per-season, so it disagreed with the engine for any team that
+ *  changed conference between seasons. One implementation, in SQL. */
+export async function getScopeSummary(s: Svc, seasonId: string): Promise<ScopeResolution | null> {
+  const r = await rpc<ScopeResolution>(s, "fn_season_scope_summary", { p_season_id: seasonId });
+  return r.ok ? r.data : null;
 }
+
+/** What WOULD this rule set resolve to — no write. `seasonId` is null in the
+ *  create wizard, where no season row exists yet. */
+export async function previewScope(
+  s: Svc,
+  seasonId: string | null,
+  scopes: Record<string, unknown>[]
+): Promise<ScopeResolution | null> {
+  const r = await rpc<ScopeResolution>(s, "fn_season_scope_preview", {
+    p_season_id: seasonId,
+    p_scopes: scopes,
+  });
+  return r.ok ? r.data : null;
+}
+
+export type ScopeResolution = {
+  season_id: string | null;
+  mode: string;
+  included: { type: ScopeRefType; id: string | null; name: string | null }[];
+  excluded: { type: ScopeRefType; id: string | null; name: string | null }[];
+  league_count: number;
+  conference_count: number;
+  team_count: number;
+  teams: { id: string; name: string }[];
+};
 
 // ── theme taxonomy (Theater → Sector → Thread) ───────────────────────────────
 

@@ -18,9 +18,10 @@
 import { type Svc } from "./service";
 import { seasonDayCount } from "./generation-logic";
 import {
-  bundleFingerprint, getConfigBundle, loadGameCatalog, loadSeasonMemberships,
-  pickFocusConfig, rpc,
-  type DifficultyMixRow, type SeasonConfigRow, type SeasonGameRow, type ThemeMixRow,
+  bundleFingerprint, getConfigBundle, getScopeSummary, loadGameCatalog, loadSeasonMemberships,
+  pickFocusConfig, previewScope, rpc,
+  type DifficultyMixRow, type ScopeResolution, type SeasonConfigRow, type SeasonGameRow,
+  type ThemeMixRow,
 } from "./seasons";
 import {
   buildScopeRows, configSaveMessage, countOverCap, defaultDifficultyMix,
@@ -233,7 +234,21 @@ export async function createSeason(
   const seasonId = (created.rows[0] as { id?: string } | undefined)?.id;
   if (!seasonId) return err(500, "Creating the season failed — nothing was written.");
 
-  await writeScopeRows(s, seasonId, input.scope);
+  // Scope BEFORE the config, and roll the season back if it fails.
+  //
+  // createSeason spans two RPCs (the season INSERT and lo_set_season_scope) and
+  // PostgREST cannot hold a transaction across them, so true atomicity is not
+  // available. The failure that matters is a season that exists with the WRONG
+  // scope — silently platform-wide when the commissioner asked for one league —
+  // because nothing downstream would ever flag it. So: if the scope write is
+  // refused, DELETE the season we just created and surface the refusal. The
+  // config rows do not exist yet at this point, and season_scopes/season_config
+  // are both ON DELETE CASCADE, so the delete is clean.
+  const scoped = await setScope(s, seasonId, input.scope, staffEmail, input.reason);
+  if (!scoped.ok) {
+    await del(s, "seasons", `id=eq.${seasonId}`);
+    return err(scoped.status, `${scoped.message} The season was not created.`);
+  }
 
   // Starting point → the v1 draft config.
   const configId =
@@ -268,14 +283,59 @@ export async function createSeason(
   };
 }
 
-/** Replace a season's scope set. Used where the scope is written on its own
- *  (season creation, Section B); the config editor routes scopes through the
- *  bundle RPC instead so they share the save's transaction. */
-async function writeScopeRows(s: Svc, seasonId: string, scope: WizardScope): Promise<void> {
-  await del(s, "season_scopes", `season_id=eq.${seasonId}`);
-  const rows = buildScopeRows(scope).map((r) => ({ season_id: seasonId, ...r }));
-  if (rows.length) await insert(s, "season_scopes", rows);
+/** CC-LO-SEASON-SCOPE-1.0 (D9): the ONE path that writes season_scopes.
+ *
+ *  Replaces the old `writeScopeRows` (DELETE + INSERT over PostgREST) AND the
+ *  `-- 5. scopes` block inside season_config_save_bundle. Two writers to one
+ *  table is how a slate save came to silently replace a season's whole scope
+ *  with nothing in the audit log to show it.
+ *
+ *  The RPC writes its own lo_audit_log row (`season.set_scope`), so callers
+ *  must NOT also call writeAudit — that would double-log, the same carve-out
+ *  season_config_promote already has. */
+async function setScope(
+  s: Svc,
+  seasonId: string,
+  scope: WizardScope,
+  staffEmail: string,
+  reason: string
+): Promise<
+  | { ok: true; summary: ScopeResolution | null; warning: ScopeWarning | null }
+  | { ok: false; status: number; message: string }
+> {
+  const r = await rpc<SetScopeResult | SetScopeResult[]>(s, "lo_set_season_scope", {
+    p_season_id: seasonId,
+    p_scopes: buildScopeRows(scope),
+    p_staff_email: staffEmail,
+    p_reason: reason,
+  });
+
+  if (!r.ok) return { ok: false, status: scopeErrStatus(r.code), message: r.message };
+
+  const out = (Array.isArray(r.data) ? r.data[0] : r.data) ?? null;
+  return { ok: true, summary: out?.summary ?? null, warning: out?.warning ?? null };
 }
+
+/** The RPC speaks in SQLSTATEs; the UI speaks in HTTP. P0001 is every one of its
+ *  deliberate refusals (closed season, platform-plus-X, missing reason); 23514
+ *  is the ref-validation trigger. Both are the commissioner's to fix, so 409 —
+ *  never a 500, which would read as "try again". */
+function scopeErrStatus(code: string | null): number {
+  if (code === "P0002") return 404;
+  if (code === "P0001" || code === "23514") return 409;
+  return 400;
+}
+
+export type ScopeWarning = {
+  kind: string;
+  season: string;
+  locked_at: string | null;
+  entering: { id: string; name: string }[];
+  leaving: { id: string; name: string }[];
+  message: string;
+};
+
+type SetScopeResult = { ok: boolean; summary: ScopeResolution | null; warning: ScopeWarning | null };
 
 /** The defaults starting point: full slate from the ASSIGNABLE game catalog, an
  *  even theme mix across the Theaters, and the 30/50/20 difficulty split. */
@@ -459,7 +519,9 @@ export type ConfigSavePayload = {
   games?: Record<string, unknown>[];
   themeMix?: Record<string, unknown>[];
   difficultyMix?: Record<string, unknown>[];
-  scope?: WizardScope;
+  /** REMOVED in CC-LO-SEASON-SCOPE-1.0 (D9). Scope is written only by
+   *  updateSeasonScope → lo_set_season_scope. A `scope` key on this payload is
+   *  now ignored rather than silently replacing the season's whole scope set. */
   fingerprint?: string;
   reason: string;
   /** Set once the commissioner has seen and accepted the over-cap warning. */
@@ -524,7 +586,12 @@ export async function saveConfigDraft(
           .map((d) => normalizeDifficultyRow(configId, d))
           .filter((d): d is Record<string, unknown> => d !== null)
       : null,
-    p_scopes: payload.scope ? buildScopeRows(payload.scope) : null,
+    // CC-LO-SEASON-SCOPE-1.0 (D9): ALWAYS null. The RPC raises on a non-null
+    // p_scopes and points at lo_set_season_scope. This used to send whatever
+    // Section B happened to hold, which meant an ordinary slate save replaced
+    // the season's entire scope set — invisibly, because snapshot() below
+    // records config/games/themeMix/difficultyMix and never scopes.
+    p_scopes: null,
   });
 
   if (!r.ok) {
@@ -918,32 +985,69 @@ export async function updateSeason(
 
 // ── scope-only update (Section B / wizard step 3 re-edit) ────────────────────
 
+/** CC-LO-SEASON-SCOPE-1.0: routes to lo_set_season_scope. NO writeAudit here —
+ *  the RPC writes its own `season.set_scope` row (D10), and logging again would
+ *  double-count, the same carve-out season_config_promote already has.
+ *
+ *  Deliberately does NOT call assertSeasonUnlocked. Scope is a property of the
+ *  SEASON, not of the frozen puzzle configuration, and `locked_at` is set the
+ *  moment puzzles are approved — gating on it would make the feature unusable on
+ *  exactly the seasons it exists for (`Hot summer Final Beta` is active AND
+ *  locked). The RPC enforces the lifecycle rule that does matter: closed seasons
+ *  are refused outright, and an active season returns a warning naming every
+ *  team crossing the boundary. `locked_at` rides along in that warning so the
+ *  UI can say so.
+ *
+ *  `confirmed` is the commissioner having seen and accepted that warning. The
+ *  first call returns it and writes nothing further; the second commits. */
 export async function updateSeasonScope(
   s: Svc,
   staffEmail: string,
   seasonId: string,
   scope: WizardScope,
-  reason: string
-): Promise<WriteResult> {
-  const locked = await assertSeasonUnlocked(s, seasonId);
-  if (locked) return locked;
+  reason: string,
+  confirmed = false
+): Promise<WriteResult<{ summary: ScopeResolution | null; warning?: ScopeWarning }>> {
+  if (!reason?.trim())
+    return err(422, "A reason is required — it is the audit trail for this scope change.");
 
-  const before = await fetchJson<unknown[]>(s, `season_scopes?season_id=eq.${seasonId}&select=*`);
-  await writeScopeRows(s, seasonId, scope);
-  const after = await fetchJson<unknown[]>(s, `season_scopes?season_id=eq.${seasonId}&select=*`);
+  const preview = await previewScope(s, seasonId, buildScopeRows(scope));
+  const season = await getOne<{ status: string; name: string }>(
+    s, `seasons?id=eq.${seasonId}&select=status,name`
+  );
+  if (!season) return err(404, "Season not found.");
 
-  await writeAudit(s, {
-    staff_email: staffEmail,
-    action: "season.scope_update",
-    reason,
-    target_type: "season",
-    target_id: seasonId,
-    before,
-    after,
-    reversible: false,
-  });
+  // Show the active-season warning BEFORE committing, not after. Computing the
+  // delta here rather than from the RPC's response is what makes the second
+  // confirm meaningful — by the time the RPC could tell us, it has written.
+  if (!confirmed && season.status === "active") {
+    const current = await getScopeSummary(s, seasonId);
+    const before = new Set((current?.teams ?? []).map((t) => t.id));
+    const after = new Set((preview?.teams ?? []).map((t) => t.id));
+    const entering = (preview?.teams ?? []).filter((t) => !before.has(t.id));
+    const leaving = (current?.teams ?? []).filter((t) => !after.has(t.id));
 
-  return { ok: true, message: "Scope updated — logged to Audit Log." };
+    if (entering.length || leaving.length)
+      return err(
+        409,
+        `“${season.name}” is active. This change moves ${entering.length} team${entering.length === 1 ? "" : "s"} into scope and ${leaving.length} out. Standings will be recomputed against the new set — confirm to apply it.`,
+        {
+          scopeWarning: true,
+          entering,
+          leaving,
+          summary: preview as unknown as Record<string, unknown>,
+        }
+      );
+  }
+
+  const res = await setScope(s, seasonId, scope, staffEmail, reason);
+  if (!res.ok) return err(res.status, res.message);
+
+  return {
+    ok: true,
+    message: `Scope updated — ${res.summary?.team_count ?? 0} team${res.summary?.team_count === 1 ? "" : "s"} in scope. Logged to Audit Log.`,
+    data: { summary: res.summary, ...(res.warning ? { warning: res.warning } : {}) },
+  };
 }
 
 export { bundleFingerprint };

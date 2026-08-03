@@ -6,7 +6,7 @@
 
 import { requireStaff } from "@/lib/league-office/service";
 import {
-  getConfigBundle, getScopeOptions, loadConfigs, loadThemeTaxonomy, resolveScopeTeamCount,
+  getConfigBundle, getScopeOptions, loadConfigs, loadThemeTaxonomy,
 } from "@/lib/league-office/seasons";
 import { PageHeading, PendingScreen, EmptyState } from "@/components/league-office/primitives";
 import ConfigEditor from "@/components/league-office/season/ConfigEditor";
@@ -31,15 +31,16 @@ export default async function ConfigEditorPage({
     );
   }
 
-  const [scopeOptions, taxonomy, siblings, scopeTeamCount] = await Promise.all([
+  const [scopeOptions, taxonomy, siblings] = await Promise.all([
     getScopeOptions(staff.s),
     loadThemeTaxonomy(staff.s),
     loadConfigs(staff.s, id),
-    resolveScopeTeamCount(staff.s, bundle.scopes),
   ]);
 
   // The incumbent is what the promote dialog diffs against.
-  const incumbent = siblings.find((c) => c.state === "active" && c.id !== configId) ?? null;
+  const incumbent =
+    siblings.find((c: { state: string; id: string }) => c.state === "active" && c.id !== configId) ??
+    null;
 
   return (
     <ConfigEditor
@@ -47,7 +48,6 @@ export default async function ConfigEditorPage({
       scopeOptions={scopeOptions}
       taxonomy={taxonomy}
       incumbent={incumbent}
-      scopeTeamCount={scopeTeamCount}
     />
   );
 }

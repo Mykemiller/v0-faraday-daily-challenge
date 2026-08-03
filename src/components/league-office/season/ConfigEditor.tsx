@@ -19,6 +19,7 @@ import Link from "next/link";
 import { toast } from "@/components/league-office/actions";
 import { StatusChip } from "@/components/league-office/primitives";
 import { ReasonDialog } from "./ReasonDialog";
+import { ScopeEditor, toWizardScope, type ScopeState } from "./ScopeEditor";
 import {
   Callout, DayMask, FAINT, Field, GOLD, Grid, INK, MiniButton, MUTED, NumberInput,
   PercentControl, PrimaryButton, Section, Select, Sparkline, Stepper, TextArea,
@@ -32,6 +33,7 @@ import {
   evenSplit, fieldLabel, formatValue, isHundred, LEADERBOARD_VISIBILITIES,
   localFindings, normalizeTo100, promoteIntent, round2, summarizeFindings,
   sumPct, TEAM_SCORE_METHODS,
+  scopeFromRows,
 } from "@/lib/league-office/season-config-logic";
 
 // ── local row shapes (client-side working copies) ────────────────────────────
@@ -68,7 +70,6 @@ type DiffRow = {
   applies_to_game_id: string | null;
 };
 
-type ScopeMode = "platform" | "leagues" | "conferences";
 
 const SECTIONS = [
   { id: "sec-a", label: "Effective dating" },
@@ -87,13 +88,11 @@ export default function ConfigEditor({
   scopeOptions,
   taxonomy,
   incumbent,
-  scopeTeamCount,
 }: {
   bundle: ConfigBundle;
   scopeOptions: ScopeOptions;
   taxonomy: ThemeTheater[];
   incumbent: SeasonConfigRow | null;
-  scopeTeamCount: number;
 }) {
   const router = useRouter();
   const seasonLocked = !!bundle.season?.locked_at;
@@ -115,13 +114,21 @@ export default function ConfigEditor({
       min_pct: d.min_pct, max_pct: d.max_pct, applies_to_game_id: d.applies_to_game_id,
     }))
   );
-  const [scopeMode, setScopeMode] = useState<ScopeMode>(() => initialScopeMode(bundle));
-  const [scopeRefs, setScopeRefs] = useState<string[]>(() =>
-    bundle.scopes.filter((s) => !s.is_excluded && s.scope_ref_id).map((s) => s.scope_ref_id as string)
-  );
-  const [scopeExcludes, setScopeExcludes] = useState<string[]>(() =>
-    bundle.scopes.filter((s) => s.is_excluded && s.scope_ref_id).map((s) => s.scope_ref_id as string)
-  );
+  // CC-LO-SEASON-SCOPE-1.0: scope is a property of the SEASON with its own
+  // writer, so it is NOT part of the config draft and NOT part of `dirty`.
+  // Section B saves itself. Folding it into the config save is what let a slate
+  // save silently replace it.
+  const [scope, setScope] = useState<ScopeState>(() => {
+    const w = scopeFromRows(bundle.scopes);
+    return { mode: w.mode, refIds: w.refIds ?? [], excludes: w.excludes ?? [] };
+  });
+  const [scopeDirty, setScopeDirty] = useState(false);
+  const [scopeDialog, setScopeDialog] = useState(false);
+  const [scopeWarning, setScopeWarning] = useState<null | {
+    message: string;
+    entering: { id: string; name: string }[];
+    leaving: { id: string; name: string }[];
+  }>(null);
 
   const [fingerprint, setFingerprint] = useState(bundle.fingerprint);
   const [dirty, setDirty] = useState(false);
@@ -177,7 +184,6 @@ export default function ConfigEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config, games, themeMix, difficultyMix,
-          scope: { mode: scopeMode, refIds: scopeRefs, excludeIds: scopeExcludes },
           fingerprint, reason, acknowledgeCapWarning,
         }),
       });
@@ -209,6 +215,45 @@ export default function ConfigEditor({
     }
   };
 
+  // ── scope save (its own writer, its own reason) ────────────────────────────
+  //
+  // Two-step on an ACTIVE season: the first POST comes back 409 +
+  // { scopeWarning } naming every team entering and leaving, and the dialog
+  // re-opens showing them. Only the second POST (confirm:true) commits.
+  const saveScope = async (reason: string, confirm = false) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/lo/seasons/${bundle.config.season_id}/scope`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: toWizardScope(scope), reason, confirm }),
+      });
+      const j = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (j?.scopeWarning) {
+          setScopeWarning({
+            message: j.message,
+            entering: j.entering ?? [],
+            leaving: j.leaving ?? [],
+          });
+          setScopeDialog(true);
+          return;
+        }
+        toast(j?.message ?? "Saving the scope failed — nothing was written.");
+        return;
+      }
+
+      setScopeDirty(false);
+      setScopeWarning(null);
+      setScopeDialog(false);
+      toast(j.message ?? "Scope updated.");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const promote = async (reason: string) => {
     setBusy(true);
     try {
@@ -219,7 +264,6 @@ export default function ConfigEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             config, games, themeMix, difficultyMix,
-            scope: { mode: scopeMode, refIds: scopeRefs, excludeIds: scopeExcludes },
             fingerprint, reason, acknowledgeCapWarning: true,
           }),
         });
@@ -415,59 +459,36 @@ export default function ConfigEditor({
             <Section
               id="sec-b"
               title="Scope & assignment"
-              blurb="Which leagues or conferences this season applies to. Scope is a property of the season, so saving here updates it for every version."
+              blurb="Which leagues or conferences this season applies to, and who is carved out. Scope belongs to the season, not to this version — it saves on its own, with its own reason."
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-                <Radio
-                  name="scope-mode"
-                  checked={scopeMode === "platform"}
-                  disabled={readOnly}
-                  label="All leagues (platform)"
-                  onChange={() => { setScopeMode("platform"); touch(); }}
-                />
-                <Radio
-                  name="scope-mode"
-                  checked={scopeMode === "leagues"}
-                  disabled={readOnly}
-                  label="Specific leagues"
-                  onChange={() => { setScopeMode("leagues"); touch(); }}
-                />
-                <Radio
-                  name="scope-mode"
-                  checked={scopeMode === "conferences"}
-                  disabled={readOnly || !scopeOptions.conferences.length}
-                  label={
-                    scopeOptions.conferences.length
-                      ? "Specific conferences"
-                      : "Specific conferences (none defined yet)"
-                  }
-                  onChange={() => { setScopeMode("conferences"); touch(); }}
-                />
-              </div>
+              <ScopeEditor
+                value={scope}
+                onChange={(next) => { setScope(next); setScopeDirty(true); }}
+                options={scopeOptions}
+                seasonId={bundle.config.season_id}
+                disabled={seasonLocked && false}
+              />
 
-              {scopeMode !== "platform" ? (
-                <MultiSelect
-                  label={scopeMode === "leagues" ? "Included leagues" : "Included conferences"}
-                  disabled={readOnly}
-                  options={scopeMode === "leagues" ? scopeOptions.leagues : scopeOptions.conferences}
-                  selected={scopeRefs}
-                  onToggle={(id) => { setScopeRefs(toggleIn(scopeRefs, id)); touch(); }}
-                />
-              ) : null}
-
-              <div style={{ marginTop: 14 }}>
-                <MultiSelect
-                  label="Excluded (optional)"
-                  disabled={readOnly}
-                  options={scopeMode === "conferences" ? scopeOptions.conferences : scopeOptions.leagues}
-                  selected={scopeExcludes}
-                  onToggle={(id) => { setScopeExcludes(toggleIn(scopeExcludes, id)); touch(); }}
-                />
-              </div>
-
-              <div className="font-mono" style={{ fontSize: 11, color: FAINT, marginTop: 12 }}>
-                {scopeTeamCount} team{scopeTeamCount === 1 ? "" : "s"} resolved from the saved scope
-                {dirty ? " (recalculated on save)" : ""}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+                <button
+                  type="button"
+                  disabled={!scopeDirty || busy}
+                  onClick={() => { setScopeWarning(null); setScopeDialog(true); }}
+                  style={{
+                    fontSize: 12.5, padding: "7px 14px", borderRadius: 4,
+                    border: `1px solid ${scopeDirty ? GOLD : "var(--color-cream-border)"}`,
+                    background: scopeDirty ? "rgba(196,146,42,.14)" : "#fff",
+                    color: scopeDirty ? "#94560a" : FAINT,
+                    cursor: scopeDirty && !busy ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Save scope
+                </button>
+                {scopeDirty ? (
+                  <span style={{ fontSize: 11.5, color: FAINT }}>
+                    Unsaved — scope is not part of the configuration save.
+                  </span>
+                ) : null}
               </div>
             </Section>
 
@@ -1102,6 +1123,42 @@ export default function ConfigEditor({
       />
 
       <ReasonDialog
+        open={scopeDialog}
+        busy={busy}
+        title={scopeWarning ? "This season is active" : "Save scope"}
+        description={
+          scopeWarning
+            ? scopeWarning.message
+            : "Replaces this season's scope. Applies to every version, and takes effect immediately."
+        }
+        details={
+          scopeWarning ? (
+            <div style={{ fontSize: 12.5, color: MUTED, display: "flex", flexDirection: "column", gap: 8 }}>
+              {scopeWarning.entering.length ? (
+                <div>
+                  <strong>Entering scope:</strong>{" "}
+                  {scopeWarning.entering.map((t) => t.name).join(", ")}
+                </div>
+              ) : null}
+              {scopeWarning.leaving.length ? (
+                <div>
+                  <strong>Leaving scope:</strong>{" "}
+                  {scopeWarning.leaving.map((t) => t.name).join(", ")}
+                </div>
+              ) : null}
+              <div style={{ color: "#9a3412" }}>
+                Standings for this season will be recomputed against the new set.
+              </div>
+            </div>
+          ) : null
+        }
+        confirmLabel={scopeWarning ? "Apply anyway" : "Save scope"}
+        destructive={!!scopeWarning}
+        onCancel={() => { setScopeDialog(false); setScopeWarning(null); }}
+        onConfirm={(reason) => saveScope(reason, !!scopeWarning)}
+      />
+
+      <ReasonDialog
         open={dialog === "cancel"}
         busy={busy}
         title="Cancel this version"
@@ -1309,66 +1366,6 @@ const arrowBtn: React.CSSProperties = {
 
 // ── small pieces ─────────────────────────────────────────────────────────────
 
-function Radio({
-  name, checked, onChange, label, disabled,
-}: {
-  name: string; checked: boolean; onChange: () => void; label: string; disabled?: boolean;
-}) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: disabled ? FAINT : INK, cursor: disabled ? "not-allowed" : "pointer" }}>
-      <input type="radio" name={name} checked={checked} disabled={disabled} onChange={onChange} style={{ accentColor: GOLD }} />
-      {label}
-    </label>
-  );
-}
-
-function MultiSelect({
-  label, options, selected, onToggle, disabled,
-}: {
-  label: string;
-  options: { id: string; name: string; code?: string }[];
-  selected: string[];
-  onToggle: (id: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div>
-      <div className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: FAINT, marginBottom: 6 }}>
-        {label}
-      </div>
-      {options.length === 0 ? (
-        <div style={{ fontSize: 12, color: FAINT }}>Nothing available.</div>
-      ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {options.map((o) => {
-            const on = selected.includes(o.id);
-            return (
-              <button
-                key={o.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => onToggle(o.id)}
-                aria-pressed={on}
-                style={{
-                  fontSize: 12,
-                  padding: "5px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${on ? GOLD : "var(--color-cream-border)"}`,
-                  background: on ? "rgba(196,146,42,.14)" : "#fff",
-                  color: on ? "#94560a" : MUTED,
-                  cursor: disabled ? "not-allowed" : "pointer",
-                }}
-              >
-                {o.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AddOverride({
   catalog, used, onAdd, disabled,
 }: {
@@ -1531,14 +1528,6 @@ function reorder(rows: GameRow[], from: number, to: number): GameRow[] {
   return next.map((r, i) => ({ ...r, sort_order: (i + 1) * 10 }));
 }
 
-function initialScopeMode(bundle: ConfigBundle): ScopeMode {
-  const included = bundle.scopes.filter((s) => !s.is_excluded);
-  if (!included.length || included.some((s) => s.scope_type === "platform")) return "platform";
-  return included[0].scope_type === "conference" ? "conferences" : "leagues";
-}
-
-const toggleIn = (list: string[], id: string) =>
-  list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
 function theaterList(taxonomy: ThemeTheater[], mix: ThemeRow[]): ThemeTheater[] {
   if (taxonomy.length) return taxonomy;
