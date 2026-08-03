@@ -1,7 +1,45 @@
-# Phase 4 — `Hot summer Final Beta` scope backfill: PROPOSAL ONLY
+# Phase 4 — `Hot summer Final Beta` scope backfill
 
-**Status: NOT APPLIED. Awaiting Myke's decision.**
-**Recommendation: apply nothing. Set the scope forward from the UI instead.**
+> ## ✅ APPLIED — interpretation (a), 2026-08-03 17:39:40 UTC
+>
+> Myke reviewed all three candidates and their standings deltas and chose **(a)**,
+> overriding the recommendation below to apply nothing. Applied through
+> `lo_set_season_scope` — not a raw migration — so it carries the active-season
+> warning and one `season.set_scope` audit row (`mykemiller@gmail.com`,
+> `reversible = true`, before 10 teams → after 7).
+>
+> **Live board: 8 → 6 teams.**
+>
+> | | Before | After |
+> |---|---|---|
+> | 1 | Cloud and Platforms (1578) | Cloud and Platforms (1578) |
+> | 2 | Cloud Platform Team 2 (908) | Cloud Platform Team 2 (908) |
+> | 3 | ~~Deloitte (670)~~ | Grid Champions (670) |
+> | 4 | Grid Champions (670) | Independent players (0) |
+> | 5 | Independent players (0) | M&A - PE (0) |
+> | 6 | M&A - PE (0) | Team_Sheba (0) |
+> | 7 | ~~Strategy & Growth (0)~~ | — |
+> | 8 | Team_Sheba (0) | — |
+>
+> `Lonely hearts` was the third exclusion but never appeared on this season's board —
+> it holds no roster rows for it — so only two teams actually left. The RPC's warning
+> named all three as leaving *scope*, which is correct: scope membership and board
+> presence are different things.
+>
+> Scope resolves **7** teams but the board shows **6**: `Network Edge` is in scope with
+> no roster rows for this season. That is the pre-existing roster carry-forward defect,
+> untouched here and still tracked separately.
+>
+> The other five seasons are unchanged — all still platform-scoped, 10 teams each.
+>
+> **To reverse:** re-run `lo_set_season_scope` with a bare platform rule set
+> (`'[{"scope_type":"platform","scope_ref_id":null,"is_excluded":false}]'`). The audit
+> row is marked reversible and its `before` payload holds the full prior team list.
+
+---
+
+**Original recommendation, preserved as written (not followed):**
+**apply nothing; set the scope forward from the UI instead.**
 
 `Hot summer Final Beta` (`7cca7cad-0b42-4c48-a1c3-a619aa73e8fa`) is the **active** season.
 Changing its scope re-ranks the leaderboard the commissioner is looking at right now.
