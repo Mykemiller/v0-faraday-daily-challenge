@@ -56,7 +56,14 @@ export default function StubPage({ title, tagline, status, children, cta, metere
         <div className="space-y-4 font-sans text-[15px] leading-relaxed text-near-black/80">{children}</div>
 
         <p className="mt-8 font-mono text-[11px] text-near-black/55">
-          {meteredNote ?? "Metered in tokens · tokens never expire."}
+          {/* ⚠️ The default used to read "tokens never expire" — removed
+              deliberately (CC-TOS-PRICING-1.0). This is the DEFAULT on every
+              product stub, so it was the single widest publication of a
+              never-expire promise about a prepaid balance. Schedule BL (BL-4)
+              is holding that question open for counsel (state gift-card and
+              unclaimed-property exposure). Do NOT restore it, and do NOT
+              substitute an invented expiry period. */}
+          {meteredNote ?? "Metered in tokens · spend them only when you ask for depth."}
         </p>
 
         {cta && (
