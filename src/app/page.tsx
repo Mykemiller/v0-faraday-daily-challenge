@@ -2,6 +2,12 @@ import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
+import {
+  TOKEN_PACKS,
+  formatPackPrice,
+  formatPackTokens,
+  type TokenPackKey,
+} from "@/config/token-packs";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -26,11 +32,12 @@ const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; pr
   { name: "Thought Forge", href: "/thought-forge", blurb: "Turn Faraday intelligence into your own briefs, memos, and models.", tag: "Metered" },
 ];
 
-const TOKEN_PACKS = [
-  { tokens: "500", price: "$49" },
-  { tokens: "1,000", price: "$89", featured: true },
-  { tokens: "10,000", price: "$799" },
-];
+// Pack prices are NOT written out here. They come from the locked-canon mirror
+// in src/config/token-packs.ts, whose source of truth is the Jurisdiction Watch
+// repo — the repo that actually charges the card. This page previously carried
+// its own "$49 / $89 / $799" literals, a second unguarded copy of a locked
+// price in a different repository (CC-TOS-PRICING-1.0).
+const FEATURED_PACK: TokenPackKey = "tokens-1000";
 
 export default function Home() {
   return (
@@ -177,7 +184,14 @@ export default function Home() {
       {/* ── Tokens ───────────────────────────────────────────────────────── */}
       <section id="tokens" className="mx-auto max-w-5xl px-5 py-12">
         <p className="text-center font-display text-[clamp(22px,3.6vw,32px)] font-bold leading-snug text-near-black">
-          Tokens never expire — spend them only when you ask for depth.
+          {/* ⚠️ This line used to read "Tokens never expire". It was removed
+              deliberately (CC-TOS-PRICING-1.0): a public, affirmative
+              never-expire promise is a durable representation about a prepaid
+              balance, and Schedule BL (BL-4) is holding exactly that question
+              open for counsel — non-expiring prepaid balances can trigger state
+              gift-card and unclaimed-property law. Do NOT restore it, and do
+              NOT replace it with an invented expiry period. */}
+          Spend them only when you ask for depth.
         </p>
         <p className="mx-auto mt-3 max-w-xl text-center font-sans text-[14px] leading-relaxed text-near-black/70">
           Every Faraday surface runs on tokens — one balance across all of them. A token is a unit of depth:
@@ -186,13 +200,13 @@ export default function Home() {
         <div className="mx-auto mt-6 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
           {TOKEN_PACKS.map((p) => (
             <div
-              key={p.tokens}
+              key={p.key}
               className={`flex flex-col items-center gap-1 rounded-xl border px-4 py-5 ${
-                p.featured ? "border-gold bg-warm-cream" : "border-warm-gray bg-warm-white"
+                p.key === FEATURED_PACK ? "border-gold bg-warm-cream" : "border-warm-gray bg-warm-white"
               }`}
             >
-              <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-forest">{p.tokens} tokens</span>
-              <span className="font-display text-[28px] font-bold text-near-black">{p.price}</span>
+              <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-forest">{formatPackTokens(p)} tokens</span>
+              <span className="font-display text-[28px] font-bold text-near-black">{formatPackPrice(p)}</span>
             </div>
           ))}
         </div>

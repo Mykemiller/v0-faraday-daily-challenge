@@ -18,7 +18,7 @@
     "test:signal-matcher": "node --test src/lib/signal-matcher.test.ts",
     "test:no-codes": "node --test scripts/no-idf-codes-check.mjs",
     "test:idf-labels": "node --test src/lib/idf-labels.test.ts",
-        "test:scoring-reset": "node --test src/lib/league-office/scoring-reset-logic.test.mjs",
+    "test:scoring-reset": "node --test src/lib/league-office/scoring-reset-logic.test.mjs",
     "test:broadcast": "node --test src/lib/league-office/sanitize-html.test.ts src/lib/league-office/broadcast-logic.test.ts",
     "test:season-config": "node --test src/lib/league-office/season-config-logic.test.ts",
     "test:game-library": "node --test src/lib/league-office/game-library-logic.test.ts",
@@ -31,7 +31,9 @@
     "test:far287": "node --test scripts/far287/lib/run-bookkeeping.test.mjs scripts/far287/lib/puzzle-schema.test.mjs",
     "test:generation": "node --test src/lib/league-office/generation-logic.test.ts",
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",
-    "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts"
+    "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts",
+    "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",
+    "test:pricing": "node --test src/config/pricing.test.ts"
   },
   "dependencies": {
     "next": "16.2.3",
