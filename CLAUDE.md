@@ -1,5 +1,42 @@
 @AGENTS.md
 
+## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
+
+**Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`
+and `GameDarkFiberReplay` each rendered `def.length > 80 ? def.slice(0,80)+"…" : def`.
+That is a **JavaScript string slice, not a CSS constraint**: the tail was destroyed
+before it reached the DOM, so no amount of CSS could recover it, and there was no
+expand affordance to recover it by hand. A clipped definition is a broken puzzle.
+
+- **The rule: a cell that renders puzzle content gets `overflowWrap:"anywhere"` +
+  `textWrap:"pretty"` and lets the row grow. Never a `.slice()`, never `truncate` /
+  `line-clamp` / `text-overflow`, never a fixed `height` on the row.** Apply this to
+  any new game surface that renders authored copy.
+  - `anywhere` not `break-all` — the bank's long tokens are all hyphenated compounds
+    (`chip-on-wafer-on-substrate` 26 chars, `Singapore-headquartered` 23), which break
+    cleanly at hyphens; `break-all` would shred ordinary words mid-syllable.
+  - `pretty` suppresses the single-trailing-word orphan that reads as a dangling phrase.
+  - `minWidth:0` on the column, because a **grid item defaults to `min-width:auto` =
+    min-content** — without it the longest word can force the track wider than its `1fr`
+    share and blow out the row. This is the load-bearing half of the fix at 360px.
+- **Measured against the live bank** (`dc_puzzle_bank_staging`, 36 Dark Fiber puzzles /
+  216 definitions): longest **209 chars**, p95 **181**, mean 103, **131 over the old
+  80-char cut**. The layout is verified against the real 209-char CAPEX entry.
+- **The 2-column grid was deliberately left alone (Myke, 2026-08-05).** ⚠️ Dark Fiber is
+  **not** a term|definition table — the right column is `shuffledDefs`, deliberately
+  desynchronised from the left. **Stacking a term above "its" definition would print the
+  answer key.** Any future responsive work here must preserve that shuffle; the only
+  answer-safe stack is Terms-block-above-Definitions-block.
+- **The share card is unaffected and must stay that way**: `buildShare.js` encodes Dark
+  Fiber as `{pairs, mistakes}` counts (`p5m2`) and never reads `def`. No `next/og`
+  payload carries definition text.
+- Verified: 0/6 ellipsised at 360/768/1024/1440 (was 6/6), no CSS clipping, no
+  horizontal scroll at 360px, replay surface renders the full 209-char definition. A
+  shuffle-invariant computed-style fingerprint over all 7 games is **byte-identical for
+  the other 6**; only Dark Fiber moved. `next build` green, 9 test suites pass, ESLint
+  identical to baseline (27 problems / 10 errors / 17 warnings — all pre-existing).
+  **Zero writes to Airtable or Supabase; no content was rewritten to fit.**
+
 ## ⚠️ `team_memberships` is SEASON-KEYED — never COUNT(*) it (CC-LO-TEAM-COUNTS-1.0, claude/league-office-member-counts-xp9bj3, 2026-08-03)
 
 **One row per (subscriber, team, season).** A player on a team for three seasons owns

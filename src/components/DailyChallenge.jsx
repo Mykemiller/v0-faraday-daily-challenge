@@ -1414,8 +1414,10 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
           );
         })}
       </div>
-      {/* Definitions column */}
-      <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
+      {/* Definitions column — minWidth:0 lets the grid track shrink to its share
+          instead of being forced wide by the longest word (grid items default to
+          min-width:auto = min-content). */}
+      <div style={{ display:"flex", flexDirection:"column", gap:"6px", minWidth:0 }}>
         <SL color={C.cyan||C.sage}>Definitions</SL>
         {shuffledDefs.map(term => {
           const pair = puzzle.pairs.find(p => p.term === term);
@@ -1429,7 +1431,12 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
               cursor: isMatched ? "default" : "pointer",
               color: isMatched ? C.green : isSel ? C.sage : C.text,
               fontSize:"13px", lineHeight:1.5, ...mono, transition:"all 0.12s",
-            }}>{pair.def.length > 80 ? pair.def.slice(0,80)+"…" : pair.def}</button>
+              // The definition IS the puzzle content — never truncate it. The row
+              // grows to fit; `anywhere` breaks the long hyphenated compounds in the
+              // bank (chip-on-wafer-on-substrate) without shredding ordinary words,
+              // and `pretty` keeps a lone trailing word off its own line.
+              overflowWrap:"anywhere", textWrap:"pretty",
+            }}>{pair.def}</button>
           );
         })}
       </div>
@@ -1718,8 +1725,9 @@ function GameDarkFiberReplay({ snapshot, puzzle, score, onBack }) {
               {p.term}
             </div>
             <div style={{ background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.3)",
-              borderRadius:"6px", padding:"10px 12px", fontSize:"12px", color:C.green, lineHeight:1.4, ...mono }}>
-              {p.def?.length > 80 ? p.def.slice(0,80)+"…" : p.def}
+              borderRadius:"6px", padding:"10px 12px", fontSize:"12px", color:C.green, lineHeight:1.4, ...mono,
+              minWidth:0, overflowWrap:"anywhere", textWrap:"pretty" }}>
+              {p.def}
             </div>
           </div>
         ))}
