@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "@/components/league-office/actions";
 import { StatusChip } from "@/components/league-office/primitives";
+import { publishabilityReason } from "@/lib/game-registry";
 import { ReasonDialog } from "./ReasonDialog";
 import { ScopeEditor, toWizardScope, type ScopeState } from "./ScopeEditor";
 import {
@@ -1227,6 +1228,12 @@ function SlateRow({
   const [over, setOver] = useState(false);
   const set = (patch: Partial<GameRow>) => onChange({ ...row, ...patch });
 
+  // D7: a game that cannot be published must not be selectable — it would fail
+  // at publish time with a trigger exception instead of here, where someone can
+  // actually fix it. The reason names the missing field.
+  const blockedReason = game && !game.is_publishable ? publishabilityReason(game) : null;
+  const rowDisabled = disabled || !!blockedReason;
+
   const bands = [
     { value: "", label: "—" },
     ...DIFFICULTY_BANDS.map((b) => ({ value: b, label: cap(b) })),
@@ -1254,7 +1261,7 @@ function SlateRow({
         borderRight: "1px solid var(--color-cream-border)",
         borderBottom: "1px solid var(--color-cream-line)",
         background: over ? "rgba(196,146,42,.10)" : row.is_enabled ? "#fff" : "#fdfcfa",
-        opacity: row.is_enabled ? 1 : 0.66,
+        opacity: blockedReason ? 0.45 : row.is_enabled ? 1 : 0.66,
       }}
     >
       <div
@@ -1268,11 +1275,16 @@ function SlateRow({
       <div>
         <input
           type="checkbox"
-          checked={row.is_enabled}
-          disabled={disabled}
+          checked={row.is_enabled && !blockedReason}
+          disabled={rowDisabled}
           onChange={(e) => set({ is_enabled: e.target.checked })}
-          aria-label={`Enable ${game?.display_name ?? "game"}`}
-          style={{ accentColor: GOLD, cursor: disabled ? "not-allowed" : "pointer" }}
+          aria-label={
+            blockedReason
+              ? `${game?.display_name ?? "Game"} cannot be enabled — ${blockedReason}`
+              : `Enable ${game?.display_name ?? "game"}`
+          }
+          title={blockedReason ?? undefined}
+          style={{ accentColor: GOLD, cursor: rowDisabled ? "not-allowed" : "pointer" }}
         />
       </div>
 
@@ -1304,7 +1316,13 @@ function SlateRow({
             </span>
           ) : null}
           {game?.is_beta ? <StatusChip label="beta" tone="amber" /> : null}
+          {blockedReason ? <StatusChip label="not publishable" tone="red" /> : null}
         </div>
+        {blockedReason ? (
+          <div style={{ fontSize: 10.5, color: "#a4462a", marginTop: 3, lineHeight: 1.35 }}>
+            {blockedReason}
+          </div>
+        ) : null}
       </div>
 
       <div><NumberInput disabled={disabled} step={0.001} min={0} value={row.weight} onChange={(v) => set({ weight: v ?? 0 })} /></div>

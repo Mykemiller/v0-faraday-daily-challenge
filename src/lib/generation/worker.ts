@@ -365,9 +365,18 @@ export async function runGenerationSlice(
         };
       });
 
+      // CC-DC-GAME-REGISTRY-1.0 Q5: a game with no prompt spec is SKIPPED, not
+      // sent to the model with a blank schema. A catalog row can exist before
+      // its generator does; that must degrade, never fabricate.
+      const user = userPrompt(type, items);
+      if (!user) {
+        console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "skip", reason: "no prompt spec for this game type" }));
+        continue;
+      }
+
       let arr: Record<string, unknown>[] = [];
       try {
-        const raw = await callModel(systemPrompt(type), userPrompt(type, items));
+        const raw = await callModel(systemPrompt(type), user);
         arr = parseArray(raw);
       } catch (err) {
         failed += slice.length;

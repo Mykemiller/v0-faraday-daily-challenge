@@ -44,6 +44,12 @@ export type GameCatalogRow = {
   sort_order: number;
   launched_on: string | null;
   retired_on: string | null;
+  // D7 (CC-DC-GAME-REGISTRY-1.0): publishability. `is_publishable` is a
+  // generated column; the three source fields are carried so the picker can say
+  // WHICH one is missing rather than a bare "not ready".
+  is_publishable: boolean;
+  public_id_prefix: string | null;
+  runtime_key: string | null;
   lifecycle_state: LifecycleState;
 };
 
