@@ -1,8 +1,8 @@
 // Faraday Signal card (FAR-385) — a short, dated intelligence item rendered at
 // the bottom of the post-solve ScoreCard, following the Faraday's Take pattern
-// (FAR-389). ONE shared component; per-game enablement lives in
-// SIGNAL_ENABLED_GAMES beside ScoreCard (The Brief pilot; Signal Drop/Rackl
-// are CC-FAR385-2).
+// (FAR-389). ONE shared component; per-game enablement is
+// game_catalog.signal_enabled (CC-DC-GAME-REGISTRY-1.0) — flip the column, no
+// code change.
 //
 // Tier framing (from the sync-time matcher, src/lib/signal-matcher.ts):
 //   matched — "Related Signal"          (structured metadata match / pin)
@@ -18,7 +18,7 @@ import React from "react";
 // Brand tokens (mirrors the `C` palette in DailyChallenge.jsx).
 const TEXT = "#E8E4DE";
 const MUTED = "#9A938C";
-const BRIEF_OLIVE = "#7CA34A"; // The Brief's FAR-394 accent — pilot default
+const DEFAULT_ACCENT = "#7CA34A"; // fallback only — callers pass the game's accent
 
 export interface TodaysSignalPayload {
   tier?: string | null; // "matched" | "lead" (anything else → no card)
@@ -73,7 +73,7 @@ export default function TodaysSignalCard({ signal, accent }: TodaysSignalCardPro
   // No signal, unknown tier, or missing content → nothing. Never a placeholder.
   if ((tier !== "matched" && tier !== "lead") || !headline || !body) return null;
 
-  const color = accent || BRIEF_OLIVE;
+  const color = accent || DEFAULT_ACCENT;
   const heading = tier === "matched" ? "Related Signal" : "Elsewhere in the Sector";
   const dateText = formatSignalDate(signal?.signal_date);
   const sourceUrl =

@@ -8,40 +8,37 @@ import assert from "node:assert/strict";
 import {
   GILBERT_FARADAY,
   MACH_EIGEN,
-  TAKE_VOICE_BY_TYPE,
   defaultTakeByline,
   resolveTakeByline,
   deriveTakeFallback,
 } from "./faradays-take.ts";
 
-test("voice map covers all 7 game types with the ticket's split", () => {
-  const gilbert = ["Rackl", "The Stack", "Dark Fiber", "Frequency"];
-  const mach = ["Circuit", "The Brief", "Signal Drop"];
-  for (const t of gilbert) assert.equal(TAKE_VOICE_BY_TYPE[t], GILBERT_FARADAY, t);
-  for (const t of mach) assert.equal(TAKE_VOICE_BY_TYPE[t], MACH_EIGEN, t);
-  assert.equal(Object.keys(TAKE_VOICE_BY_TYPE).length, 7);
-});
-
-test("defaultTakeByline falls back to Gilbert Faraday for unknown/empty types", () => {
-  assert.equal(defaultTakeByline("Circuit"), MACH_EIGEN);
-  assert.equal(defaultTakeByline("Rackl"), GILBERT_FARADAY);
-  assert.equal(defaultTakeByline("Nonexistent"), GILBERT_FARADAY);
+// CC-DC-GAME-REGISTRY-1.0 D10: the per-game voice is game_catalog.take_voice
+// and is passed in, so these tests no longer name the live seven. The voice
+// STRINGS are still asserted — they are the editorial identities, not a roster.
+test("defaultTakeByline falls back to Gilbert Faraday for unknown/empty voices", () => {
+  assert.equal(defaultTakeByline(MACH_EIGEN), MACH_EIGEN);
+  assert.equal(defaultTakeByline(GILBERT_FARADAY), GILBERT_FARADAY);
+  assert.equal(defaultTakeByline("Guest Analyst"), "Guest Analyst");
+  assert.equal(defaultTakeByline(""), GILBERT_FARADAY);
+  assert.equal(defaultTakeByline("   "), GILBERT_FARADAY);
   assert.equal(defaultTakeByline(null), GILBERT_FARADAY);
   assert.equal(defaultTakeByline(undefined), GILBERT_FARADAY);
 });
 
-test("resolveTakeByline: explicit override wins over the game-type voice", () => {
-  // Override present → used verbatim, even against the type's default voice.
-  assert.equal(resolveTakeByline("Circuit", "Gilbert Faraday"), "Gilbert Faraday");
-  assert.equal(resolveTakeByline("Rackl", "Mach Eigen"), "Mach Eigen");
-  assert.equal(resolveTakeByline("Rackl", "  Guest Analyst  "), "Guest Analyst");
+test("resolveTakeByline: explicit override wins over the game's voice", () => {
+  assert.equal(resolveTakeByline(MACH_EIGEN, GILBERT_FARADAY), GILBERT_FARADAY);
+  assert.equal(resolveTakeByline(GILBERT_FARADAY, MACH_EIGEN), MACH_EIGEN);
+  assert.equal(resolveTakeByline(GILBERT_FARADAY, "  Guest Analyst  "), "Guest Analyst");
 });
 
-test("resolveTakeByline: blank/whitespace/absent override → game-type voice", () => {
-  assert.equal(resolveTakeByline("Signal Drop", ""), MACH_EIGEN);
-  assert.equal(resolveTakeByline("Signal Drop", "   "), MACH_EIGEN);
-  assert.equal(resolveTakeByline("Signal Drop", null), MACH_EIGEN);
-  assert.equal(resolveTakeByline("Frequency", undefined), GILBERT_FARADAY);
+test("resolveTakeByline: blank/whitespace/absent override → the game's voice", () => {
+  assert.equal(resolveTakeByline(MACH_EIGEN, ""), MACH_EIGEN);
+  assert.equal(resolveTakeByline(MACH_EIGEN, "   "), MACH_EIGEN);
+  assert.equal(resolveTakeByline(MACH_EIGEN, null), MACH_EIGEN);
+  assert.equal(resolveTakeByline(GILBERT_FARADAY, undefined), GILBERT_FARADAY);
+  // A game with no configured voice still gets a byline, never a blank one.
+  assert.equal(resolveTakeByline(null, null), GILBERT_FARADAY);
 });
 
 test("deriveTakeFallback: joins per-question explanations for question games", () => {

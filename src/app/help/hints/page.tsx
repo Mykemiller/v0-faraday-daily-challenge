@@ -1,26 +1,35 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { loadLiveGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 
 export const metadata = {
   title: "Hints · Faraday Daily Challenge",
-  description: "How hints work across the seven daily games — and how to use them without giving the answer away.",
+  description: "How hints work across the daily games — and how to use them without giving the answer away.",
 };
 
 // Help & Feedback → Hints (evergreen how-to). Distinct from /challenge/hints,
 // which is the day-scoped list of today's actual hints (FAR-287).
 
-const GAMES: { name: string; hint: string }[] = [
-  { name: "Rackl", hint: "A hint narrows one group — it tells you a category, not which tiles belong to it." },
-  { name: "Circuit", hint: "A hint flags whether the current statement is the tricky one, so you can slow down before the buzzer." },
-  { name: "Dark Fiber", hint: "A hint reveals part of one definition, enough to anchor a single match." },
-  { name: "Frequency", hint: "A hint eliminates one wrong answer, turning four choices into three." },
-  { name: "The Stack", hint: "A hint locks one item into its correct position so you can rank around it." },
-  { name: "Signal Drop", hint: "A hint reveals a letter or the term's domain — a nudge, never the whole word." },
-  { name: "The Brief", hint: "A hint points you back to the line in the brief that carries the answer." },
-];
+// Per-game hint copy. Editorial text stays in code (CC-DC-GAME-REGISTRY-1.0 Q5)
+// but the LIST and its order come from game_catalog — a game with no copy here
+// is simply omitted rather than breaking the page.
+const HINT_COPY: Record<string, string> = {
+  Rackl: "A hint narrows one group — it tells you a category, not which tiles belong to it.",
+  Circuit: "A hint flags whether the current statement is the tricky one, so you can slow down before the buzzer.",
+  "Dark Fiber": "A hint reveals part of one definition, enough to anchor a single match.",
+  Frequency: "A hint eliminates one wrong answer, turning four choices into three.",
+  "The Stack": "A hint locks one item into its correct position so you can rank around it.",
+  "Signal Drop": "A hint reveals a letter or the term's domain — a nudge, never the whole word.",
+  "The Brief": "A hint points you back to the line in the brief that carries the answer.",
+};
 
-export default function HintsHelpPage() {
+export default async function HintsHelpPage() {
+  const games = (await loadLiveGames())
+    .map((g) => ({ name: keyOf(g), hint: HINT_COPY[keyOf(g)] }))
+    .filter((g): g is { name: string; hint: string } => Boolean(g.hint));
+
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
@@ -46,7 +55,7 @@ export default function HintsHelpPage() {
 
         <h2 className="mt-10 font-serif text-xl font-bold text-forest">What a hint gives you, by game</h2>
         <div className="mt-4 divide-y divide-forest/8 rounded-lg border border-forest/10 bg-white px-5">
-          {GAMES.map((g) => (
+          {games.map((g) => (
             <div key={g.name} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3.5">
               <span className="w-28 shrink-0 font-mono text-[11px] uppercase tracking-wider text-forest">{g.name}</span>
               <span className="min-w-0 flex-1 text-[14px] leading-relaxed text-near-black/75">{g.hint}</span>

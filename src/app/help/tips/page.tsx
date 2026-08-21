@@ -1,14 +1,18 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { loadLiveGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 
 export const metadata = {
   title: "Tips and Tricks · Faraday Daily Challenge",
-  description: "Strategy notes for each of the seven daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
+  description: "Strategy notes for each of the daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
 };
 
-// Help & Feedback → Tips and Tricks. One strategy card per game format
-// (mirrors GAME_CONFIGS in DailyChallenge.jsx — keep the seven in sync).
+// Help & Feedback → Tips and Tricks. One strategy card per game format.
+// Editorial copy stays in code (CC-DC-GAME-REGISTRY-1.0 Q5); the LIST and its
+// order come from game_catalog, so an eighth game does not silently vanish from
+// the page — it simply carries no card until copy is written for it.
 
 const TIPS: { name: string; format: string; tips: string[] }[] = [
   { name: "Rackl", format: "Connect — group the tiles into four sets", tips: [
@@ -41,7 +45,11 @@ const TIPS: { name: string; format: string; tips: string[] }[] = [
   ]},
 ];
 
-export default function TipsPage() {
+export default async function TipsPage() {
+  const roster = (await loadLiveGames()).map(keyOf);
+  const byName = new Map(TIPS.map((t) => [t.name, t]));
+  const tips = roster.map((n) => byName.get(n)).filter((t): t is (typeof TIPS)[number] => Boolean(t));
+
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
@@ -49,12 +57,12 @@ export default function TipsPage() {
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Tips &amp; Tricks</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">
-          Seven games, seven habits. A little strategy per format is how regulars keep their
+          {roster.length} games, {roster.length} habits. A little strategy per format is how regulars keep their
           Intelligence Readiness up and squeeze out the last points.
         </p>
 
         <div className="mt-8 space-y-4">
-          {TIPS.map((g) => (
+          {tips.map((g) => (
             <section key={g.name} className="rounded-lg border border-forest/10 bg-white px-5 py-5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="font-serif text-lg font-bold text-forest">{g.name}</h2>

@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
+import { loadLiveGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 
-// CC-DC-SHARE-1.0 Phase 2 — the design-review sheet: all 7 games + the generic
-// card from the real /api/share/card renderer, both size variants, one screen.
+// CC-DC-SHARE-1.0 Phase 2 — the design-review sheet: every live game + the
+// generic card from the real /api/share/card renderer, both size variants, one
+// screen. The roster comes from game_catalog (CC-DC-GAME-REGISTRY-1.0).
 //
 // AC 6: excluded from PRODUCTION routing. Local dev and Vercel preview deploys
 // render it (that is where design review happens); the production environment
@@ -11,16 +14,21 @@ const isProduction = process.env.VERCEL_ENV === "production";
 export const metadata = { title: "Share card preview · Faraday Daily Challenge" };
 export const dynamic = "force-dynamic";
 
-// Representative sample results — states/counts only, one per game, exercising
-// every grid grammar plus the no-grid generic case and all three band labels.
-const SAMPLES: Array<{ label: string; qs: string }> = [
-  { label: "Rackl", qs: "game=rackl&n=38&date=2026-07-31&score=142&band=Ahead+of+Consensus&grid=s4m1" },
-  { label: "Signal Drop", qs: "game=signal-drop&n=38&date=2026-07-31&score=118&band=On+Pace&grid=aapaaa-pcapaa-cccccc" },
-  { label: "The Stack", qs: "game=the-stack&n=38&date=2026-07-31&score=96&band=Taking+the+Long+View&grid=oxoxo" },
-  { label: "Circuit", qs: "game=circuit&n=38&date=2026-07-31&score=104&band=On+Pace&grid=ooxoo" },
-  { label: "The Brief", qs: "game=the-brief&n=38&date=2026-07-31&score=110&band=Ahead+of+Consensus&grid=oooxo" },
-  { label: "Dark Fiber", qs: "game=dark-fiber&n=38&date=2026-07-31&score=128&band=On+Pace&grid=p6m2" },
-  { label: "Frequency", qs: "game=frequency&n=38&date=2026-07-31&score=88&band=Taking+the+Long+View&grid=ooox" },
+// Representative sample results — states/counts only. The grid grammar is
+// genuinely per-game (a Wordle row and a ranked list encode differently), so
+// these stay in code as a registry keyed on ROUTE SLUG; a game with no sample
+// still gets a card, just without a grid.
+const SAMPLE_BY_SLUG: Record<string, string> = {
+  rackl: "score=142&band=Ahead+of+Consensus&grid=s4m1",
+  "signal-drop": "score=118&band=On+Pace&grid=aapaaa-pcapaa-cccccc",
+  "the-stack": "score=96&band=Taking+the+Long+View&grid=oxoxo",
+  circuit: "score=104&band=On+Pace&grid=ooxoo",
+  "the-brief": "score=110&band=Ahead+of+Consensus&grid=oooxo",
+  "dark-fiber": "score=128&band=On+Pace&grid=p6m2",
+  frequency: "score=88&band=Taking+the+Long+View&grid=ooox",
+};
+
+const FIXED_SAMPLES: Array<{ label: string; qs: string }> = [
   { label: "Generic (Daily Challenge)", qs: "score=742" },
   { label: "Degraded: unknown game, no result fields", qs: "game=mystery" },
 ];
@@ -31,6 +39,18 @@ export default async function SharePreviewPage({
   searchParams: Promise<{ size?: string }>;
 }) {
   if (isProduction) notFound();
+
+  // One card per live game, in locked lobby order, straight from the catalog.
+  const gameSamples = (await loadLiveGames()).map((g) => {
+    const slug = g.route_slug || "";
+    const extra = SAMPLE_BY_SLUG[slug] || "";
+    return {
+      label: keyOf(g),
+      qs: `game=${encodeURIComponent(slug)}&n=38&date=2026-07-31${extra ? `&${extra}` : ""}`,
+    };
+  });
+  const SAMPLES = [...gameSamples, ...FIXED_SAMPLES];
+
   const { size } = await searchParams;
   const square = size === "square";
   const sizeQs = square ? "&size=square" : "";

@@ -8,6 +8,8 @@ import {
   formatPackTokens,
   type TokenPackKey,
 } from "@/config/token-packs";
+import { loadLiveGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -16,11 +18,8 @@ import {
 // are distributed one-per-section, never stacked. Brand tokens from globals.css
 // @theme (locked). Per-product meter prices are NOT shown (FAR-46 DRAFT).
 
-// The seven Daily Challenge games in the locked order (front-loads quick-momentum
-// games). Mirrors GAME_CONFIGS in DailyChallenge.jsx.
-const DC_GAMES = [
-  "Rackl", "Circuit", "Dark Fiber", "Frequency", "The Stack", "Signal Drop", "The Brief",
-] as const;
+// The Daily Challenge games come from game_catalog in locked lobby order
+// (CC-DC-GAME-REGISTRY-1.0) — this used to be a hardcoded array of seven.
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
@@ -39,7 +38,12 @@ const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; pr
 // price in a different repository (CC-TOS-PRICING-1.0).
 const FEATURED_PACK: TokenPackKey = "tokens-1000";
 
-export default function Home() {
+export default async function Home() {
+  // Locked lobby order from game_catalog. An eighth game appears here with no
+  // code change; an unreachable catalog renders the section with no tiles
+  // rather than a stale hardcoded seven.
+  const dcGames = await loadLiveGames();
+
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
       {/* ── Masthead ─────────────────────────────────────────────────────── */}
@@ -221,26 +225,31 @@ export default function Home() {
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="font-display text-[22px] font-bold text-warm-white">Sharpen up free, every day</span>
             <Link href="/daily-challenge" className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
-              Free · all 7 games →
+              Free · all {dcGames.length} games →
             </Link>
           </div>
           <p className="mt-2 max-w-2xl font-sans text-[13px] leading-relaxed text-warm-cream/80">
-            Seven two-minute intelligence games for people who work in and around the AI data center economy.
-            The puzzles come from what Faraday reads every day.
+            {dcGames.length} two-minute intelligence games for people who work in and around the AI data
+            center economy. The puzzles come from what Faraday reads every day.
           </p>
-          <ul className="mt-5 grid grid-cols-4 gap-3 sm:grid-cols-7">
-            {DC_GAMES.map((g) => (
-              <li key={g}>
-                <Link
-                  href={`/daily-challenge?game=${encodeURIComponent(g)}`}
-                  aria-label={`Play ${g}`}
-                  className="flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
-                >
-                  <GameIcon game={g} size={56} />
-                  <span className="font-mono text-[11px] leading-tight text-warm-cream/85">{g}</span>
-                </Link>
-              </li>
-            ))}
+          {/* D9: auto-fit tracks, not a fixed 7-column grid — the row adapts to
+              however many games the catalog carries. */}
+          <ul className="mt-5 grid grid-cols-4 gap-3 sm:[grid-template-columns:repeat(auto-fit,minmax(0,1fr))]">
+            {dcGames.map((g) => {
+              const label = keyOf(g);
+              return (
+                <li key={g.id}>
+                  <Link
+                    href={`/daily-challenge?game=${encodeURIComponent(label)}`}
+                    aria-label={`Play ${label}`}
+                    className="flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
+                  >
+                    <GameIcon slug={g.route_slug ?? undefined} size={56} />
+                    <span className="font-mono text-[11px] leading-tight text-warm-cream/85">{label}</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </section>

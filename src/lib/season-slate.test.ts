@@ -16,30 +16,32 @@ import assert from "node:assert/strict";
 
 import { filterToSlate, servedGameList } from "./season-slate.ts";
 
-const THE_SEVEN = [
-  "Rackl", "Signal Drop", "The Stack", "Circuit", "Dark Fiber", "Frequency", "The Brief",
-];
+// CC-DC-GAME-REGISTRY-1.0 D10: generic names, and the count is derived. Slate
+// filtering has nothing to do with WHICH games exist — hardcoding the live seven
+// here made the suite look like it was asserting the roster, which it never was.
+const ROSTER = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
+const N = ROSTER.length;
 
-const live = () => Object.fromEntries(THE_SEVEN.map((t) => [t, { puzzle: t }]));
+const live = () => Object.fromEntries(ROSTER.map((t) => [t, { puzzle: t }]));
 
 // ── the point of the feature ────────────────────────────────────────────────
 
 test("a 4-game slate serves exactly those 4", () => {
-  const out = filterToSlate(live(), ["Rackl", "Circuit", "The Brief", "Frequency"]);
-  assert.deepEqual(Object.keys(out).sort(), ["Circuit", "Frequency", "Rackl", "The Brief"]);
+  const out = filterToSlate(live(), ["Alpha", "Bravo", "Charlie", "Delta"]);
+  assert.deepEqual(Object.keys(out).sort(), ["Alpha", "Bravo", "Charlie", "Delta"]);
 });
 
 test("a 6-game slate drops exactly the one disabled game", () => {
-  const slate = THE_SEVEN.filter((t) => t !== "Dark Fiber");
+  const slate = ROSTER.filter((t) => t !== "Echo");
   const out = filterToSlate(live(), slate);
   assert.equal(Object.keys(out).length, 6);
-  assert.equal("Dark Fiber" in out, false);
+  assert.equal("Echo" in out, false);
 });
 
 test("the served puzzle objects are passed through untouched", () => {
   const src = live();
-  const out = filterToSlate(src, ["Rackl"]);
-  assert.equal(out.Rackl, src.Rackl, "same reference — filtering must not clone or reshape");
+  const out = filterToSlate(src, ["Alpha"]);
+  assert.equal(out.Alpha, src.Alpha, "same reference — filtering must not clone or reshape");
 });
 
 // ── the fail-safes: these are the ones that matter ──────────────────────────
@@ -47,11 +49,11 @@ test("the served puzzle objects are passed through untouched", () => {
 test("FAIL-SAFE: a null slate serves everything (no season config → no gate)", () => {
   // 3 of 6 prod seasons have no active config. This is the case that would
   // otherwise black out the lobby.
-  assert.deepEqual(Object.keys(filterToSlate(live(), null)).sort(), [...THE_SEVEN].sort());
+  assert.deepEqual(Object.keys(filterToSlate(live(), null)).sort(), [...ROSTER].sort());
 });
 
 test("FAIL-SAFE: an empty slate serves everything, never nothing", () => {
-  assert.deepEqual(Object.keys(filterToSlate(live(), [])).sort(), [...THE_SEVEN].sort());
+  assert.deepEqual(Object.keys(filterToSlate(live(), [])).sort(), [...ROSTER].sort());
 });
 
 test("FAIL-SAFE: a slate matching nothing live falls back rather than blanking", () => {
@@ -63,14 +65,14 @@ test("FAIL-SAFE: a slate matching nothing live falls back rather than blanking",
 
 test("enforcement can only ever NARROW — never invent a game", () => {
   // A slate enabling a game with no live puzzle does not fabricate one.
-  const partial = { Rackl: { puzzle: "Rackl" } };
-  const out = filterToSlate(partial, ["Rackl", "Circuit", "The Brief"]);
-  assert.deepEqual(Object.keys(out), ["Rackl"]);
+  const partial = { Alpha: { puzzle: "Alpha" } };
+  const out = filterToSlate(partial, ["Alpha", "Bravo", "Charlie"]);
+  assert.deepEqual(Object.keys(out), ["Alpha"]);
 });
 
 test("filtering is stable under repetition", () => {
-  const once = filterToSlate(live(), ["Rackl", "Circuit"]);
-  const twice = filterToSlate(once, ["Rackl", "Circuit"]);
+  const once = filterToSlate(live(), ["Alpha", "Bravo"]);
+  const twice = filterToSlate(once, ["Alpha", "Bravo"]);
   assert.deepEqual(Object.keys(once).sort(), Object.keys(twice).sort());
 });
 
@@ -78,20 +80,20 @@ test("filtering is stable under repetition", () => {
 
 test("servedGameList keeps the client's lobby order, not the slate's", () => {
   // Enabling a game must never reshuffle the grid.
-  const out = servedGameList(THE_SEVEN, ["The Brief", "Rackl", "Circuit"], null);
-  assert.deepEqual(out, ["Rackl", "Circuit", "The Brief"]);
+  const out = servedGameList(ROSTER, ["Charlie", "Alpha", "Bravo"], null);
+  assert.deepEqual(out, ["Alpha", "Bravo", "Charlie"]);
 });
 
 test("servedGameList falls back to every game on a null or unmatched slate", () => {
-  assert.deepEqual(servedGameList(THE_SEVEN, null, null), THE_SEVEN);
-  assert.deepEqual(servedGameList(THE_SEVEN, [], null), THE_SEVEN);
-  assert.deepEqual(servedGameList(THE_SEVEN, ["Nonexistent"], null), THE_SEVEN);
+  assert.deepEqual(servedGameList(ROSTER, null, null), ROSTER);
+  assert.deepEqual(servedGameList(ROSTER, [], null), ROSTER);
+  assert.deepEqual(servedGameList(ROSTER, ["Nonexistent"], null), ROSTER);
 });
 
 test("servedGameList ignores slate entries the client does not know", () => {
   // An 8th game added to the catalog but not yet to GAME_CONFIGS must not
   // appear as a phantom tile.
-  assert.deepEqual(servedGameList(THE_SEVEN, ["Rackl", "Grid Lock"], null), ["Rackl"]);
+  assert.deepEqual(servedGameList(ROSTER, ["Alpha", "Grid Lock"], null), ["Alpha"]);
 });
 
 // ── the structural half of the old guard, inverted ──────────────────────────

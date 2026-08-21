@@ -8,6 +8,8 @@ import { getSubscriber } from "@/lib/league-office/data";
 import { PageHeading, KpiCard, Card, PendingScreen, StatusChip, EmptyState } from "@/components/league-office/primitives";
 import { GameDot } from "@/components/league-office/primitives";
 import { ActionButton } from "@/components/league-office/actions";
+import { loadAllGames } from "@/lib/game-registry-server";
+import { byRuntimeKey } from "@/lib/game-registry";
 
 function fmtDay(d: string) {
   return new Intl.DateTimeFormat("en-US", { month: "numeric", day: "numeric" }).format(new Date(d + "T12:00:00Z"));
@@ -22,6 +24,9 @@ export default async function SubscriberDetailPage({
   if (!staff.ok) return <PendingScreen />;
   const { id } = await params;
   const d = await getSubscriber(staff.s, id);
+  // Game dot colours come from game_catalog (CC-DC-GAME-REGISTRY-1.0 Q4 — the
+  // legacy League Office neon palette is retired).
+  const accentByGame = byRuntimeKey(await loadAllGames());
 
   if (!d.sub) {
     return (
@@ -107,7 +112,7 @@ export default async function SubscriberDetailPage({
             {d.matrix.map((row) => (
               <div key={row.game} style={{ display: "grid", gridTemplateColumns: "150px repeat(7, 1fr)", gap: 6, marginBottom: 6, alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <GameDot game={row.game} />
+                  <GameDot game={row.game} accent={accentByGame[row.game]?.accent_hex} />
                   <span style={{ fontSize: 12.5 }}>{row.game}</span>
                 </div>
                 {row.cells.map((c) => (

@@ -8,8 +8,7 @@
 import {
   CANONICAL_ORIGIN,
   GENERIC_SLUG,
-  SHARE_MANIFEST,
-  SLUG_BY_TYPE,
+  EMPTY_SHARE_REGISTRY,
 } from "./manifest.js";
 import { puzzleNumberFromDate } from "./buildShare.js";
 
@@ -20,14 +19,21 @@ const DATE_RE = /^20\d{2}-\d{2}-\d{2}$/;
  * @param {{ g?: string, game?: string, d?: string }} [q]  raw query params —
  *   `g` is the D6 share slug, `game` the legacy display-name deep link, `d`
  *   the serve date. Anything invalid degrades to the generic lobby unfurl.
+ * @param {object} [shareRegistry]  from buildShareRegistry(games)
  * @returns {{ slug: string, title: string, description: string, pageUrl: string, imageUrl: string }}
  */
-export function dayCardMeta(q) {
+export function dayCardMeta(q, shareRegistry = EMPTY_SHARE_REGISTRY) {
   const src = q && typeof q === "object" ? q : {};
-  const bySlug = typeof src.g === "string" && src.g !== GENERIC_SLUG && SHARE_MANIFEST[src.g] ? src.g : null;
-  const byType = typeof src.game === "string" ? SLUG_BY_TYPE[src.game] || null : null;
+  const reg = shareRegistry || EMPTY_SHARE_REGISTRY;
+  const bySlug =
+    typeof src.g === "string" && src.g !== GENERIC_SLUG && reg.manifest[src.g] ? src.g : null;
+  const byType = typeof src.game === "string" ? reg.slugByType[src.game] || null : null;
   const slug = bySlug || byType; // null → generic lobby unfurl
-  const entry = SHARE_MANIFEST[slug || GENERIC_SLUG];
+  const entry = reg.manifest[slug || GENERIC_SLUG];
+  // D9 (CC-DC-GAME-REGISTRY-1.0): the count comes from the registry, never a
+  // literal "seven" — an eighth game must not make the unfurl copy a lie.
+  const gameCount = Object.keys(reg.slugByType).length;
+  const games = gameCount === 1 ? "game" : "games";
 
   const date = typeof src.d === "string" && DATE_RE.test(src.d) ? src.d : null;
   const n = slug && date ? puzzleNumberFromDate(date, entry.epoch) : null;
@@ -46,8 +52,8 @@ export function dayCardMeta(q) {
     slug: slug || GENERIC_SLUG,
     title: slug ? `${entry.displayName} · Faraday Daily Challenge` : "Faraday Daily Challenge",
     description: slug
-      ? `Today's ${entry.displayName}${n !== null ? ` #${n}` : ""} — one of seven daily intelligence games on the AI data center economy.`
-      : "Seven daily intelligence games on the AI data center economy.",
+      ? `Today's ${entry.displayName}${n !== null ? ` #${n}` : ""} — one of ${gameCount} daily intelligence ${games} on the AI data center economy.`
+      : `${gameCount} daily intelligence ${games} on the AI data center economy.`,
     pageUrl: `${CANONICAL_ORIGIN}/${pageQs ? `?${pageQs}` : ""}`,
     imageUrl: `${CANONICAL_ORIGIN}/api/share/card?${card.toString()}`,
   };

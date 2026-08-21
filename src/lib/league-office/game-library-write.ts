@@ -15,6 +15,7 @@
 //   season_config_promote SELF-LOGS — never double-log it.
 
 import { type Svc } from "./service";
+import { publishabilityReason } from "@/lib/game-registry";
 import {
   checkTransition,
   planAssignment,
@@ -104,6 +105,9 @@ type GameRow = {
   game_key: string;
   display_name: string;
   lifecycle_state: LifecycleState;
+  short_code?: string | null;
+  public_id_prefix?: string | null;
+  is_publishable?: boolean;
   runtime_key: string | null;
   is_active: boolean;
   retired_on: string | null;
@@ -114,7 +118,7 @@ type ConfigRow = { id: string; season_id: string; version: number; state: Config
 type SeasonRow = { id: string; name: string; status: string; locked_at: string | null };
 
 const GAME_COLS =
-  "id,game_key,display_name,lifecycle_state,runtime_key,is_active,retired_on,launched_on,sort_order";
+  "id,game_key,display_name,lifecycle_state,runtime_key,is_active,retired_on,launched_on,sort_order,short_code,public_id_prefix,is_publishable";
 
 const loadGame = (s: Svc, id: string) =>
   one<GameRow>(s, `game_catalog?id=eq.${id}&select=${GAME_COLS}&limit=1`);
@@ -294,6 +298,19 @@ export async function setSeasonAssignment(
       ok: false,
       message: `“${game.display_name}” is ${LIFECYCLE_LABEL[game.lifecycle_state]} — only live or in-test games may be assigned to a season.`,
     };
+
+  // D7 (CC-DC-GAME-REGISTRY-1.0): refuse an unpublishable game SERVER-SIDE. The
+  // slate editor greys these out, but a greyed checkbox is a courtesy, not a
+  // guard. Without this the game would be selectable via the API and fail later
+  // at publish time with a trigger exception, far from anyone who could fix it.
+  if (input.assign && game.is_publishable === false) {
+    const why = publishabilityReason({
+      public_id_prefix: game.public_id_prefix ?? null,
+      short_code: game.short_code ?? null,
+      runtime_key: game.runtime_key ?? null,
+    });
+    return { ok: false, message: `“${game.display_name}” cannot be assigned — ${why}` };
+  }
 
   // ── the D5 path: a live season is edited by versioning, never in place ─────
   let targetConfigId = focus.id;

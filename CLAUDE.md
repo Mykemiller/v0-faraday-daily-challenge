@@ -1,5 +1,51 @@
 @AGENTS.md
 
+## Adding a new game (CC-DC-GAME-REGISTRY-1.0, 2026-08-21)
+
+**`game_catalog` is the source of truth for the game roster.** Adding a game is a
+catalog row plus its runtime component. **No migration, no function change, no
+schema change** — proven on prod: a test row with prefix `TSTP` published as
+`TSTP-27-01-01-00512` with zero code or DDL changes, then rolled back.
+
+1. **Insert the catalog row** (or use League Office → Game Library → New Game,
+   which creates it as `new_idea`).
+2. **Fill the publishability fields:** `public_id_prefix` (exactly four
+   uppercase letters, UNIQUE), `short_code`, `runtime_key`. A CHECK constraint
+   makes `lifecycle_state='live'` impossible without all three, and the season
+   slate editor greys the game out — with the specific missing field named —
+   until they are set.
+3. **Fill the presentation columns:** `route_slug`, `accent_hex` /
+   `accent_deep_hex` / `accent_glow_rgba`, `lobby_sort_order`,
+   `lobby_description`, `lobby_time_estimate`, `lobby_format_chip`,
+   `par_seconds`, `take_voice`, `grid_fit`, `share_epoch` (the game's day #1 —
+   **pinned, never derived**, or every share number in the wild shifts).
+   Behaviour flags: `signal_enabled`, `is_core` (counts toward the full-set
+   streak), `name_is_answer` (**defaults TRUE — fail closed**; leave it true if
+   the puzzle name IS the answer), `is_hero_cta`.
+4. **Build the runtime component** and register it in `GAME_COMPONENTS` in
+   `src/components/DailyChallenge.jsx`, keyed on `runtime_key`. Add its
+   generation prompt (`src/lib/generation/prompts.js`) and content validator
+   (`src/lib/generation/puzzle-schema.js`) the same way, plus tile art
+   (`scripts/build-game-icons.mjs`). Every one of these is a registry lookup
+   that DEGRADES on a miss — no hints, no card grid, "puzzle not found", a
+   skipped generation slice — so a catalog row can exist before its code does.
+5. **Promote it:** `new_idea → in_test → live` via League Office → Game Library
+   → the game drawer → Lifecycle (a reason is required). `new_idea → live` is
+   deliberately blocked: a concept must be exercised in test first.
+
+**Never re-add a hardcoded game list.** The pattern this replaced was ~20 tables
+keyed on DISPLAY NAME across 50 files, which is why renaming a game used to
+orphan its data. Runtime dispatch keys on `runtime_key`; every persisted row
+keys on the `game_id` FK. Tests build rows with `src/lib/test-factories.js`
+rather than naming live games.
+
+Two things that look like duplicates and are not:
+- `sort_order` (League Office catalog order) is **not** `lobby_sort_order`
+  (player-facing locked tile order). They have never matched.
+- `description` (League Office copy) is **not** `lobby_description` (tile copy).
+- `public_id_prefix` (RACK-style, mints Public IDs) is **not** `short_code`.
+  Two live systems; never derive one from the other.
+
 ## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
 
 **Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`

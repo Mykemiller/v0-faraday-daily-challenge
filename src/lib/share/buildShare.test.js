@@ -9,7 +9,24 @@ import {
   formatElapsed,
   GLYPH,
 } from "./buildShare.js";
-import { SHARE_EPOCH } from "./manifest.js";
+import { buildShareRegistry } from "./manifest.js";
+import { gameRow } from "../test-factories.js";
+
+// The pinned launch epoch. Per-game now (game_catalog.share_epoch); this suite
+// uses one value across its fixtures so the #number maths stays readable.
+const SHARE_EPOCH = "2026-06-24";
+
+// CC-DC-GAME-REGISTRY-1.0 D10: factory-built rows rather than the live seven.
+// The prefixes/slugs below are the ones this suite asserts on; they are fixture
+// values, not a claim about which games exist.
+const REG = buildShareRegistry([
+  gameRow({ runtime_key: "Rackl", display_name: "Rackl", route_slug: "rackl", public_id_prefix: "RACK", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Circuit", display_name: "Circuit", route_slug: "circuit", public_id_prefix: "CIRC", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "The Stack", display_name: "The Stack", route_slug: "the-stack", public_id_prefix: "STAK", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Signal Drop", display_name: "Signal Drop", route_slug: "signal-drop", public_id_prefix: "SGNL", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Dark Fiber", display_name: "Dark Fiber", route_slug: "dark-fiber", public_id_prefix: "FIBR", share_epoch: SHARE_EPOCH }),
+]);
+
 
 // ── D2: number derivation ────────────────────────────────────────────────────
 
@@ -64,7 +81,7 @@ test("rackl / dark fiber render counts-only pips (reduced blocks, approved)", ()
 test("missing/junk outcome degrades to no glyph line and never throws (AC 7)", () => {
   assert.deepEqual(glyphLines("circuit", null), []);
   assert.deepEqual(glyphLines("signal-drop", { anything: true }), []);
-  const p = buildShare({ surface: "scorecard", puzzleType: "Circuit", publicId: "CIRC-26-07-31-00367", score: 90 });
+  const p = buildShare({ surface: "scorecard", puzzleType: "Circuit", publicId: "CIRC-26-07-31-00367", score: 90 }, REG);
   assert.ok(p.text.includes("Circuit #38"));
   assert.ok(!p.text.includes(GLYPH.correct));
 });
@@ -80,7 +97,7 @@ test("game share carries name, number, glyphs, stats, canonical link (a–e)", (
     elapsedSec: 134,
     bandLabel: "On Pace",
     outcome: { pairs: 5, mistakes: 2 },
-  });
+  }, REG);
   assert.equal(p.title, "Faraday Daily Challenge");
   const lines = p.text.split("\n");
   assert.equal(lines[0], "Faraday · Dark Fiber #38");
@@ -99,7 +116,7 @@ test("game share carries name, number, glyphs, stats, canonical link (a–e)", (
 });
 
 test("generic share (D7): DC mark, lobby link, no g/d params", () => {
-  const p = buildShare({ kind: "generic", surface: "share-hub", headline: "Join my team “Grid Lock”", detail: "Team code ABQ123" });
+  const p = buildShare({ kind: "generic", surface: "share-hub", headline: "Join my team “Grid Lock”", detail: "Team code ABQ123" }, REG);
   assert.ok(p.text.startsWith("Faraday Daily Challenge\n"));
   assert.ok(p.text.includes("Join my team"));
   assert.equal(p.url, "https://www.faradaydailychallenge.com/?utm_source=share&utm_medium=share-hub");
@@ -107,20 +124,20 @@ test("generic share (D7): DC mark, lobby link, no g/d params", () => {
 });
 
 test("unknown game type degrades to the generic payload, never a broken card", () => {
-  const p = buildShare({ surface: "scorecard", puzzleType: "Mesh", score: 50 });
+  const p = buildShare({ surface: "scorecard", puzzleType: "Mesh", score: 50 }, REG);
   assert.equal(p.iconUrl, "/share/icons/daily-challenge.png");
   assert.ok(!p.url.includes("g="));
 });
 
 test("mock/offline play (no publicId) drops #number and d, keeps everything else", () => {
-  const p = buildShare({ surface: "scorecard", puzzleType: "Rackl", score: 75, outcome: { solved: 2, mistakes: 4 } });
+  const p = buildShare({ surface: "scorecard", puzzleType: "Rackl", score: 75, outcome: { solved: 2, mistakes: 4 } }, REG);
   assert.ok(p.text.startsWith("Faraday · Rackl\n"));
   assert.ok(p.url.includes("g=rackl") && !p.url.includes("d="));
   assert.equal(p.number, null);
 });
 
 test("surface tag is sanitized into utm_medium", () => {
-  const p = buildShare({ kind: "generic", surface: "Team Invite!" });
+  const p = buildShare({ kind: "generic", surface: "Team Invite!" }, REG);
   assert.ok(p.url.endsWith("utm_medium=teaminvite"));
 });
 
@@ -153,7 +170,7 @@ test("AC3: Signal Drop answer never reaches any part of the payload (won game)",
     puzzleName: ANSWER,
     name: ANSWER,
     answers: [ANSWER],
-  });
+  }, REG);
   for (const field of [p.title, p.text, p.url, p.imageUrl, p.iconUrl, p.imageFilename]) {
     assert.ok(!String(field).toUpperCase().includes(ANSWER), `answer leaked into: ${field}`);
   }
@@ -172,12 +189,12 @@ test("AC3: lost game / pre-completion shapes leak nothing either", () => {
     score: 10,
     outcome: { rows: [["absent", "absent", "absent", "absent", "absent", "absent"]], word: ANSWER },
     puzzleName: ANSWER,
-  });
+  }, REG);
   assert.ok(!p.text.includes(ANSWER) && !p.url.includes(ANSWER) && !p.imageUrl.includes(ANSWER));
 });
 
 test("publicId cannot smuggle arbitrary text into the payload", () => {
-  const p = buildShare({ surface: "scorecard", puzzleType: "Rackl", publicId: "PEAKER is the answer" });
+  const p = buildShare({ surface: "scorecard", puzzleType: "Rackl", publicId: "PEAKER is the answer" }, REG);
   assert.ok(!p.text.includes("PEAKER") && !p.url.includes("PEAKER") && !p.imageUrl.includes("PEAKER"));
 });
 
@@ -185,8 +202,8 @@ test("publicId cannot smuggle arbitrary text into the payload", () => {
 
 test("AC4: no payload field ever carries faraday-intelligence.ai", () => {
   const payloads = [
-    buildShare({ surface: "scorecard", puzzleType: "The Stack", publicId: "STAK-26-07-31-00353", score: 90, outcome: { ok: [true, false, true] } }),
-    buildShare({ kind: "generic", surface: "leaderboard", headline: "1,240 pts · #3 on the season leaderboard" }),
+    buildShare({ surface: "scorecard", puzzleType: "The Stack", publicId: "STAK-26-07-31-00353", score: 90, outcome: { ok: [true, false, true] } }, REG),
+    buildShare({ kind: "generic", surface: "leaderboard", headline: "1,240 pts · #3 on the season leaderboard" }, REG),
   ];
   for (const p of payloads) {
     for (const field of Object.values(p)) {
@@ -204,7 +221,7 @@ test("generic share may target a validated canonical path (team join link)", () 
     surface: "team-page",
     headline: 'Join "Grid Lock" on the Faraday Daily Challenge',
     path: "/leaderboard/join/6f9619ff-8b86-4d01-b42d-00c04fc964ff",
-  });
+  }, REG);
   assert.ok(
     p.url.startsWith(
       "https://www.faradaydailychallenge.com/leaderboard/join/6f9619ff-8b86-4d01-b42d-00c04fc964ff?utm_source=share&utm_medium=team-page"
@@ -214,11 +231,11 @@ test("generic share may target a validated canonical path (team join link)", () 
 
 test("path override cannot leave the canonical origin", () => {
   for (const bad of ["//evil.com/x", "https://evil.com", "http://evil.com", "/a/../b", "leaderboard", "/x?y=1", "/x#f", null, 42]) {
-    const p = buildShare({ kind: "generic", surface: "s", path: bad });
+    const p = buildShare({ kind: "generic", surface: "s", path: bad }, REG);
     assert.ok(p.url.startsWith("https://www.faradaydailychallenge.com/?"), `accepted: ${bad}`);
   }
   // game shares never take a path override
-  const g = buildShare({ surface: "s", puzzleType: "Rackl", path: "/leaderboard" });
+  const g = buildShare({ surface: "s", puzzleType: "Rackl", path: "/leaderboard" }, REG);
   assert.ok(g.url.startsWith("https://www.faradaydailychallenge.com/?g=rackl"));
 });
 

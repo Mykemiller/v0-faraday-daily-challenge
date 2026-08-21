@@ -1,7 +1,33 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const CORE_PUZZLE_TYPES = ["Rackl", "The Stack", "Circuit", "Dark Fiber"];
+// The "core set" — completing all of it awards the full-set streak. This was a
+// hardcoded list of four; it is `game_catalog.is_core` now
+// (CC-DC-GAME-REGISTRY-1.0 Q1), so an eighth game can join the core set by
+// flipping a column instead of editing and redeploying this function.
+//
+// Fails CLOSED: if the catalog cannot be read we return an empty set, and an
+// empty core set never awards the full-set bonus. Silently awarding it to
+// everyone would be far worse than briefly awarding it to no one.
+async function loadCoreTypes(
+  sb: ReturnType<typeof createClient>
+): Promise<Set<string>> {
+  try {
+    const { data, error } = await sb
+      .from("game_catalog")
+      .select("runtime_key, display_name")
+      .eq("lifecycle_state", "live")
+      .eq("is_core", true);
+    if (error || !Array.isArray(data)) return new Set();
+    return new Set(
+      data
+        .map((r: { runtime_key: string | null; display_name: string }) => r.runtime_key || r.display_name)
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
 
 // Leaderboard V2 §8: the Daily Challenge day resets at midnight America/Chicago,
 // NOT UTC. Stamp completions on the Central calendar date so a play at 23:59 vs
@@ -128,10 +154,15 @@ Deno.serve(async (req: Request) => {
       .eq("subscriber_id", session.subscriber_id)
       .eq("puzzle_date", puzzleDate);
 
-    const coreCount = (todayCompletions ?? [])
-      .filter((c: { puzzle_type: string }) => CORE_PUZZLE_TYPES.includes(c.puzzle_type))
-      .length;
-    const fullSetJustCompleted = coreCount === 4 && CORE_PUZZLE_TYPES.includes(puzzleType);
+    // Counted against the catalog's core set, never against a literal 4.
+    const coreTypes = await loadCoreTypes(sb);
+    const coreCount = new Set(
+      (todayCompletions ?? [])
+        .map((c: { puzzle_type: string }) => c.puzzle_type)
+        .filter((t: string) => coreTypes.has(t))
+    ).size;
+    const fullSetJustCompleted =
+      coreTypes.size > 0 && coreCount === coreTypes.size && coreTypes.has(puzzleType);
 
     const { data: sub, error: subErr } = await sb
       .from("dc_subscribers")

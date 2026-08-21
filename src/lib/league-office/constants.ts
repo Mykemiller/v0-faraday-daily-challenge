@@ -40,27 +40,18 @@ export function isLeagueOfficeOpen(): boolean {
  *  unmistakable in the lo_audit_log trail. */
 export const OPEN_MODE_ACTOR = "auth-disabled@league-office.local";
 
-/** The seven games — LOCKED order + neon identity dot (Brand Bible Ch.09b).
- *  `key` matches the live `dc_daily_attempts.game_type` / puzzle_type values. */
-export const GAMES = [
-  { key: "Rackl", neon: "#00ffc8" },
-  { key: "Circuit", neon: "#00cfff" },
-  { key: "Dark Fiber", neon: "#bf5fff" },
-  { key: "Frequency", neon: "#ff6b00" },
-  { key: "The Stack", neon: "#ffe600" },
-  { key: "Signal Drop", neon: "#ff2d78" },
-  { key: "The Brief", neon: "#b8ff00" },
-] as const;
-
-export type GameKey = (typeof GAMES)[number]["key"];
-
-export const GAME_NEON: Record<string, string> = Object.fromEntries(
-  GAMES.map((g) => [g.key.toLowerCase(), g.neon])
-);
-
-export function gameNeon(name: string): string {
-  return GAME_NEON[name.trim().toLowerCase()] ?? "#b2a898";
-}
+/** RETIRED (CC-DC-GAME-REGISTRY-1.0 Q4, Myke 2026-08-21).
+ *
+ *  This file used to carry `GAMES` — a hardcoded list of seven with its own
+ *  Brand-Bible neon palette that did NOT match the accents the player-facing
+ *  app uses (Rackl was #00ffc8 here and #48FF54 there). Two palettes for one
+ *  set of games is a defect, not a feature, so the legacy one is gone and
+ *  League Office surfaces read `game_catalog.accent_hex` like everything else.
+ *
+ *  Consequence, stated plainly: League Office game dots now render in the
+ *  player-facing accent colours, not the old Brand-Bible ones.
+ */
+export const NEUTRAL_GAME_DOT = "#b2a898";
 
 /** The four-color status system — SAME four everywhere (README §0):
  *  green=active/healthy · amber=pending/attention · red=flagged/destructive ·

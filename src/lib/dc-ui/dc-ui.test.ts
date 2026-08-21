@@ -22,7 +22,6 @@ import {
   iconTileGrid,
   iconTileBox,
   ICON_TILE,
-  SQUARE_GRID_FIT,
   fitsSquareGrid,
   squareGridExemptions,
 } from './grid.ts';
@@ -186,12 +185,19 @@ test('iconTileGrid uses the 110px Product Icon Registry cell', () => {
   assert.deepEqual(iconTileBox(), { width: '110px', height: '110px', aspectRatio: '1 / 1' });
 });
 
-test('SQUARE_GRID_FIT covers all 7 games and exempts The Brief (prose)', () => {
-  const games = ['Rackl', 'Signal Drop', 'The Stack', 'Circuit', 'The Brief', 'Dark Fiber', 'Frequency'];
-  for (const g of games) assert.ok(g in SQUARE_GRID_FIT, `${g} classified`);
-  assert.equal(SQUARE_GRID_FIT['The Brief'], 'prose');
-  assert.equal(fitsSquareGrid('The Brief'), false);
-  assert.deepEqual(squareGridExemptions(), ['The Brief']);
+// CC-DC-GAME-REGISTRY-1.0 D10: grid fit is game_catalog.grid_fit, so the test
+// builds its own rows instead of naming the live seven.
+test('grid fit: only "square" may take the square grid; prose is exempt', () => {
+  assert.equal(fitsSquareGrid('square'), true);
+  assert.equal(fitsSquareGrid('fluid'), false);
+  assert.equal(fitsSquareGrid('list'), false);
+  assert.equal(fitsSquareGrid('prose'), false);
+  // An unclassified game must never be forced onto a square grid.
+  assert.equal(fitsSquareGrid(null), false);
+  assert.equal(fitsSquareGrid(undefined), false);
+
+  const fits = { Alpha: 'fluid', Bravo: 'prose', Charlie: 'list', Delta: 'prose' };
+  assert.deepEqual(squareGridExemptions(fits), ['Bravo', 'Delta']);
 });
 
 // ── anchor ─────────────────────────────────────────────────────────────────

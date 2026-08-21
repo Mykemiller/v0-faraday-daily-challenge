@@ -9,7 +9,11 @@
 
 import { createHash } from "node:crypto";
 
-export const PUZZLE_TYPES = ["Rackl", "Signal Drop", "The Stack", "Circuit", "The Brief", "Dark Fiber", "Frequency"];
+// CC-DC-GAME-REGISTRY-1.0: the roster used to be listed here. The authoritative
+// set is game_catalog (lifecycle_state='live'); callers pass in the types they
+// want generated. The per-game SCHEMA/validator below is genuinely per-game code
+// and stays — but it is a registry lookup, so an unknown type reports a clear
+// "no schema" error instead of silently validating as OK.
 
 const str = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 

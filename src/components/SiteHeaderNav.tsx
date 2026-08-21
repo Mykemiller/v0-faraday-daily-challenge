@@ -66,10 +66,29 @@ function NavGlyph({ name }: { name: Menu["icon"] }) {
   );
 }
 
-// The 7 daily games in lobby-grid order. Keep in sync with GAME_CONFIGS in
-// DailyChallenge.jsx (the lobby's source of truth) — each links via the
-// /challenge?game=<type> deep-link that the lobby already honours on mount.
-const DC_GAMES = ["Rackl", "Circuit", "Dark Fiber", "Frequency", "The Stack", "Signal Drop", "The Brief"] as const;
+// The daily games in locked lobby order, from game_catalog via /api/games
+// (CC-DC-GAME-REGISTRY-1.0). This was a hardcoded array of seven that had to be
+// kept in sync by hand with the lobby. Each links via the /challenge?game=<type>
+// deep-link the lobby honours on mount.
+//
+// Fetched client-side because this header renders on 19 standalone pages; making
+// every one of them thread a prop is worse than one cached request. Until it
+// resolves (or if it fails) the All Games menu is empty rather than stale.
+function useGameRoster(): string[] {
+  const [games, setGames] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/games")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!live || !j?.games) return;
+        setGames(j.games.map((g: { key: string }) => g.key).filter(Boolean));
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return games;
+}
 
 // ── EDIT MENU TEXT + LINKS HERE ───────────────────────────────────────────────
 // Single source of truth for the standalone-page header dropdowns. Each item is
@@ -82,7 +101,9 @@ export function buildSiteMenus({
   current,
   onSignOut,
   unreadCount = 0,
+  games = [],
 }: {
+  games?: string[];
   authed: boolean;
   current?: "daily" | "leaderboard" | "account" | "notifications" | "messages";
   onSignOut?: () => void;
@@ -91,7 +112,7 @@ export function buildSiteMenus({
 }): Menu[] {
   return [
     { id: "games", icon: "grid", label: "All Games", items:
-      DC_GAMES.map(g => ({ label: g, href: `/challenge?game=${encodeURIComponent(g)}` })),
+      games.map(g => ({ label: g, href: `/challenge?game=${encodeURIComponent(g)}` })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
@@ -292,7 +313,8 @@ export default function SiteHeaderNav({
 }) {
   useNavStyles();
   const token = useDcToken();
-  const menus = buildSiteMenus({ authed, current, onSignOut, unreadCount });
+  const games = useGameRoster();
+  const menus = buildSiteMenus({ authed, current, onSignOut, unreadCount, games });
 
   return (
     <>

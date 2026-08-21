@@ -61,7 +61,11 @@ Return a JSON ARRAY with one object per requested item, in order. Each array ele
 
 // items: [{ theme: {theater_name, sector_name, thread_names[], tier_name}, subject, difficulty, threadScope }]
 export function userPrompt(type, items) {
+  // Per-game prompt spec: a registry keyed on runtime_key. A type with no spec
+  // returns null so the caller skips it rather than prompting the model with a
+  // blank schema (CC-DC-GAME-REGISTRY-1.0 Q5).
   const s = SPEC[type];
+  if (!s) return null;
   const lines = items.map((it, i) => {
     const t = it.theme;
     return `ITEM ${i + 1}:

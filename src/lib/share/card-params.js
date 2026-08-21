@@ -11,7 +11,7 @@
 // accepts nothing but the closed per-game grammars below, so answer content
 // cannot be smuggled into the renderer through the URL.
 
-import { SHARE_MANIFEST, GENERIC_SLUG } from "./manifest.js";
+import { EMPTY_SHARE_REGISTRY, GENERIC_SLUG } from "./manifest.js";
 
 export const CARD_SIZES = {
   og: { width: 1200, height: 630 }, // link unfurls (Open Graph)
@@ -62,16 +62,20 @@ export function decodeGrid(slug, grid) {
  * Validate the full card query. Never throws; every invalid piece degrades to
  * its absence. Returns:
  * { slug, entry, size:{width,height,key}, n, date, score, band, grid }
+ *
+ * @param {{ get: (k: string) => string | null }} searchParams
+ * @param {ReturnType<import("./manifest.js").buildShareRegistry>} [shareRegistry]
  */
-export function parseCardParams(searchParams) {
+export function parseCardParams(searchParams, shareRegistry = EMPTY_SHARE_REGISTRY) {
+  const reg = shareRegistry || EMPTY_SHARE_REGISTRY;
   const get = (k) => {
     const v = searchParams && typeof searchParams.get === "function" ? searchParams.get(k) : null;
     return typeof v === "string" ? v : null;
   };
 
   const rawGame = get("game");
-  const slug = rawGame && SHARE_MANIFEST[rawGame] ? rawGame : GENERIC_SLUG;
-  const entry = SHARE_MANIFEST[slug];
+  const slug = rawGame && reg.manifest[rawGame] ? rawGame : GENERIC_SLUG;
+  const entry = reg.manifest[slug];
 
   const sizeKey = get("size") === "square" ? "square" : "og";
 

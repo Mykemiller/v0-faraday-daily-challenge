@@ -34,15 +34,40 @@ const FOREST = "#1C3424";          // Editorial Forest (also the darkest game-ti
 // Per-game accents, sampled from the 2026-07-30 raster art refresh (supersedes
 // the FAR-394 jewel tones). Single source of truth is GAME_ACCENT in
 // src/components/GameIcon.jsx; mirrored here for the gate.
-const GAME_ACCENT = {
-  Rackl: "#48FF54",         // LED green
-  "Signal Drop": "#FF6B7D", // red waveform
-  "The Stack": "#D6FF18",   // yellow-green bars
-  Circuit: "#48FEFE",       // cyan medallion
-  "The Brief": "#F58CF5",   // magenta highlights
-  "Dark Fiber": "#A855FF",  // violet halo
-  Frequency: "#FF7C52",     // orange pulse
-};
+// CC-DC-GAME-REGISTRY-1.0: this used to MIRROR the accent table by hand, which
+// is exactly the drift this gate exists to catch. It reads game_catalog now, so
+// the gate checks the colours the app actually renders.
+//
+// No service key → the gate SKIPS with a clear message. It never falls back to
+// a hardcoded copy: a contrast gate run against stale colours is worse than no
+// gate, because it reports green while the real palette drifts.
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+
+async function loadAccents() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/game_catalog?lifecycle_state=eq.live&select=runtime_key,display_name,accent_hex&order=lobby_sort_order.asc`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const out = {};
+    for (const r of rows) {
+      if (r.accent_hex) out[r.runtime_key || r.display_name] = r.accent_hex;
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+const GAME_ACCENT = await loadAccents();
+if (!GAME_ACCENT) {
+  console.log("contrast-check: SKIPPED — could not read game_catalog accents (set SUPABASE_SERVICE_ROLE_KEY).");
+  process.exit(0);
+}
 
 // [foreground, background, label, minRatio]
 const CASES = [

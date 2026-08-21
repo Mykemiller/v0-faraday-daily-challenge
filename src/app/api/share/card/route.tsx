@@ -14,7 +14,8 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { parseCardParams, finePrint } from "@/lib/share/card-params";
-import { GENERIC_SLUG } from "@/lib/share/manifest";
+import { GENERIC_SLUG, buildShareRegistry } from "@/lib/share/manifest";
+import { loadLiveGames } from "@/lib/game-registry-server";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,10 @@ function tileIconPath(slug: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const p = parseCardParams(req.nextUrl.searchParams);
+  // Slug/accent/display name come from game_catalog (CC-DC-GAME-REGISTRY-1.0);
+  // an unresolvable game degrades to the generic Daily Challenge card.
+  const share = buildShareRegistry(await loadLiveGames());
+  const p = parseCardParams(req.nextUrl.searchParams, share);
   const square = p.size.key === "square";
 
   const [monoReg, monoBold, serifBold, icon] = await Promise.all([
