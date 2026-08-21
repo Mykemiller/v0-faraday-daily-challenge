@@ -138,10 +138,11 @@ test("recency tiebreak: equal scores prefer latest signal_date, then updated_at"
   assert.equal(m2.get("The Brief")?.signal_id, "late");
 });
 
-test("duplicates across games are allowed — the same signal may serve all 7", () => {
+test("duplicates across games are allowed — the same signal may serve every game", () => {
   const s = sig({ id: "shared" });
-  const types = ["Rackl", "Signal Drop", "The Stack", "Circuit", "The Brief", "Dark Fiber", "Frequency"];
+  // D10: generic names, derived count — this asserts fan-out, not the roster.
+  const types = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
   const m = matchSignalsForDay(types.map((t) => puzzle({ puzzle_type: t })), [s], DATE, () => {});
-  assert.equal(m.size, 7);
+  assert.equal(m.size, types.length);
   for (const t of types) assert.equal(m.get(t)?.signal_id, "shared");
 });
