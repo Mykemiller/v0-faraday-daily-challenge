@@ -36,4 +36,6 @@ export interface GameRow {
   share_epoch: string | null;
   sort_order: number | null;
   description: string | null;
+  name_is_answer: boolean;
+  is_hero_cta: boolean;
 }

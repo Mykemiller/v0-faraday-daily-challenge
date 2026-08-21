@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useContext, createContext } f
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { GameRegistryProvider, useGameRegistry } from "@/components/GameRegistryContext";
-import { accentOf, keyOf } from "@/lib/game-registry";
+import { accentOf, heroGame, hidesPuzzleName, keyOf } from "@/lib/game-registry";
 import { MOCK_PUZZLES } from "@/lib/mock-puzzles";
 import ShareButton from "@/components/ShareButton";
 
@@ -3205,11 +3205,12 @@ function DailyChallengeInner() {
               <div className="double-rule" aria-hidden="true" />
               <p style={{ fontSize:"15px", color:"rgba(20,18,16,0.68)", marginTop:"16px",
                 maxWidth:"52ch", lineHeight:1.6, ...sans }}>
-                Seven daily intelligence challenges for people who work in and around the AI data
-                center economy. Pick any 2-minute challenge, or complete the daily suite in 10&ndash;15 minutes.
+                {registry.games.length} daily intelligence challenges for people who work in and around
+                the AI data center economy. Pick any 2-minute challenge, or complete the daily suite in
+                10&ndash;15 minutes.
               </p>
               <button
-                onClick={() => startGame("Circuit")}
+                onClick={() => { const h = heroGame(registry.games); if (h) startGame(keyOf(h)); }}
                 style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
                   background:C.forest, border:"none", borderRadius:"9px",
                   padding:"13px 28px", marginTop:"22px", cursor:"pointer",
@@ -3314,10 +3315,11 @@ function DailyChallengeInner() {
                     <span style={{ fontSize:"11px", color:C.muted, ...mono }}>{config.time}</span>
                   </div>
                 </div>
-                {/* Signal Drop's puzzle.name IS the answer word (e.g. "SOVEREIGNTY"),
-                    so it must never render in-game — it would reveal the solution.
-                    Other games use a descriptive name that is safe to show. */}
-                {activeGame !== "Signal Drop" && (
+                {/* Some games carry the answer in puzzle.name (a Wordle-style
+                    word IS the solution), so the name must never render in-game.
+                    Driven by game_catalog.name_is_answer, which FAILS CLOSED:
+                    an unconfigured game hides its name rather than spoil it. */}
+                {!hidesPuzzleName(activeRow) && (
                   <div style={{ fontSize:"11px", color:C.muted, ...mono }}>{puzzle.name}</div>
                 )}
 

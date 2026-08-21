@@ -1,7 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { decodeGrid, parseCardParams, finePrint, CARD_SIZES } from "./card-params.js";
-import { SHARE_MANIFEST, GENERIC_SLUG } from "./manifest.js";
+import { buildShareRegistry, GENERIC_SLUG } from "./manifest.js";
+import { gameRow } from "../test-factories.js";
+
+const SHARE_EPOCH = "2026-06-24";
+
+// CC-DC-GAME-REGISTRY-1.0 D10: factory-built rows rather than the live seven.
+// The prefixes/slugs below are the ones this suite asserts on; they are fixture
+// values, not a claim about which games exist.
+const REG = buildShareRegistry([
+  gameRow({ runtime_key: "Rackl", display_name: "Rackl", route_slug: "rackl", public_id_prefix: "RACK", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Circuit", display_name: "Circuit", route_slug: "circuit", public_id_prefix: "CIRC", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "The Stack", display_name: "The Stack", route_slug: "the-stack", public_id_prefix: "STAK", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Signal Drop", display_name: "Signal Drop", route_slug: "signal-drop", public_id_prefix: "SGNL", share_epoch: SHARE_EPOCH }),
+  gameRow({ runtime_key: "Dark Fiber", display_name: "Dark Fiber", route_slug: "dark-fiber", public_id_prefix: "FIBR", share_epoch: SHARE_EPOCH }),
+]);
+
 import { buildShare, encodeGrid } from "./buildShare.js";
 
 const qs = (s) => new URLSearchParams(s);
@@ -38,9 +53,9 @@ test("decodeGrid rejects everything outside the closed grammars", () => {
 });
 
 test("parseCardParams: full valid query", () => {
-  const p = parseCardParams(qs("game=dark-fiber&n=38&date=2026-07-31&score=128&band=On+Pace&grid=p5m2"));
+  const p = parseCardParams(qs("game=dark-fiber&n=38&date=2026-07-31&score=128&band=On+Pace&grid=p5m2"), REG);
   assert.equal(p.slug, "dark-fiber");
-  assert.equal(p.entry, SHARE_MANIFEST["dark-fiber"]);
+  assert.equal(p.entry, REG.manifest["dark-fiber"]);
   assert.equal(p.n, 38);
   assert.equal(p.date, "2026-07-31");
   assert.equal(p.score, 128);
@@ -50,13 +65,13 @@ test("parseCardParams: full valid query", () => {
 });
 
 test("parseCardParams: size=square selects the 1080 variant, anything else = og", () => {
-  assert.equal(parseCardParams(qs("size=square")).size.width, 1080);
-  assert.equal(parseCardParams(qs("size=banner")).size.width, 1200);
-  assert.equal(parseCardParams(qs("")).size.width, 1200);
+  assert.equal(parseCardParams(qs("size=square"), REG).size.width, 1080);
+  assert.equal(parseCardParams(qs("size=banner"), REG).size.width, 1200);
+  assert.equal(parseCardParams(qs(""), REG).size.width, 1200);
 });
 
 test("parseCardParams: every invalid piece degrades to absence, never a throw", () => {
-  const p = parseCardParams(qs("game=mystery&n=1e9&date=07/31/2026&score=-5&band=&grid=s4m1"));
+  const p = parseCardParams(qs("game=mystery&n=1e9&date=07/31/2026&score=-5&band=&grid=s4m1"), REG);
   assert.equal(p.slug, GENERIC_SLUG); // unknown game → DC card (D7/AC7)
   assert.equal(p.n, null);
   assert.equal(p.date, null);
@@ -66,15 +81,15 @@ test("parseCardParams: every invalid piece degrades to absence, never a throw", 
 });
 
 test("parseCardParams: band is single-line and capped at 40 chars", () => {
-  const p = parseCardParams(qs(`game=rackl&band=${encodeURIComponent("a\nb  c" + "x".repeat(80))}`));
+  const p = parseCardParams(qs(`game=rackl&band=${encodeURIComponent("a\nb  c" + "x".repeat(80))}`), REG);
   assert.ok(!p.band.includes("\n"));
   assert.ok(p.band.length <= 40);
 });
 
 test("finePrint = prefix + YY-MM-DD segment; absent for generic or missing date", () => {
-  assert.equal(finePrint(SHARE_MANIFEST["rackl"], "2026-07-31"), "RACK-26-07-31");
-  assert.equal(finePrint(SHARE_MANIFEST[GENERIC_SLUG], "2026-07-31"), null);
-  assert.equal(finePrint(SHARE_MANIFEST["rackl"], null), null);
+  assert.equal(finePrint(REG.manifest["rackl"], "2026-07-31"), "RACK-26-07-31");
+  assert.equal(finePrint(REG.manifest[GENERIC_SLUG], "2026-07-31"), null);
+  assert.equal(finePrint(REG.manifest["rackl"], null), null);
 });
 
 test("a real buildShare imageUrl parses clean end-to-end", () => {
@@ -85,8 +100,8 @@ test("a real buildShare imageUrl parses clean end-to-end", () => {
     score: 118,
     bandLabel: "Ahead of Consensus",
     outcome: { rows: [["absent", "present", "absent", "absent", "absent", "absent"], ["correct", "correct", "correct", "correct", "correct", "correct"]] },
-  });
-  const p = parseCardParams(new URL(payload.imageUrl, "https://x.test").searchParams);
+  }, REG);
+  const p = parseCardParams(new URL(payload.imageUrl, "https://x.test").searchParams, REG);
   assert.equal(p.slug, "signal-drop");
   assert.equal(p.n, 37);
   assert.equal(p.grid.rows.length, 2);

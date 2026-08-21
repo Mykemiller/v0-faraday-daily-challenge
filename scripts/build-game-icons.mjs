@@ -23,15 +23,45 @@ const OUT = path.join(process.cwd(), "public/icons/games");
 // Master filename → route slug. Three masters are labeled with a shorter name
 // than the game key ("SIGNAL"/"FIBER"/"THE CIRCUIT" for Signal Drop / Dark Fiber
 // / Circuit); the slug follows the app's route, not the label.
-const GAMES = [
-  { master: "Rackl.png",       slug: "rackl" },
-  { master: "Signal.png",      slug: "signal-drop" },
-  { master: "The Stack.png",   slug: "the-stack" },
-  { master: "The Circuit.png", slug: "circuit" },
-  { master: "The Brief.png",   slug: "the-brief" },
-  { master: "Fiber.png",       slug: "dark-fiber" },
-  { master: "Frequency.png",   slug: "frequency" },
-];
+// Source art filename per slug. The MASTERS are named by the designer and do
+// not derive from the slug, so this mapping is real art-pipeline data and stays
+// in code (CC-DC-GAME-REGISTRY-1.0 Q5). What is NOT hardcoded any more is the
+// ROSTER: the slugs to build come from game_catalog, so a new game shows up
+// here as a loud "no master art" warning rather than being silently skipped.
+const MASTER_BY_SLUG = {
+  "rackl": "Rackl.png",
+  "signal-drop": "Signal.png",
+  "the-stack": "The Stack.png",
+  "circuit": "The Circuit.png",
+  "the-brief": "The Brief.png",
+  "dark-fiber": "Fiber.png",
+  "frequency": "Frequency.png",
+};
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+
+async function liveSlugs() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error("build-game-icons: SUPABASE_SERVICE_ROLE_KEY is required to read game_catalog");
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/game_catalog?lifecycle_state=eq.live&select=route_slug,display_name&order=lobby_sort_order.asc`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!res.ok) throw new Error(`build-game-icons: game_catalog read failed (${res.status})`);
+  return await res.json();
+}
+
+const GAMES = (await liveSlugs())
+  .map((r) => {
+    const slug = r.route_slug;
+    const master = slug ? MASTER_BY_SLUG[slug] : null;
+    if (!master) {
+      console.warn(`  ! no master art for "${r.display_name}" (slug ${slug || "none"}) — skipping`);
+      return null;
+    }
+    return { master, slug };
+  })
+  .filter(Boolean);
 
 // Tile bounds, verified identical across all masters.
 const TILE = { left: 128, top: 50, width: 1024, height: 1024 };

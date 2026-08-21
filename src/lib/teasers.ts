@@ -27,15 +27,22 @@ export interface Teaser {
 
 // Placeholder rules — intentionally small and obvious. Expand later; keep the
 // signature stable so TeaserSlot never needs re-architecting to turn this on.
+const TEASER_BY_GAME: Record<string, Teaser> = {
+  "The Brief": {
+    surface: "Briefing Library",
+    copy: "Liked the brief? The Briefing Library is the full archive Faraday reads from.",
+    href: "/briefing-library",
+    slot: "scorecard",
+  },
+};
+
 export function selectTeaser(ctx: TeaserContext): Teaser | null {
-  // Played The Brief → tease the Briefing Library.
-  if (ctx.lastGame === "The Brief" || ctx.gamesPlayedToday.includes("The Brief")) {
-    return {
-      surface: "Briefing Library",
-      copy: "Liked the brief? The Briefing Library is the full archive Faraday reads from.",
-      href: "/briefing-library",
-      slot: "scorecard",
-    };
+  // Per-game teasers, keyed on runtime_key (CC-DC-GAME-REGISTRY-1.0 Q5: the
+  // copy is editorial and stays in code, but it is a registry lookup rather
+  // than a chain of name comparisons — a game with no teaser just falls
+  // through to the rules below).
+  for (const [game, teaser] of Object.entries(TEASER_BY_GAME)) {
+    if (ctx.lastGame === game || ctx.gamesPlayedToday.includes(game)) return teaser;
   }
 
   // Touched cooling/water content → tease Jurisdiction Watch (permitting/water risk).

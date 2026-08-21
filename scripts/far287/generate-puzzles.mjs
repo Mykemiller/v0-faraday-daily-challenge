@@ -22,9 +22,10 @@ import { randomUUID } from "node:crypto";
 import { sbInsert, sbSelect, sbUpdate, anthropicJson, GEN_MODEL, airtableGet } from "./lib/clients.mjs";
 import { systemPrompt, userPrompt } from "./lib/prompts.mjs";
 import {
-  PUZZLE_TYPES, validateContent, answerKeyFrom, checkHints, copyViolations,
+  validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
 } from "./lib/puzzle-schema.mjs";
+import { liveGameTypes } from "./lib/game-roster.mjs";
 import { buildCorpus, buildSubjectPool, CORPUS_PATH } from "./lib/corpus.mjs";
 import { resolveRunStatus, isTerminal } from "./lib/run-bookkeeping.mjs";
 
@@ -40,7 +41,7 @@ const BATCH = Math.max(8, Math.min(12, Number(val("--batch", 10))));
 
 const CAL = JSON.parse(readFileSync("exports/far287-calendar.json", "utf8"));
 const days = CAL.calendar.slice(0, LIMIT);
-const types = ONLY_TYPE ? [ONLY_TYPE] : PUZZLE_TYPES;
+const types = ONLY_TYPE ? [ONLY_TYPE] : await liveGameTypes();
 
 function parseArray(raw) {
   let s = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();

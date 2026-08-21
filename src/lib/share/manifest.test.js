@@ -1,38 +1,52 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GAME_ACCENT } from "../game-accent.js";
+import { gameRow, resetGameRowSeq } from "../test-factories.js";
 import {
-  SHARE_MANIFEST,
-  SLUG_BY_TYPE,
+  buildShareRegistry,
+  EMPTY_SHARE_REGISTRY,
   GENERIC_SLUG,
-  SHARE_EPOCH,
+  GENERIC_ENTRY,
   CANONICAL_ORIGIN,
-  entryForType,
-  slugForType,
-  iconForSlug,
 } from "./manifest.js";
 
-test("manifest carries exactly 8 entries: 7 games + the generic mark", () => {
-  assert.equal(Object.keys(SHARE_MANIFEST).length, 8);
-  assert.ok(SHARE_MANIFEST[GENERIC_SLUG]);
-  assert.equal(Object.keys(SLUG_BY_TYPE).length, 7);
+// CC-DC-GAME-REGISTRY-1.0 D10: these tests build their own catalog rows. They
+// assert the SHAPE of the manifest, not the identity of the seven launch games —
+// naming those here is what let the manifest and the catalog drift apart.
+
+function registryOf(n) {
+  resetGameRowSeq();
+  const rows = Array.from({ length: n }, () => gameRow());
+  return { rows, reg: buildShareRegistry(rows) };
+}
+
+test("manifest carries one entry per game plus the generic mark", () => {
+  const { rows, reg } = registryOf(3);
+  assert.equal(Object.keys(reg.manifest).length, rows.length + 1);
+  assert.ok(reg.manifest[GENERIC_SLUG]);
+  assert.equal(Object.keys(reg.slugByType).length, rows.length);
 });
 
-test("every game entry sources its accent from GAME_ACCENT (never redefined)", () => {
-  for (const [type, slug] of Object.entries(SLUG_BY_TYPE)) {
-    assert.equal(SHARE_MANIFEST[slug].accent, GAME_ACCENT[type].accent, `${type} accent`);
-  }
+test("each entry sources its accent from the catalog row, never redefined", () => {
+  const rows = [gameRow({ accent_hex: "#123456", route_slug: "alpha", runtime_key: "Alpha" })];
+  const reg = buildShareRegistry(rows);
+  assert.equal(reg.manifest.alpha.accent, "#123456");
 });
 
-test("public id prefixes match the minted TYPE4 set", () => {
-  const prefixes = Object.values(SLUG_BY_TYPE).map((s) => SHARE_MANIFEST[s].publicIdPrefix).sort();
-  assert.deepEqual(prefixes, ["BRIF", "CIRC", "FIBR", "FREQ", "RACK", "SGNL", "STAK"]);
-  assert.equal(SHARE_MANIFEST[GENERIC_SLUG].publicIdPrefix, null);
+test("public id prefix comes from the row; the generic mark has none", () => {
+  const reg = buildShareRegistry([
+    gameRow({ route_slug: "alpha", runtime_key: "Alpha", public_id_prefix: "ALFA" }),
+  ]);
+  assert.equal(reg.manifest.alpha.publicIdPrefix, "ALFA");
+  assert.equal(reg.manifest[GENERIC_SLUG].publicIdPrefix, null);
 });
 
-test("every epoch is the pinned 2026-06-24 constant", () => {
-  assert.equal(SHARE_EPOCH, "2026-06-24");
-  for (const entry of Object.values(SHARE_MANIFEST)) assert.equal(entry.epoch, SHARE_EPOCH);
+test("epoch is per game and pinned by the catalog, not derived", () => {
+  const reg = buildShareRegistry([
+    gameRow({ route_slug: "alpha", runtime_key: "Alpha", share_epoch: "2026-06-24" }),
+    gameRow({ route_slug: "bravo", runtime_key: "Bravo", share_epoch: "2027-01-15" }),
+  ]);
+  assert.equal(reg.manifest.alpha.epoch, "2026-06-24");
+  assert.equal(reg.manifest.bravo.epoch, "2027-01-15");
 });
 
 test("canonical origin is the www subscriber domain", () => {
@@ -40,15 +54,30 @@ test("canonical origin is the www subscriber domain", () => {
 });
 
 test("icon paths live under /share/icons/ and match their slug", () => {
-  for (const [slug, entry] of Object.entries(SHARE_MANIFEST)) {
+  const { reg } = registryOf(3);
+  for (const [slug, entry] of Object.entries(reg.manifest)) {
+    if (slug === GENERIC_SLUG) continue;
     assert.equal(entry.icon, `/share/icons/${slug}.png`);
   }
 });
 
 test("unknown type/slug degrades to the Daily Challenge mark (D7 / AC7)", () => {
-  assert.equal(entryForType("Mystery Game"), SHARE_MANIFEST[GENERIC_SLUG]);
-  assert.equal(entryForType(undefined), SHARE_MANIFEST[GENERIC_SLUG]);
-  assert.equal(slugForType("Mystery Game"), GENERIC_SLUG);
-  assert.equal(iconForSlug("nope"), SHARE_MANIFEST[GENERIC_SLUG].icon);
-  assert.equal(iconForSlug("rackl"), "/share/icons/rackl.png");
+  const reg = buildShareRegistry([gameRow({ route_slug: "alpha", runtime_key: "Alpha" })]);
+  assert.equal(reg.entryForType("Mystery Game"), GENERIC_ENTRY);
+  assert.equal(reg.entryForType(undefined), GENERIC_ENTRY);
+  assert.equal(reg.slugForType("Mystery Game"), GENERIC_SLUG);
+  assert.equal(reg.iconForSlug("nope"), GENERIC_ENTRY.icon);
+  assert.equal(reg.iconForSlug("alpha"), "/share/icons/alpha.png");
+});
+
+test("an unreachable catalog degrades to the generic mark, never to stale games", () => {
+  assert.equal(Object.keys(EMPTY_SHARE_REGISTRY.slugByType).length, 0);
+  assert.equal(EMPTY_SHARE_REGISTRY.entryForType("Anything"), GENERIC_ENTRY);
+  assert.equal(EMPTY_SHARE_REGISTRY.isGameType("Anything"), false);
+});
+
+test("a row with no route_slug is skipped rather than half-registered", () => {
+  const reg = buildShareRegistry([gameRow({ route_slug: null, runtime_key: "Nameless" })]);
+  assert.equal(Object.keys(reg.slugByType).length, 0);
+  assert.equal(reg.entryForType("Nameless"), GENERIC_ENTRY);
 });

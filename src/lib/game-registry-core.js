@@ -31,7 +31,7 @@ export const GAME_REGISTRY_COLUMNS = [
   'lifecycle_state', 'is_publishable', 'route_slug', 'accent_hex', 'accent_deep_hex',
   'accent_glow_rgba', 'lobby_sort_order', 'lobby_description', 'lobby_time_estimate',
   'lobby_format_chip', 'par_seconds', 'take_voice', 'grid_fit', 'signal_enabled',
-  'is_core', 'share_epoch', 'sort_order', 'description',
+  'is_core', 'share_epoch', 'sort_order', 'description', 'name_is_answer', 'is_hero_cta',
 ].join(',');
 
 /** The key the serving path joins on. Falls back to the display name so a row
@@ -109,6 +109,19 @@ export function publishabilityReason(game) {
       ? missing[0]
       : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
   return `Needs a ${list} on its catalog row before it can be published.`;
+}
+
+/** The game the lobby hero button launches: the flagged row, else the first in
+ *  lobby order. Never a hardcoded name. */
+export function heroGame(gamesInLobbyOrder) {
+  const flagged = gamesInLobbyOrder.filter((g) => g.is_hero_cta);
+  return flagged.length === 1 ? flagged[0] : gamesInLobbyOrder[0] || null;
+}
+
+/** FAIL CLOSED: an unknown game is assumed to carry its answer in the name, so
+ *  the name is withheld rather than risking a spoiler. */
+export function hidesPuzzleName(game) {
+  return game ? !!game.name_is_answer : true;
 }
 
 export function isSelectableForSeason(game) {

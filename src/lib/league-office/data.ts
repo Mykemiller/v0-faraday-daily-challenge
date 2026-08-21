@@ -8,7 +8,10 @@
 // (see LEAGUE-OFFICE-FINDINGS.md).
 
 import { q, type Svc } from "./service";
-import { GAMES } from "./constants";
+// The game roster is game_catalog (CC-DC-GAME-REGISTRY-1.0), not a hardcoded
+// list of seven with its own retired neon palette.
+import { loadAllGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 import {
   groupRosterBySubscriber,
   memberCountsPath,
@@ -238,7 +241,7 @@ export async function listSubscribers(s: Svc): Promise<SubscriberRow[]> {
 
 export type SubscriberDetail = {
   sub: Subscriber | null;
-  matrix: { game: string; neon: string; cells: { date: string; score: number | null; played: boolean }[] }[];
+  matrix: { game: string; accent: string | null; cells: { date: string; score: number | null; played: boolean }[] }[];
   dates: string[];
   memberships: { team: string; conference: string | null; role: string; pending: boolean }[];
   badges: { key: string; earnedAt: string }[];
@@ -268,14 +271,19 @@ export async function getSubscriber(s: Svc, id: string): Promise<SubscriberDetai
   const byCell = new Map<string, { score: number; result: string }>();
   for (const a of attempts) byCell.set(`${a.game_type.toLowerCase()}|${a.play_date}`, a);
 
-  const matrix = GAMES.map((g) => ({
-    game: g.key,
-    neon: g.neon,
-    cells: dates.map((d) => {
-      const hit = byCell.get(`${g.key.toLowerCase()}|${d}`);
-      return { date: d, score: hit ? hit.score : null, played: !!hit };
-    }),
-  }));
+  const matrix = (await loadAllGames())
+    .filter((g) => g.lifecycle_state === "live")
+    .map((g) => {
+      const key = keyOf(g);
+      return {
+        game: key as string,
+        accent: g.accent_hex,
+        cells: dates.map((d) => {
+          const hit = byCell.get(`${key.toLowerCase()}|${d}`);
+          return { date: d, score: hit ? hit.score : null, played: !!hit };
+        }),
+      };
+    });
 
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const confMap = new Map(confs.map((c) => [c.id, c]));

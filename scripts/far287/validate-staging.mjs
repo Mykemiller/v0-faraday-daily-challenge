@@ -8,7 +8,8 @@
 
 import { writeFileSync, mkdirSync } from "node:fs";
 import { sbSelect, sbUpdate } from "./lib/clients.mjs";
-import { validateContent, extractAnswer, answerKeyFrom, checkHints, copyViolations, PUZZLE_TYPES } from "./lib/puzzle-schema.mjs";
+import { validateContent, extractAnswer, answerKeyFrom, checkHints, copyViolations } from "./lib/puzzle-schema.mjs";
+import { liveGameTypes } from "./lib/game-roster.mjs";
 
 const args = process.argv.slice(2);
 const RUN = (() => { const i = args.indexOf("--run"); return i >= 0 ? args[i + 1] : null; })();
@@ -88,7 +89,7 @@ async function main() {
   const md = [`# FAR-287 — QA report${RUN ? ` (run ${RUN})` : ""}`, "",
     `- Rows: **${rows.length}**  ·  passed **${pass}**  ·  failed **${fail}**`,
     `- Dates with != 7 puzzles: **${partialDays.length}**${partialDays.length ? " — " + partialDays.slice(0, 20).join(", ") : ""}`,
-    `- Per type: ${PUZZLE_TYPES.map((t) => `${t}:${byType[t] || 0}`).join(" · ")}`,
+    `- Per type: ${(await liveGameTypes()).map((t) => `${t}:${byType[t] || 0}`).join(" · ")}`,
     "", "## Failures (first 60)", "",
     ...failList.slice(0, 60).map((r) => `- ${r.date} ${r.type}: ${r.errors.join("; ")}`)];
   writeFileSync(`exports/far287-qa${RUN ? "-" + RUN : ""}.md`, md.join("\n") + "\n");

@@ -3,7 +3,7 @@
 // page heading + double rule, game identity dots, and KPI cards.
 
 import Link from "next/link";
-import { toneStyle, statusToTone, type StatusTone, gameNeon } from "@/lib/league-office/constants";
+import { toneStyle, statusToTone, type StatusTone, NEUTRAL_GAME_DOT } from "@/lib/league-office/constants";
 
 export function StatusChip({
   label,
@@ -57,7 +57,10 @@ export function PageHeading({
   );
 }
 
-export function GameDot({ game, size = 8 }: { game: string; size?: number }) {
+/** `accent` is game_catalog.accent_hex, passed by the caller that loaded the
+ *  row. Falls back to neutral rather than inventing a colour for an unknown
+ *  game (CC-DC-GAME-REGISTRY-1.0 Q4). */
+export function GameDot({ game, accent, size = 8 }: { game: string; accent?: string | null; size?: number }) {
   return (
     <span
       aria-hidden
@@ -66,7 +69,7 @@ export function GameDot({ game, size = 8 }: { game: string; size?: number }) {
         width: size,
         height: size,
         borderRadius: "50%",
-        background: gameNeon(game),
+        background: accent || NEUTRAL_GAME_DOT,
         flex: "none",
       }}
     />

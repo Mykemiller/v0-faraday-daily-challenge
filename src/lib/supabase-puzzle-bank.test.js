@@ -19,10 +19,24 @@ const facade = await import("./puzzle-bank.js");
 const realFetch = globalThis.fetch;
 let calls;
 
+// CC-DC-GAME-REGISTRY-1.0: the bank now reads its roster from game_catalog, so
+// the stub answers that request too. The roster is DERIVED from the fixture
+// rows below (minus the deliberately-unknown type) rather than being a second
+// hardcoded list that could drift from them.
 function stubFetch(handler) {
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), init });
-    return handler(String(url), init);
+    const u = String(url);
+    calls.push({ url: u, init });
+    if (u.includes("/game_catalog")) {
+      return jsonResponse(
+        ROSTER_TYPES.map((t, i) => ({
+          runtime_key: t,
+          display_name: t,
+          lobby_sort_order: (i + 1) * 10,
+        }))
+      );
+    }
+    return handler(u, init);
   };
 }
 
@@ -64,6 +78,10 @@ const LIVE_ROWS = [
   { puzzle_type: "Circuit", public_id: "CIRC-26-07-29-00367", puzzle_content: null },
 ];
 
+// Every fixture type except the deliberately-unknown "Mystery", which must stay
+// filtered out because it is absent from the catalog.
+const ROSTER_TYPES = [...new Set(LIVE_ROWS.map((r) => r.puzzle_type))].filter((t) => t !== "Mystery");
+
 beforeEach(() => {
   calls = [];
 });
@@ -86,9 +104,11 @@ test("getLivePuzzles filters published=Live and never selects answer_key", async
   stubFetch(() => jsonResponse(LIVE_ROWS));
   await bank.getLivePuzzles();
 
-  assert.equal(calls.length, 1);
-  const url = calls[0].url;
-  assert.match(url, /dc_puzzle_bank_staging/);
+  // Two requests now: the puzzle rows and the game_catalog roster. Assert on the
+  // staging call specifically rather than on a bare call count.
+  const staging = calls.filter((c) => c.url.includes("dc_puzzle_bank_staging"));
+  assert.equal(staging.length, 1);
+  const url = staging[0].url;
   assert.match(url, /published=eq\.Live/);
   assert.ok(!url.includes("answer_key"), "answer_key must never be selected on the serve path");
 });
@@ -198,7 +218,8 @@ test("facade routes getLivePuzzles to the supabase impl when flagged", async () 
   process.env.DC_PUZZLE_SOURCE = "supabase";
   stubFetch(() => jsonResponse(LIVE_ROWS));
   const puzzles = await facade.getLivePuzzles();
-  assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /dc_puzzle_bank_staging/); // hit Supabase, not Airtable
+  const staging = calls.filter((c) => c.url.includes("dc_puzzle_bank_staging"));
+  assert.equal(staging.length, 1); // hit Supabase, not Airtable
+  assert.ok(!calls.some((c) => c.url.includes("airtable.com")));
   assert.equal(puzzles.Rackl.__publicId, "RACK-26-07-29-00365");
 });
