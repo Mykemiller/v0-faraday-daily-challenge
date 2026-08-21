@@ -20,6 +20,7 @@
 
 import React from "react";
 import { resolveTakeByline, GILBERT_FARADAY } from "@/lib/faradays-take";
+import { useGameRegistry } from "@/components/GameRegistryContext";
 
 export const DEFAULT_TAKE_BYLINE = GILBERT_FARADAY;
 
@@ -41,6 +42,7 @@ export interface FaradaysTakeProps {
 }
 
 export default function FaradaysTake({ take, byline, puzzleType, fallback }: FaradaysTakeProps) {
+  const takeRegistry = useGameRegistry();
   const body = typeof take === "string" ? take.trim() : "";
 
   // No authored take → surface the plain explanation fallback (non-italic,
@@ -78,7 +80,9 @@ export default function FaradaysTake({ take, byline, puzzleType, fallback }: Far
     );
   }
 
-  const who = resolveTakeByline(puzzleType, byline);
+  // The per-game voice is game_catalog.take_voice (CC-DC-GAME-REGISTRY-1.0);
+  // an unresolved game still gets a byline rather than a blank one.
+  const who = resolveTakeByline(puzzleType ? takeRegistry.byKey[puzzleType]?.take_voice : null, byline);
 
   return (
     <div

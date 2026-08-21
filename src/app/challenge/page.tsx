@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import DailyChallenge from '@/components/DailyChallenge';
 import { dayCardMeta } from "@/lib/share/og";
+import { buildShareRegistry } from "@/lib/share/manifest";
+import { loadLiveGames } from "@/lib/game-registry-server";
 
 // CC-DC-SHARE-1.0 Phase 4 (D9): link unfurls render through the same
 // /api/share/card renderer as shares. ?g=<slug> (or the legacy ?game=<type>)
@@ -17,7 +19,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-  const meta = dayCardMeta({ g: one(sp.g), game: one(sp.game), d: one(sp.d) });
+  const share = buildShareRegistry(await loadLiveGames());
+  const meta = dayCardMeta({ g: one(sp.g), game: one(sp.game), d: one(sp.d) }, share);
   return {
     title: meta.title,
     description: meta.description,
@@ -38,6 +41,10 @@ export async function generateMetadata({
   };
 }
 
-export default function ChallengePage() {
-  return <DailyChallenge />;
+// The lobby's game list comes from game_catalog (CC-DC-GAME-REGISTRY-1.0), read
+// here on the server and handed to the client component. An eighth game appears
+// by inserting a catalog row — no code change on this path.
+export default async function ChallengePage() {
+  const games = await loadLiveGames();
+  return <DailyChallenge games={games} />;
 }

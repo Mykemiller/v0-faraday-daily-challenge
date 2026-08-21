@@ -30,15 +30,10 @@ const SUPABASE_URL =
 export const PUZZLE_BANK_TABLE = "dc_puzzle_bank_staging";
 
 // Canonical puzzle types, matching the game component keys exactly.
-export const PUZZLE_TYPES = [
-  "Rackl",
-  "Signal Drop",
-  "The Stack",
-  "Circuit",
-  "The Brief",
-  "Dark Fiber",
-  "Frequency",
-];
+// CC-DC-GAME-REGISTRY-1.0: the seven type strings used to be listed here. The
+// authoritative set is game_catalog (lifecycle_state='live'); this module no
+// longer needs to know the roster — it serves whatever the bank returns and
+// lets the caller decide which games exist.
 
 // Columns the serving read selects. answer_key is deliberately ABSENT — it is
 // a plaintext answer column and must never be selected into anything that can
@@ -80,6 +75,32 @@ async function fetchLiveRows({ noStore = false } = {}) {
   return Array.isArray(rows) ? rows : [];
 }
 
+// The live game roster, straight from game_catalog (CC-DC-GAME-REGISTRY-1.0).
+// Fetched inline rather than imported from lib/game-registry-server so this
+// module stays plain JS with no TS import — it runs under `node --test`.
+// Returns null when the roster cannot be read, which callers treat as "do not
+// filter" rather than "no games exist": a catalog blip must not blank the lobby.
+async function fetchLiveGameKeys({ noStore = false } = {}) {
+  try {
+    const key = getServiceKey();
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/game_catalog?lifecycle_state=eq.live&select=runtime_key,display_name,lobby_sort_order&order=lobby_sort_order.asc`,
+      {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        ...(noStore ? { cache: "no-store" } : { next: { revalidate: 3600 } }),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    return rows.map((r) => r.runtime_key || r.display_name).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+export { fetchLiveGameKeys };
+
 // Fetch the live puzzle set: rows with published = "Live", one usable puzzle
 // per type. Returns an object keyed by puzzle type, e.g.
 //   { "Rackl": {...}, "Signal Drop": {...}, ... }
@@ -88,11 +109,12 @@ async function fetchLiveRows({ noStore = false } = {}) {
 // missing or unusable are omitted — the component falls back to its built-in
 // mock for that single game. Identical shape to the Airtable getLivePuzzles.
 export async function getLivePuzzles() {
-  const rows = await fetchLiveRows();
+  const [rows, liveKeys] = await Promise.all([fetchLiveRows(), fetchLiveGameKeys()]);
+  const allowed = liveKeys ? new Set(liveKeys) : null;
   const puzzles = {};
   for (const row of rows) {
     const type = row?.puzzle_type;
-    if (!type || !PUZZLE_TYPES.includes(type)) continue;
+    if (!type || (allowed && !allowed.has(type))) continue;
     // First valid row per type wins; don't clobber with a later empty one.
     if (puzzles[type]) continue;
     const content = row.puzzle_content; // JSONB — already parsed, do NOT JSON.parse

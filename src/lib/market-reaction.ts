@@ -19,20 +19,14 @@
 // Rackl sort take fundamentally different amounts of time (ticket guardrail).
 
 /**
- * Par (target) solve time per game, in seconds. Seed FALLBACK values only —
- * used until a game type accumulates enough real solve_seconds to compute
- * percentile terciles. Keys are the exact puzzleType strings the games pass to
- * ScoreCard.
+ * Par (target) solve time per game, in seconds — the seed FALLBACK used until a
+ * game accumulates enough real solve_seconds to compute percentile terciles.
+ *
+ * CC-DC-GAME-REGISTRY-1.0: this was a hardcoded table of seven. Par is now
+ * `game_catalog.par_seconds`, and the caller passes it in. A game the caller
+ * cannot resolve falls back to DEFAULT_PAR_SECONDS rather than losing its band.
  */
-export const PAR_TIMES: Readonly<Record<string, number>> = Object.freeze({
-  Rackl: 90,
-  "Signal Drop": 60,
-  "The Stack": 75,
-  Circuit: 120,
-  "The Brief": 150,
-  "Dark Fiber": 90,
-  Frequency: 60,
-});
+export type ParLookup = Readonly<Record<string, number>>;
 
 export type MarketReactionTier = "ahead" | "on" | "laggard";
 
@@ -105,7 +99,8 @@ function isUsableElapsed(v: number | null | undefined): v is number {
 export function resolveMarketReaction(
   gameType: string,
   elapsedSec: number | null | undefined,
-  bands?: SolveBandMap | null
+  bands?: SolveBandMap | null,
+  parTimes?: ParLookup | null
 ): MarketReaction | null {
   if (!isUsableElapsed(elapsedSec)) return null;
   const elapsed = elapsedSec;
@@ -136,7 +131,7 @@ export function resolveMarketReaction(
   }
 
   // ── 2. Seed-par fallback ────────────────────────────────────────────────────
-  const parSec = PAR_TIMES[gameType];
+  const parSec = parTimes ? parTimes[gameType] : undefined;
   if (!parSec || parSec <= 0) return null;
   const ratio = elapsed / parSec;
   const tier: MarketReactionTier =

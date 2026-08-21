@@ -23,6 +23,10 @@
 // import this module directly — Next resolves it identically to @/lib/signal-drop.
 import { toPublicSignalPuzzle, normalizeWord } from "./signal-drop.js";
 
+// The game roster is game_catalog (Supabase), regardless of which bank backend
+// serves the puzzles — CC-DC-GAME-REGISTRY-1.0.
+import { fetchLiveGameKeys } from "./supabase-puzzle-bank.js";
+
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
 // Credential/base/table env names. The June-19 "engine-as-site" migration
@@ -58,15 +62,10 @@ const FIELD_NAME = {
 };
 
 // Canonical puzzle types, matching the game component keys exactly.
-export const PUZZLE_TYPES = [
-  "Rackl",
-  "Signal Drop",
-  "The Stack",
-  "Circuit",
-  "The Brief",
-  "Dark Fiber",
-  "Frequency",
-];
+// CC-DC-GAME-REGISTRY-1.0: the seven type strings used to be listed here. The
+// authoritative set is game_catalog (lifecycle_state='live'); this module no
+// longer needs to know the roster — it serves whatever the bank returns and
+// lets the caller decide which games exist.
 
 class AirtableConfigError extends Error {}
 
@@ -161,7 +160,7 @@ export async function getLivePuzzles() {
   const puzzles = {};
   for (const record of records) {
     const type = record.fields?.[FIELD.puzzleType];
-    if (!type || !PUZZLE_TYPES.includes(type)) continue;
+    if (!type) continue;
     // First valid record per type wins; don't clobber with a later empty one.
     if (puzzles[type]) continue;
     const content = parsePuzzleContent(record);
@@ -277,15 +276,18 @@ export async function rotateLiveSet(todayISO) {
     throw new RotationError("retire", retireIds, cause);
   }
 
+  // Roster from game_catalog (CC-DC-GAME-REGISTRY-1.0) — never a literal list.
+  const roster = (await fetchLiveGameKeys()) || [];
+  const rosterSet = new Set(roster);
   const liveTypes = toPromote
     .map((r) => r.fields?.[FIELD.puzzleType])
-    .filter((t) => PUZZLE_TYPES.includes(t));
+    .filter((t) => rosterSet.has(t));
   return {
     promoted: toPromote.length,
     retired: toRetire.length,
     promotedIds: promoteIds,
     retiredIds: retireIds,
     liveTypes,
-    missingTypes: PUZZLE_TYPES.filter((t) => !liveTypes.includes(t)),
+    missingTypes: roster.filter((t) => !liveTypes.includes(t)),
   };
 }

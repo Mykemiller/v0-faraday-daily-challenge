@@ -2,9 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
-import GameIcon, { GAME_ACCENT } from "@/components/GameIcon";
+import GameIcon from "@/components/GameIcon";
+import { GameRegistryProvider, useGameRegistry } from "@/components/GameRegistryContext";
+import { accentOf, keyOf } from "@/lib/game-registry";
+import { MOCK_PUZZLES } from "@/lib/mock-puzzles";
 import ShareButton from "@/components/ShareButton";
-import { TYPE_BY_SLUG } from "@/lib/share/manifest";
+
 import {
   EDGE_FUNCTIONS_BASE,
   SESSION_STORAGE_KEY,
@@ -125,124 +128,6 @@ function calcScore({ basePoints, maxPoints, timeElapsed, timeLimit, perfect, str
   return Math.min(Math.round(score * mult), 150);
 }
 
-// ── Mock puzzle data (would be fetched from Airtable in production) ──────────
-const PUZZLE_DATA = {
-  Rackl: {
-    name: "The Power Stack",
-    domain: "Power Architecture",
-    groups: [
-      { label:"800V DC Transition",   color:"#1C3424", textColor:"#F8F5F0", items:["Bus bar", "DC-DC converter", "Power shelf", "OCP ORW"] },
-      { label:"Grid Access",          color:"#C4922A", textColor:"#141210", items:["Interconnect queue", "FERC Order", "Large-load study", "ISO/RTO"] },
-      { label:"BTM Generation",       color:"#2A5A3A", textColor:"#F8F5F0", items:["SMR offtake", "Gas peaker", "Solar+storage", "BYOG contract"] },
-      { label:"Cooling Architecture", color:"#5A4010", textColor:"#F8F5F0", items:["CDU", "Cold plate", "WUE", "Rear-door HX"] },
-    ],
-  },
-  "Signal Drop": {
-    name: "BUSBAR",
-    domain: "Power Architecture",
-    word: "BUSBAR",
-    clue: "A rigid conductor distributing electrical power within a switchgear panel or power distribution unit",
-    hint1: "Found in every data center switchroom",
-    hint2: "Copper or aluminum, never flexible",
-  },
-  "The Stack": {
-    name: "Rank GPU Generations: Hopper → Blackwell → Vera Rubin → Feynman",
-    domain: "Chips & Density",
-    items: ["H100 (Hopper)", "B200 (Blackwell)", "GB300 (Vera Rubin NVL72)", "Feynman (2028)"],
-    correctOrder: [0, 1, 2, 3],
-    metric: "TDP per chip (watts) — lowest to highest",
-    values: ["700W", "1000W", "1200W", "~1500W est."],
-  },
-  Circuit: {
-    name: "Power Architecture True/False Sprint #1",
-    domain: "Power Architecture",
-    timeLimit: 60,
-    questions: [
-      { q:"The 800V DC transition eliminates the need for per-rack UPS units.", a:true,  explanation:"800V DC-native racks eliminate per-rack AC/DC conversion and UPS stages, moving protection upstream." },
-      { q:"NFPA 70 currently has complete code coverage for 800V DC data center distribution.", a:false, explanation:"NFPA 70 has significant gaps for 800V DC. The code framework is still catching up to the transition." },
-      { q:"Behind-the-meter generation bypasses the ISO/RTO interconnection queue.", a:true,  explanation:"BTM generation connects directly to the facility, not to the grid — avoiding queue requirements entirely." },
-      { q:"PJM's interconnection queue average wait time is currently under 2 years.", a:false, explanation:"PJM average queue wait exceeds 5 years as of 2026, driven by unprecedented large-load applications." },
-      { q:"A CDU (Coolant Distribution Unit) is required for direct-to-chip liquid cooling.", a:true,  explanation:"The CDU is the central heat exchanger that manages facility-side coolant distribution to server-side cold plates." },
-      { q:"WUE measures watts used per watt of IT load.", a:false, explanation:"WUE (Water Usage Effectiveness) measures liters of water per kWh of IT load — it's a water metric, not power." },
-    ],
-  },
-  "The Brief": {
-    name: "The 800V DC Transition",
-    domain: "Power Architecture",
-    readTime: 90,
-    brief: `The AI data center industry is undergoing its most significant power architecture change in a generation: the shift from 415V AC to 800V DC distribution at the rack level.
-
-Legacy data centers distribute power as alternating current (AC) at 415V (or 480V in the US), which requires multiple conversion stages — transformer to switchgear to UPS to PDU — before reaching the server. Each conversion wastes energy and adds failure points.
-
-800V DC distribution eliminates three of those conversions. Power enters the facility as AC, converts once to 800V DC, and distributes directly to rack-level power shelves. GPU-native DC-DC converters inside the rack handle the final step. The result: higher efficiency, lower cooling burden on the power chain, and smaller copper footprint.
-
-Eaton, Vertiv, and Schneider Electric are all acquiring capabilities in this space. OCP's Open Rack Wide (ORW) specification formalizes the 800V DC rack interface. NVIDIA's NVLink architecture is designed around DC-native power delivery.
-
-The constraint: NFPA 70 (the National Electrical Code) does not yet have complete guidance for 800V DC in occupied buildings. Until the code catches up, facilities must navigate a patchwork of Authority Having Jurisdiction (AHJ) interpretations. Greenfield campuses are building to 800V DC today. Retrofits are operationally complex and expensive.`,
-    questions: [
-      {
-        q: "What is the primary efficiency advantage of 800V DC distribution?",
-        options: ["Higher voltage means less heat", "Fewer AC/DC conversion stages in the power chain", "Copper wire is cheaper at 800V", "UPS systems are not required"],
-        correct: 1,
-        explanation: "800V DC eliminates multiple conversion stages (transformer→switchgear→UPS→PDU→server), each of which wastes energy. Fewer conversions = higher round-trip efficiency."
-      },
-      {
-        q: "What is the current primary constraint on 800V DC adoption in existing facilities?",
-        options: ["Cost of copper busbars", "NFPA 70 code gap for 800V DC in occupied buildings", "GPU incompatibility", "Utility resistance to DC loads"],
-        correct: 1,
-        explanation: "NFPA 70 lacks complete code guidance for 800V DC. This forces facilities to work with local AHJ interpretations, creating inconsistency and risk across jurisdictions."
-      },
-      {
-        q: "Which of the following companies is NOT mentioned as acquiring capabilities in 800V DC infrastructure?",
-        options: ["Eaton", "Vertiv", "Schneider Electric", "Siemens"],
-        correct: 3,
-        explanation: "The brief mentions Eaton, Vertiv, and Schneider Electric. Siemens is a major player in this space but was not cited in this specific brief."
-      },
-    ],
-  },
-  "Dark Fiber": {
-    name: "Power Architecture Terms #1",
-    domain: "Power Architecture",
-    pairs: [
-      { term:"BUSBAR",      def:"A rigid conductor — copper or aluminum — that distributes electrical power within switchgear, bus ducts, or PDUs at high current with minimal loss"                },
-      { term:"CDU",         def:"Coolant Distribution Unit — the rack-side heat exchanger that circulates chilled facility water to server-side cold plates in a direct liquid cooling loop"    },
-      { term:"PUE",         def:"Power Usage Effectiveness — total facility power divided by IT load power; a score of 1.0 is perfect; real-world AI facilities target 1.2–1.4"                 },
-      { term:"SWITCHGEAR",  def:"The assembly of circuit breakers, disconnects, and protective devices that controls and protects the electrical distribution system in a facility"             },
-      { term:"WUE",         def:"Water Usage Effectiveness — liters of water consumed per kWh of IT load; the cooling equivalent of PUE; world-class target is below 0.5L/kWh"               },
-      { term:"INTERCONNECT",def:"The physical and contractual connection between a generation asset or large load and the ISO/RTO transmission grid; acquiring a queue position takes years" },
-    ],
-  },
-  Frequency: {
-    name: "Power Architecture Quiz #1",
-    domain: "Power Architecture",
-    questions: [
-      {
-        q: "What does the acronym 'BYOG' stand for in data center power strategy?",
-        options: ["Build Your Own Grid", "Bring Your Own Generation", "Bypass Your Operator Grid", "Backup Your Own Generator"],
-        correct: 1,
-        explanation: "BYOG (Bring Your Own Generation) refers to operators developing or contracting dedicated generation assets — nuclear, gas, solar — rather than relying solely on grid power."
-      },
-      {
-        q: "Which ISO/RTO has the largest interconnection queue backlog in North America as of 2026?",
-        options: ["ERCOT", "CAISO", "PJM", "MISO"],
-        correct: 2,
-        explanation: "PJM (covering the Mid-Atlantic and Midwest) has the largest backlog, with average queue wait times exceeding 5 years driven by AI data center demand in Northern Virginia and Ohio."
-      },
-      {
-        q: "At what voltage does the emerging DC power distribution standard for high-density AI racks operate?",
-        options: ["48V DC", "240V DC", "415V DC", "800V DC"],
-        correct: 3,
-        explanation: "800V DC is the emerging standard for high-density rack distribution, supported by OCP's Open Rack Wide (ORW) spec and NVIDIA's NVLink power architecture."
-      },
-      {
-        q: "What does 'entitlement' mean in data center site selection?",
-        options: ["Tax incentive approval", "Utility interconnection agreement", "Zoning and permitting approval for the intended use", "Grid capacity allocation"],
-        correct: 2,
-        explanation: "Entitlement refers to the regulatory and zoning approvals that permit the intended development. Entitled land with a grid queue position is categorically more valuable than unentitled land."
-      },
-    ],
-  },
-};
 
 // ── Publish pipeline helper ──────────────────────────────────────────────────
 // In production: fetch from Airtable filtering Published = "Live"
@@ -584,11 +469,14 @@ const SolveBandsContext = createContext(null);
 const PlayoffPhaseContext = createContext(false);
 
 // FAR-385: games whose ScoreCard renders the Faraday Signal card. The matcher
-// computes matched_signal_id for ALL 7 games at sync time — enabling another
-// game is adding its type string here (CC-FAR385-2 adds Signal Drop, Rackl).
-const SIGNAL_ENABLED_GAMES = new Set(["The Brief"]);
+// computes matched_signal_id for every game at sync time; which ones RENDER it
+// is `game_catalog.signal_enabled` (CC-DC-GAME-REGISTRY-1.0) — enabling another
+// game is flipping that column, not editing this file.
 
 function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain, streak, onShare, onNext, elapsedSec, take, takeByline, takeFallback, signal, outcome }) {
+  const scoreCardRegistry = useGameRegistry();
+  const scoreCardGame = scoreCardRegistry.byKey[puzzleType] || null;
+  const signalEnabled = !!scoreCardGame?.signal_enabled;
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
@@ -598,7 +486,10 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   // points, so the label says so. Scoring itself is unchanged — this is a
   // relabel, not a different number.
   const playoffsLive = useContext(PlayoffPhaseContext);
-  const reaction = resolveMarketReaction(puzzleType, elapsedSec, solveBands);
+  // Par seconds come from game_catalog (CC-DC-GAME-REGISTRY-1.0), used only as
+  // the fallback when this game has no percentile bands yet.
+  const parTimes = scoreCardGame ? { [puzzleType]: scoreCardGame.par_seconds } : null;
+  const reaction = resolveMarketReaction(puzzleType, elapsedSec, solveBands, parTimes);
   const reactionColor = reaction
     ? (reaction.tier === "ahead" ? C.gold : reaction.tier === "on" ? C.sage : C.muted)
     : C.muted;
@@ -623,8 +514,8 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
       {/* FAR-385: Faraday Signal, below the Take — post-solve only (this whole
           card is the completion screen). Pilot: The Brief; self-hides on tier
           "none" / missing data, so an empty day renders no frame at all. */}
-      {SIGNAL_ENABLED_GAMES.has(puzzleType) && (
-        <TodaysSignalCard signal={signal} accent={GAME_ACCENT[puzzleType]?.accent} />
+      {signalEnabled && (
+        <TodaysSignalCard signal={signal} accent={accentOf(scoreCardGame).accent} />
       )}
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
@@ -2242,39 +2133,42 @@ function SocialGate({ trigger, onComplete, onDismiss }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // GAME TILES — Lobby
 // ══════════════════════════════════════════════════════════════════════════════
-// Locked tile order (front-loads quick-momentum games). The neutral `format` chip
-// names the mechanic, not a domain — the puzzle bank rotates varied content, so a
-// single hardcoded domain ("Power Architecture") on all seven read as a bug.
-const GAME_CONFIGS = [
-  { type:"Rackl",       desc:"Group the tiles — four connected sets",     time:"~3 min", format:"Connect" },
-  { type:"Circuit",     desc:"True/False sprint — beat the clock",         time:"~2 min", format:"Sprint" },
-  { type:"Dark Fiber",  desc:"Match terms to their definitions",           time:"~3 min", format:"Match" },
-  { type:"Frequency",   desc:"Multiple choice knowledge quiz",             time:"~3 min", format:"Quiz" },
-  { type:"The Stack",   desc:"Drag to rank in the correct order",          time:"~2 min", format:"Rank" },
-  { type:"Signal Drop", desc:"Guess the industry term — Wordle style",     time:"~2 min", format:"Guess" },
-  { type:"The Brief",   desc:"Read the intelligence brief, then answer",   time:"~4 min", format:"Read" },
-];
+// CC-DC-GAME-REGISTRY-1.0: the tile list was a hardcoded array of seven. It is
+// game_catalog now — locked order from `lobby_sort_order`, and the neutral
+// `format` chip / blurb / time estimate from their own columns. The chip names
+// the mechanic, not a domain: the bank rotates varied content, so a single
+// hardcoded domain on every tile read as a bug.
+function tileConfig(game) {
+  return {
+    type: keyOf(game),
+    desc: game.lobby_description || "",
+    time: game.lobby_time_estimate || "",
+    format: game.lobby_format_chip || "",
+    slug: game.route_slug || null,
+    glow: accentOf(game).glow,
+  };
+}
+
 
 // Which of the 7 games the active season actually serves. A null/empty slate
 // means no season config gates serving, so every game shows — that is the
 // pre-D4-retirement behaviour and the fail-safe the whole feature rests on.
 // Membership is by `type`, which IS game_catalog.runtime_key (D3).
-function seasonGames(slate) {
-  if (!Array.isArray(slate) || slate.length === 0) {
-    return new Set(GAME_CONFIGS.map(c => c.type));
-  }
+function seasonGames(slate, allKeys) {
+  const all = Array.isArray(allKeys) ? allKeys : [];
+  if (!Array.isArray(slate) || slate.length === 0) return new Set(all);
   const allow = new Set(slate);
-  const known = GAME_CONFIGS.filter(c => allow.has(c.type)).map(c => c.type);
+  const known = all.filter(k => allow.has(k));
   // A slate matching none of the known games is a misconfiguration, not an
   // instruction to show an empty lobby.
-  return known.length > 0 ? new Set(known) : new Set(GAME_CONFIGS.map(c => c.type));
+  return known.length > 0 ? new Set(known) : new Set(all);
 }
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
 // the tile turns forest green with a gold border and a "✓ Played" badge.
 function GameTile({ config, onPlay, played, priorScore }) {
-  const glow = GAME_ACCENT[config.type]?.glow || "rgba(196,146,42,.3)";
+  const glow = config.glow || "rgba(196,146,42,.3)";
   return (
     <button type="button" onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
       "--glow": glow,
@@ -2318,8 +2212,9 @@ function GameTile({ config, onPlay, played, priorScore }) {
 // Tapping requests a switch; the parent confirms before discarding in-progress play.
 function GameSwitcher({ current, onSwitch, slate }) {
   // Only the games this season serves (D4 retired). null slate → all of them.
-  const inSeason = seasonGames(slate);
-  const others = GAME_CONFIGS.filter(c => c.type !== current && inSeason.has(c.type));
+  const reg = useGameRegistry();
+  const inSeason = seasonGames(slate, reg.keys);
+  const others = reg.games.map(tileConfig).filter(c => c.type !== current && inSeason.has(c.type));
   return (
     <div role="group" aria-label="Switch to another game"
       style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap",
@@ -2567,13 +2462,13 @@ function NavGlyph({ name }) {
 //   { heading:"…" }      → a small uppercase group label (like the menu title)
 // The Account menu is auth-conditional (see the `email` branch).
 // Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
-function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, slate }) {
-  const inSeason = seasonGames(slate);
+function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, slate, gameKeys }) {
+  const inSeason = seasonGames(slate, gameKeys);
   return [
-    // The season's games, in lobby-grid order (GAME_CONFIGS orders them; the
+    // The season's games, in locked lobby order (game_catalog orders them; the
     // slate decides membership — D4 retired, the slate now gates serving).
     { id: "games", icon: "grid", label: "All Games", items:
-      GAME_CONFIGS.filter(c => inSeason.has(c.type)).map(c => ({ label: c.type, onClick: () => onGame(c.type), current: c.type === activeGame })),
+      (gameKeys || []).filter(k => inSeason.has(k)).map(k => ({ label: k, onClick: () => onGame(k), current: k === activeGame })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
@@ -2696,7 +2591,11 @@ function HeaderIconNav({ menus }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN — Daily Challenge App
 // ══════════════════════════════════════════════════════════════════════════════
-export default function DailyChallenge() {
+// The inner app. Split from the default export so it can CONSUME the registry
+// context the export PROVIDES — a component cannot read a context it supplies
+// in the same render.
+function DailyChallengeInner() {
+  const registry = useGameRegistry();
   const navIconsLabelHidden = useWindowWidth() <= 430;  // FAR-207: icon-only on mobile
   const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | account
   const [activeGame, setActiveGame] = useState(null);
@@ -3047,11 +2946,11 @@ export default function DailyChallenge() {
     try {
       const qs = new URLSearchParams(window.location.search);
       const slug = qs.get("g");
-      g = (slug && TYPE_BY_SLUG[slug]) || qs.get("game");
+      g = (slug && registry.share.typeBySlug[slug]) || qs.get("game");
     } catch { /* no search */ }
     if (!g) return;
-    const match = GAME_CONFIGS.find(c => c.type.toLowerCase() === g.toLowerCase());
-    if (match) startGame(match.type);
+    const match = registry.keys.find(k => k.toLowerCase() === g.toLowerCase());
+    if (match) startGame(match);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3177,6 +3076,7 @@ export default function DailyChallenge() {
   const headerMenus = buildHeaderMenus({
     email,
     slate,
+    gameKeys: registry.keys,
     activeGame: screen === "game" ? activeGame : null,
     onGame: (type) => {
       const inLiveGame = screen === "game" && activeGame && !dailyResults[activeGame] && !todayCompletions[activeGame];
@@ -3321,7 +3221,7 @@ export default function DailyChallenge() {
             {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
               gap:"14px", padding:"28px 0 8px" }}>
-              {GAME_CONFIGS.filter(c => seasonGames(slate).has(c.type)).map(config => {
+              {registry.games.map(tileConfig).filter(c => seasonGames(slate, registry.keys).has(c.type)).map(config => {
                 const attempt = todayCompletions[config.type] || dailyResults[config.type];
                 return (
                   <GameTile key={config.type} config={config}
@@ -3383,8 +3283,9 @@ export default function DailyChallenge() {
         {screen === "game" && activeGame && (() => {
           const GameComponent = GAME_COMPONENTS[activeGame];
           // Prefer the live puzzle from Airtable; fall back to mock per-game.
-          const puzzle = livePuzzles[activeGame] || PUZZLE_DATA[activeGame];
-          const config = GAME_CONFIGS.find(c=>c.type===activeGame);
+          const puzzle = livePuzzles[activeGame] || MOCK_PUZZLES[activeGame];
+          const activeRow = registry.byKey[activeGame];
+          const config = activeRow ? tileConfig(activeRow) : null;
           if (!GameComponent || !puzzle) return <div style={{ color:C.red }}>Puzzle not found</div>;
           const priorResult = dailyResults[activeGame];
           return (
@@ -3523,5 +3424,19 @@ export default function DailyChallenge() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// The game roster comes from game_catalog (CC-DC-GAME-REGISTRY-1.0). The server
+// component at app/challenge/page.tsx loads it and passes the rows in; every
+// tile, icon, accent, blurb and deep link below reads from that registry rather
+// than from a hardcoded list of seven. Adding an eighth game is a catalog row.
+// ══════════════════════════════════════════════════════════════════════════════
+export default function DailyChallenge({ games }) {
+  return (
+    <GameRegistryProvider games={games}>
+      <DailyChallengeInner />
+    </GameRegistryProvider>
   );
 }

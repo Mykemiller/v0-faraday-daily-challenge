@@ -33,4 +33,6 @@ export const rotateLiveSet = (...args) => impl().rotateLiveSet(...args);
 // Shared canonical list (identical in both implementations). Re-exported from
 // the supabase lib so deleting the Airtable path in Phase 5 doesn't orphan
 // this import.
-export { PUZZLE_TYPES } from "./supabase-puzzle-bank.js";
+// The game roster is game_catalog, not a constant in this module
+// (CC-DC-GAME-REGISTRY-1.0). Re-exported for callers that need it server-side.
+export { fetchLiveGameKeys } from "./supabase-puzzle-bank.js";

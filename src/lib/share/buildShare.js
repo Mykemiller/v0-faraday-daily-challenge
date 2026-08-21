@@ -22,9 +22,7 @@ import {
   CANONICAL_ORIGIN,
   CANONICAL_HOST,
   GENERIC_SLUG,
-  SHARE_MANIFEST,
-  SLUG_BY_TYPE,
-  slugForType,
+  EMPTY_SHARE_REGISTRY,
 } from "./manifest.js";
 
 // Approved glyph vocabulary (Myke, 2026-07-31): one set across all 7 games so a
@@ -169,15 +167,18 @@ function sanitizePath(v) {
  * @param {string}  [input.headline]        generic shares only: optional first detail line
  * @param {string}  [input.detail]          generic shares only: optional second detail line
  * @param {string}  [input.path]            generic shares only: canonical-origin-relative destination path (see sanitizePath)
+ * @param {object} [shareRegistry]         from buildShareRegistry(games); defaults to the
+ *   empty registry, in which every share degrades to the generic Daily Challenge mark
  * @returns {{ title:string, text:string, url:string, imageUrl:string, iconUrl:string, imageFilename:string, number:(number|null) }}
  */
-export function buildShare(input) {
+export function buildShare(input, shareRegistry = EMPTY_SHARE_REGISTRY) {
   const src = input && typeof input === "object" ? input : {};
   const surface = sanitizeSurface(src.surface);
+  const reg = shareRegistry || EMPTY_SHARE_REGISTRY;
 
-  const isGame = src.kind !== "generic" && typeof src.puzzleType === "string" && src.puzzleType in SLUG_BY_TYPE;
-  const slug = isGame ? slugForType(src.puzzleType) : GENERIC_SLUG;
-  const entry = SHARE_MANIFEST[slug];
+  const isGame = src.kind !== "generic" && reg.isGameType(src.puzzleType);
+  const slug = isGame ? reg.slugForType(src.puzzleType) : GENERIC_SLUG;
+  const entry = reg.manifest[slug];
 
   // Number + date ride the Public ID only (its date segment IS the serve day —
   // the client's own clock is UTC-vs-CT ambiguous, Phase 0 §3).

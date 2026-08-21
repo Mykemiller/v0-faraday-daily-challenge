@@ -22,30 +22,28 @@ export const MACH_EIGEN = "Mach Eigen"; //           Precision / forward-looking
 //   Mach Eigen      → the scenario / prediction games.
 // This is a proposed default, not a hard lock — the "Take Byline" field overrides
 // it per puzzle when a specific Take reads better in the other voice.
-export const TAKE_VOICE_BY_TYPE: Record<string, string> = {
-  Rackl: GILBERT_FARADAY,
-  "The Stack": GILBERT_FARADAY,
-  "Dark Fiber": GILBERT_FARADAY,
-  Frequency: GILBERT_FARADAY,
-  Circuit: MACH_EIGEN,
-  "The Brief": MACH_EIGEN,
-  "Signal Drop": MACH_EIGEN,
-};
+/**
+ * CC-DC-GAME-REGISTRY-1.0: the per-game voice was a hardcoded table of seven.
+ * It is `game_catalog.take_voice` now, and the caller passes the resolved voice
+ * in. An unresolved game still gets a byline — Gilbert Faraday — rather than a
+ * blank one.
+ */
 
 // The whole-set default when a type is unknown / unmapped — Gilbert Faraday, the
 // house voice (matches `FaradaysTake`'s own last-resort default).
-export function defaultTakeByline(puzzleType?: string | null): string {
-  return (puzzleType && TAKE_VOICE_BY_TYPE[puzzleType]) || GILBERT_FARADAY;
+export function defaultTakeByline(gameVoice?: string | null): string {
+  const v = typeof gameVoice === "string" ? gameVoice.trim() : "";
+  return v || GILBERT_FARADAY;
 }
 
 // Byline resolution order: explicit editorial override → game-type voice →
 // Gilbert Faraday. A blank/whitespace override is treated as "no override".
 export function resolveTakeByline(
-  puzzleType?: string | null,
+  gameVoice?: string | null,
   override?: string | null
 ): string {
   const o = typeof override === "string" ? override.trim() : "";
-  return o || defaultTakeByline(puzzleType);
+  return o || defaultTakeByline(gameVoice);
 }
 
 // Soft cap so the fallback stays tight on the completion screen — matches the

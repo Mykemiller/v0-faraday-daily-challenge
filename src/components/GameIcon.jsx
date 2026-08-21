@@ -1,3 +1,5 @@
+"use client";
+
 // Daily Challenge game icons — the neon-on-forest raster set.
 //
 // The icons were hand-drawn inline SVG (Ch.09b geometry, recolored to FAR-394
@@ -7,43 +9,34 @@
 // Do not hand-edit the PNGs — re-run the generator.
 //
 // Usage:
-//   <GameIcon game="Rackl" />       per tile
-//   GAME_ACCENT["Rackl"].glow       hover-glow color (per game)
-// Share-card icon paths live in the share manifest (src/lib/share/manifest.js).
-
-// Route slug per game key. Three masters carry a shorter baked label than the
-// game key ("SIGNAL", "FIBER", "THE CIRCUIT"); the slug follows the app's route.
-const GAME_SLUG = {
-  "Rackl": "rackl",
-  "Signal Drop": "signal-drop",
-  "The Stack": "the-stack",
-  "Circuit": "circuit",
-  "The Brief": "the-brief",
-  "Dark Fiber": "dark-fiber",
-  "Frequency": "frequency",
-};
-
-// Per-game accent colors. The values (and the full rationale for why they aren't
-// each icon's dominant color) moved to the pure module src/lib/game-accent.js so
-// the share manifest (CC-DC-SHARE-1.0) and node-run tests can import them without
-// JSX. Re-exported here so every existing `from "@/components/GameIcon"` importer
-// keeps working — this file remains the conventional import point for components.
+//   <GameIcon game="Rackl" />       per tile, slug resolved from the registry
+//   <GameIcon slug="rackl" />       when the caller already has the slug
+//
+// CC-DC-GAME-REGISTRY-1.0: the route slug and the accent colours used to live in
+// hardcoded maps here and in src/lib/game-accent.js (now deleted). Both are
+// game_catalog columns — route_slug and accent_hex/accent_deep_hex/
+// accent_glow_rgba — read through the registry context. Share-card icon paths
+// derive from the same slug (src/lib/share/manifest.js).
 //
 // What changed underneath (CC-DC-ICON-REFRESH-1.0): the accent used to BE the
 // pictogram ink drawn on the forest tile. The pictogram is now baked art; the
 // accent's remaining jobs are the lobby hover glow (at .28 alpha) and the
 // TodaysSignalCard accent prop.
-export { GAME_ACCENT, GAME_NEON } from "../lib/game-accent";
+
+import { useGameRegistry } from "@/components/GameRegistryContext";
 
 /**
  * A single game's icon tile. The tile chrome (radius, hairline, forest fallback)
  * stays in CSS so the art can be swapped without touching layout. The container's
  * 20% radius is deliberately rounder than the art's baked ~8.6% corner, so
  * overflow:hidden clips away the master's opaque #1a1a1a corners.
- * @param {{ game: string, size?: number }} props
+ * An unknown game renders the empty forest tile rather than throwing — the
+ * graceful-degradation rule that lets a catalog row exist before its art does.
+ * @param {{ game?: string, slug?: string, size?: number }} props
  */
-export default function GameIcon({ game, size = 64 }) {
-  const slug = GAME_SLUG[game];
+export default function GameIcon({ game, slug: slugProp, size = 64 }) {
+  const reg = useGameRegistry();
+  const slug = slugProp || reg.byKey[game]?.route_slug || null;
   return (
     <span
       className="icon-tile"

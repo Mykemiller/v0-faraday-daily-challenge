@@ -35,8 +35,10 @@
 import {
   PUZZLE_BANK_BASE_ID,
   PUZZLE_BANK_TABLE_ID,
-  PUZZLE_TYPES,
 } from "@/lib/airtable-puzzle-bank";
+// Game roster + lobby order from game_catalog (CC-DC-GAME-REGISTRY-1.0).
+import { loadLiveGames } from "@/lib/game-registry-server";
+import { keyOf } from "@/lib/game-registry";
 import { puzzleSource } from "@/lib/puzzle-bank";
 import { DOMAIN_LABELS, resolveDomainName } from "@/lib/idf-labels";
 import type { SignalMatchTier } from "@/lib/signal-matcher";
@@ -388,6 +390,8 @@ async function fetchStagingLiveRows(): Promise<
 
 async function buildDayContentRowFromStaging(dateISO: string): Promise<DayContentRow> {
   const rows = await fetchStagingLiveRows();
+  const roster = (await loadLiveGames()).map(keyOf);
+  const rosterSet = new Set(roster);
   const courseCache = new Map<string, Promise<AcademyCourseRef | null>>();
 
   const puzzles: DayPuzzleEntry[] = [];
@@ -395,7 +399,7 @@ async function buildDayContentRowFromStaging(dateISO: string): Promise<DayConten
 
   for (const row of rows) {
     const type = str(row["puzzle_type"]);
-    if (!type || !PUZZLE_TYPES.includes(type) || seenTypes.has(type)) continue;
+    if (!type || (rosterSet.size > 0 && !rosterSet.has(type)) || seenTypes.has(type)) continue;
     seenTypes.add(type);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -441,7 +445,7 @@ async function buildDayContentRowFromStaging(dateISO: string): Promise<DayConten
     });
   }
 
-  puzzles.sort((a, b) => PUZZLE_TYPES.indexOf(a.puzzle_type) - PUZZLE_TYPES.indexOf(b.puzzle_type));
+  puzzles.sort((a, b) => roster.indexOf(a.puzzle_type) - roster.indexOf(b.puzzle_type));
 
   const codes = puzzles.map((p) => p.domain_code).filter((c): c is string => !!c);
   const dayDomainCode = codes.length
@@ -473,6 +477,10 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
     PUZZLE_BANK_TABLE_ID,
     `{Published} = "Live"`
   );
+  // Roster + lobby order from game_catalog. An empty roster (catalog
+  // unreachable) means "do not filter" rather than "no games exist".
+  const roster = (await loadLiveGames()).map(keyOf);
+  const rosterSet = new Set(roster);
 
   // Memoize linked-record + course lookups — the whole day usually shares one domain.
   const domainCache = new Map<string, Promise<{ code: string | null; name: string | null }>>();
@@ -484,7 +492,7 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
 
   for (const record of records) {
     const type = str(record.fields["Puzzle Type"]);
-    if (!type || !PUZZLE_TYPES.includes(type) || seenTypes.has(type)) continue;
+    if (!type || (rosterSet.size > 0 && !rosterSet.has(type)) || seenTypes.has(type)) continue;
     seenTypes.add(type);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -553,7 +561,7 @@ export async function buildDayContentRow(dateISO: string): Promise<DayContentRow
   }
 
   // Keep a stable lobby-ish order for rendering.
-  puzzles.sort((a, b) => PUZZLE_TYPES.indexOf(a.puzzle_type) - PUZZLE_TYPES.indexOf(b.puzzle_type));
+  puzzles.sort((a, b) => roster.indexOf(a.puzzle_type) - roster.indexOf(b.puzzle_type));
 
   // Day-level domain: the one every (or the plurality of) puzzles share.
   const codes = puzzles.map((p) => p.domain_code).filter((c): c is string => !!c);

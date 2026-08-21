@@ -63,22 +63,20 @@ export function iconTileBox(cell: number = ICON_TILE): StyleObject {
 // any square grid (flagged in Phase 0).
 export type GridFit = 'square' | 'fluid' | 'list' | 'prose';
 
-export const SQUARE_GRID_FIT: Record<string, GridFit> = {
-  Rackl: 'fluid', // 4×4 word tiles — fluid so 1–3 word phrases fit
-  'Signal Drop': 'fluid', // Wordle letter grid — square cells, but fluid-capped, not 110
-  'The Stack': 'list', // drag-to-rank vertical list
-  Circuit: 'fluid', // 2-up True/False
-  'The Brief': 'prose', // scrolling multi-paragraph reading pane — NOT a square grid
-  'Dark Fiber': 'fluid', // 2-col term/definition
-  Frequency: 'list', // vertical option list
-};
+/**
+ * CC-DC-GAME-REGISTRY-1.0: the per-game grid model was a hardcoded table of
+ * seven. It is `game_catalog.grid_fit` now. These helpers take the resolved fit
+ * so this module stays pure; an unresolved game is treated as 'fluid', which is
+ * the safe default — it never forces square cells onto content that cannot take
+ * them (the Phase-0 finding this table was written to record).
+ */
 
 /** true when a game may adopt the 110×110 square tile grid for its interaction area. */
-export function fitsSquareGrid(gameType: string): boolean {
-  return SQUARE_GRID_FIT[gameType] === 'square';
+export function fitsSquareGrid(gridFit: string | null | undefined): boolean {
+  return gridFit === 'square';
 }
 
 /** Games that must NOT be forced onto a square grid (Phase-0 exemptions). */
-export function squareGridExemptions(): string[] {
-  return Object.keys(SQUARE_GRID_FIT).filter((g) => SQUARE_GRID_FIT[g] === 'prose');
+export function squareGridExemptions(fits: Record<string, string | null>): string[] {
+  return Object.keys(fits).filter((g) => fits[g] === 'prose');
 }
