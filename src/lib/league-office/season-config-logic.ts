@@ -276,6 +276,209 @@ export function validateWindow(w: WindowInput): string[] {
   return errs;
 }
 
+// ── trading windows ──────────────────────────────────────────────────────────
+
+/** A season carries TWO trading windows — one at the open, one at the close.
+ *  Both are stored on `seasons` (migration 20260907120000); before that they
+ *  existed only as hardcoded ±7 bars in the season-detail timeline, which these
+ *  defaults reproduce exactly. Lengths live on the LEAGUE (in days, because a
+ *  league default cannot know a season's window); the dates live on the season.
+ *
+ *  Free agency is NOT part of this: `free_agency_start` /
+ *  `free_agency_notice_start` stay GENERATED ALWAYS from `ends_on` and are
+ *  displayed read-only (Myke, 2026-09-07). */
+export const TRADING_OPEN_DEFAULT_DAYS = 7;
+export const TRADING_CLOSE_DEFAULT_DAYS = 7;
+
+export type TradingField = "openStarts" | "openEnds" | "closeStarts" | "closeEnds";
+
+export const TRADING_FIELDS: TradingField[] = ["openStarts", "openEnds", "closeStarts", "closeEnds"];
+
+export type TradingWindows = Record<TradingField, string>;
+
+export type LeagueWindowDefaults = { openDays: number; closeDays: number };
+
+export const EMPTY_TRADING_WINDOWS: TradingWindows = {
+  openStarts: "", openEnds: "", closeStarts: "", closeEnds: "",
+};
+
+export function leagueWindowDefaults(
+  l?: { default_trading_open_days?: number | null; default_trading_close_days?: number | null } | null
+): LeagueWindowDefaults {
+  // `Number(null)` is 0, so null/undefined must be rejected BEFORE the numeric
+  // test — otherwise a league with no default seeds a zero-length window.
+  const n = (v: number | null | undefined, fallback: number) => {
+    if (v === null || v === undefined) return fallback;
+    const x = Number(v);
+    return Number.isFinite(x) && x >= 0 ? Math.floor(x) : fallback;
+  };
+  return {
+    openDays: n(l?.default_trading_open_days, TRADING_OPEN_DEFAULT_DAYS),
+    closeDays: n(l?.default_trading_close_days, TRADING_CLOSE_DEFAULT_DAYS),
+  };
+}
+
+/** Add whole days to an ISO date, staying on the ISO string. */
+export function isoAddDays(iso: string | null | undefined, days: number): string | null {
+  const d = parseIsoDate(iso);
+  if (!d) return null;
+  return new Date(d.getTime() + days * 86400000).toISOString().slice(0, 10);
+}
+
+/** Whole days between two ISO dates (b − a). Null if either is unparseable. */
+export function isoDiffDays(a: string | null | undefined, b: string | null | undefined): number | null {
+  const x = parseIsoDate(a);
+  const y = parseIsoDate(b);
+  if (!x || !y) return null;
+  return Math.round((y.getTime() - x.getTime()) / 86400000);
+}
+
+export const TOO_SHORT_MESSAGE =
+  "Season is too short for the league default windows — adjust dates or shorten windows.";
+
+/** Seed both windows from the season dates and the league defaults.
+ *
+ *  The opening window is start-anchored (`starts_on` → `+ openDays`); the
+ *  closing window is end-anchored (`ends_on − closeDays` → `ends_on`). When the
+ *  season is too short to hold both, the opening window keeps its anchor, the
+ *  tail is clamped to `ends_on`, and the closing window takes whatever remains
+ *  — collapsing to empty rather than emitting a zero-length range, which the
+ *  `seasons_trading_*_ordered` CHECKs would reject. `tooShort` is surfaced by
+ *  the wizard either way. */
+export function seedTradingWindows(
+  startsOn: string | null | undefined,
+  endsOn: string | null | undefined,
+  defaults: LeagueWindowDefaults
+): { windows: TradingWindows; tooShort: boolean } {
+  const start = parseIsoDate(startsOn);
+  const end = parseIsoDate(endsOn);
+  if (!start || !end || end < start) return { windows: { ...EMPTY_TRADING_WINDOWS }, tooShort: false };
+
+  const s = startsOn!.slice(0, 10);
+  const e = endsOn!.slice(0, 10);
+
+  const wantOpenEnd = isoAddDays(s, defaults.openDays)!;
+  const wantCloseStart = isoAddDays(e, -defaults.closeDays)!;
+  const tooShort = wantOpenEnd > wantCloseStart;
+
+  // clamp the head into the season, and the tail to ends_on
+  const openEnds = wantOpenEnd > e ? e : wantOpenEnd;
+  const closeStarts = wantCloseStart < openEnds ? openEnds : wantCloseStart;
+
+  const openOk = openEnds > s;
+  const closeOk = e > closeStarts;
+
+  return {
+    windows: {
+      openStarts: openOk ? s : "",
+      openEnds: openOk ? openEnds : "",
+      closeStarts: closeOk ? closeStarts : "",
+      closeEnds: closeOk ? e : "",
+    },
+    tooShort,
+  };
+}
+
+/** The wizard holds trading windows as OVERRIDES over the seeded values, not as
+ *  a copy of them. This merge is what makes the two halves of the re-anchoring
+ *  rule fall out for free:
+ *
+ *    - a field the commissioner has NOT touched has no override key, so it
+ *      reads through to `seeded` and silently re-anchors when the season dates
+ *      move;
+ *    - a field they HAVE touched has a key — even an empty-string one — and is
+ *      never overwritten by a re-seed.
+ *
+ *  Presence of the key is the dirty flag; deleting it is "reset to default". */
+export function mergeTradingWindows(
+  seeded: TradingWindows,
+  overrides: Partial<Record<TradingField, string>>
+): TradingWindows {
+  return {
+    openStarts: overrides.openStarts ?? seeded.openStarts,
+    openEnds: overrides.openEnds ?? seeded.openEnds,
+    closeStarts: overrides.closeStarts ?? seeded.closeStarts,
+    closeEnds: overrides.closeEnds ?? seeded.closeEnds,
+  };
+}
+
+/** Field-level errors for the wizard's Trading windows step, keyed by field so
+ *  each input can show its own message. `general` holds the whole-step notices
+ *  (the too-short clamp). Empty object + empty array = valid. */
+export function validateTradingWindows(
+  w: TradingWindows,
+  startsOn: string | null | undefined,
+  endsOn: string | null | undefined
+): { fields: Partial<Record<TradingField, string>>; general: string[] } {
+  const fields: Partial<Record<TradingField, string>> = {};
+  const general: string[] = [];
+
+  const start = parseIsoDate(startsOn);
+  const end = parseIsoDate(endsOn);
+  if (!start || !end) {
+    general.push("Set the season window first.");
+    return { fields, general };
+  }
+
+  // Every date sits inside the season, inclusive of both endpoints. (Free
+  // agency deliberately overhangs ends_on; trading windows never do.)
+  for (const f of TRADING_FIELDS) {
+    const v = w[f];
+    if (!v) continue;
+    const d = parseIsoDate(v);
+    if (!d) { fields[f] = "Not a valid date."; continue; }
+    if (d < start || d > end) fields[f] = "Falls outside the season window.";
+  }
+
+  // both-or-neither, per window
+  if (!!w.openStarts !== !!w.openEnds)
+    fields[w.openStarts ? "openEnds" : "openStarts"] = "Both ends of the window are required.";
+  if (!!w.closeStarts !== !!w.closeEnds)
+    fields[w.closeStarts ? "closeEnds" : "closeStarts"] = "Both ends of the window are required.";
+
+  // each window opens before it closes
+  if (w.openStarts && w.openEnds && !fields.openEnds && w.openEnds <= w.openStarts)
+    fields.openEnds = "The opening window must close after it opens.";
+  if (w.closeStarts && w.closeEnds && !fields.closeEnds && w.closeEnds <= w.closeStarts)
+    fields.closeEnds = "The closing window must close after it opens.";
+
+  // the two windows may touch but never overlap
+  if (w.openEnds && w.closeStarts && !fields.closeStarts && w.closeStarts < w.openEnds)
+    fields.closeStarts = "The closing window cannot start before the opening window ends.";
+
+  return { fields, general };
+}
+
+/** Does the season have room for both league-default windows? Drives the
+ *  too-short callout independently of what the commissioner has since edited. */
+export function tradingWindowsFit(
+  startsOn: string | null | undefined,
+  endsOn: string | null | undefined,
+  defaults: LeagueWindowDefaults
+): boolean {
+  return !seedTradingWindows(startsOn, endsOn, defaults).tooShort;
+}
+
+/** "Day 1" is the season's first day. Used by the Review step, which renders
+ *  absolute dates PLUS the relative offset so a window can be sanity-checked
+ *  without doing date arithmetic in your head. */
+export function dayOfSeason(date: string | null | undefined, startsOn: string | null | undefined): number | null {
+  const n = isoDiffDays(startsOn, date);
+  return n === null ? null : n + 1;
+}
+
+/** e.g. "Day 1–8 of season". Returns null when either end is unset. */
+export function seasonDayRangeLabel(
+  from: string | null | undefined,
+  to: string | null | undefined,
+  startsOn: string | null | undefined
+): string | null {
+  const a = dayOfSeason(from, startsOn);
+  const b = dayOfSeason(to, startsOn);
+  if (a === null || b === null) return null;
+  return `Day ${a}–${b} of season`;
+}
+
 // ── difficulty curve preview ─────────────────────────────────────────────────
 
 /** Normalized 0..1 sample points for the inline sparkline. Presentation only —

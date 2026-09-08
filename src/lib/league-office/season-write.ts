@@ -26,8 +26,8 @@ import {
 import {
   buildScopeRows, configSaveMessage, countOverCap, defaultDifficultyMix,
   defaultThemeMix, editability, findOverlappingSeason, normalizeDayMask, round2,
-  sanitizeConfigPatch, slugify,
-  type SeasonRange, type WizardScope,
+  sanitizeConfigPatch, slugify, validateTradingWindows,
+  type SeasonRange, type TradingWindows, type WizardScope,
 } from "./season-config-logic";
 
 const SUPABASE_URL =
@@ -170,6 +170,12 @@ export type CreateSeasonInput = {
   ends_on: string;
   /** free_agency_start / free_agency_notice_start are NOT accepted — they are
    *  GENERATED ALWAYS from ends_on (−3 / −7) and cannot be written. */
+  /** The two trading windows (migration 20260907120000). Both ends of a window
+   *  are required together; either window may be omitted entirely. */
+  trading_open_starts_on?: string | null;
+  trading_open_ends_on?: string | null;
+  trading_close_starts_on?: string | null;
+  trading_close_ends_on?: string | null;
   roster_lock_on?: string | null;
   scope: WizardScope;
   startingPoint: { mode: "copy"; sourceSeasonId: string } | { mode: "defaults" };
@@ -216,10 +222,26 @@ export async function createSeason(
   const league = await getOne<{ id: string }>(s, `leagues?code=eq.INDEPENDENT&select=id&limit=1`);
   if (!league) return err(500, "League INDEPENDENT not found — cannot create a season.");
 
+  // Trading windows are re-validated HERE, not just in the wizard: the client
+  // rules and the `seasons_trading_*` CHECKs are the same rules, and a caller
+  // that skips the wizard should get the sentence rather than a raw 23514.
+  const tw: TradingWindows = {
+    openStarts: input.trading_open_starts_on || "",
+    openEnds: input.trading_open_ends_on || "",
+    closeStarts: input.trading_close_starts_on || "",
+    closeEnds: input.trading_close_ends_on || "",
+  };
+  const twCheck = validateTradingWindows(tw, input.starts_on, input.ends_on);
+  const twProblem = Object.values(twCheck.fields)[0] ?? twCheck.general[0];
+  if (twProblem) return err(422, `Trading windows: ${twProblem}`);
+
   // NOTE: free_agency_start / free_agency_notice_start are GENERATED ALWAYS
   // (ends_on − 3 / ends_on − 7). Sending them — even as NULL — makes Postgres
   // reject the whole INSERT with 428C9, which is what made every season
   // creation fail. They are derived; never write them.
+  //
+  // The trading window columns, by contrast, are ordinary nullable dates and
+  // ARE written here — NULL on both ends simply means "no window".
   const created = await insertOrError(s, "seasons", {
     slug,
     name,
@@ -228,6 +250,10 @@ export async function createSeason(
     status: "upcoming",
     tz: (input.tz || "America/Chicago").trim(),
     league_id: league.id,
+    trading_open_starts_on: tw.openStarts || null,
+    trading_open_ends_on: tw.openEnds || null,
+    trading_close_starts_on: tw.closeStarts || null,
+    trading_close_ends_on: tw.closeEnds || null,
   });
   if (!created.ok) return err(created.status, seasonWriteMessage(created.message));
 
@@ -265,6 +291,10 @@ export async function createSeason(
     before: null,
     after: {
       slug, name, starts_on: input.starts_on, ends_on: input.ends_on,
+      trading_open_starts_on: tw.openStarts || null,
+      trading_open_ends_on: tw.openEnds || null,
+      trading_close_starts_on: tw.closeStarts || null,
+      trading_close_ends_on: tw.closeEnds || null,
       tz: input.tz || "America/Chicago",
       description: input.description || null,
       scope: input.scope,
@@ -875,6 +905,11 @@ const SEASON_FIELDS = [
   // REQUIRES these before a season can generate, but nothing wrote them — they
   // had no editor. They live on `seasons`, not season_config.
   "playoff_starts_on", "roster_freeze_on",
+  // Trading windows (migration 20260907120000). Patchable so that shrinking a
+  // season is recoverable: the `seasons_trading_within_window` CHECK would
+  // otherwise strand a commissioner with windows they had no way to move.
+  "trading_open_starts_on", "trading_open_ends_on",
+  "trading_close_starts_on", "trading_close_ends_on",
 ] as const;
 
 export type SeasonPatchInput = {
@@ -950,6 +985,25 @@ export async function updateSeason(
     return err(422, "Playoff start must fall inside the season window.");
   if (freeze && playoff && freeze > playoff)
     return err(422, "Roster freeze must be on or before the playoff start.");
+  // Trading windows against the EFFECTIVE window too. Without this, narrowing
+  // starts_on/ends_on under a stored window trips the seasons_trading_* CHECKs
+  // and surfaces as a bare "Update failed." instead of the actual reason.
+  const twEff: TradingWindows = {
+    openStarts: (eff("trading_open_starts_on") as string) || "",
+    openEnds: (eff("trading_open_ends_on") as string) || "",
+    closeStarts: (eff("trading_close_starts_on") as string) || "",
+    closeEnds: (eff("trading_close_ends_on") as string) || "",
+  };
+  if (startsOn && endsOn) {
+    const twCheck = validateTradingWindows(twEff, startsOn, endsOn);
+    const problem = Object.values(twCheck.fields)[0] ?? twCheck.general[0];
+    if (problem)
+      return err(
+        422,
+        `Trading windows: ${problem} Adjust the trading windows in the same edit, or widen the season.`
+      );
+  }
+
   if (freeze && startsOn && endsOn) {
     const dayCount = seasonDayCount(startsOn, endsOn);
     if (dayCount != null) {

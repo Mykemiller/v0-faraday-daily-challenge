@@ -10,6 +10,10 @@ import {
   configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
   diffConfigs, promoteIntent, countOverCap, THEATERS,
   derivedFreeAgency, findOverlappingSeason,
+  seedTradingWindows, validateTradingWindows, tradingWindowsFit, leagueWindowDefaults,
+  mergeTradingWindows,
+  seasonDayRangeLabel, dayOfSeason, isoAddDays, isoDiffDays, TOO_SHORT_MESSAGE,
+  TRADING_OPEN_DEFAULT_DAYS, TRADING_CLOSE_DEFAULT_DAYS,
 } from "./season-config-logic.ts";
 
 // ── editability ──────────────────────────────────────────────────────────────
@@ -356,4 +360,178 @@ test("countOverCap counts subscribers over a proposed cap without touching rows"
   assert.deepEqual(countOverCap(memberships, 2), { over: 1, worst: 3 });
   assert.deepEqual(countOverCap(memberships, 3), { over: 0, worst: 3 });
   assert.deepEqual(countOverCap([], 1), { over: 0, worst: 0 });
+});
+
+// ── trading windows ──────────────────────────────────────────────────────────
+
+const D = { openDays: TRADING_OPEN_DEFAULT_DAYS, closeDays: TRADING_CLOSE_DEFAULT_DAYS };
+
+test("league defaults fall back to 7/7 and reject junk", () => {
+  assert.deepEqual(leagueWindowDefaults(null), { openDays: 7, closeDays: 7 });
+  assert.deepEqual(leagueWindowDefaults({ default_trading_open_days: 10, default_trading_close_days: 3 }),
+    { openDays: 10, closeDays: 3 });
+  // nulls and negatives fall back rather than producing a backwards window
+  assert.deepEqual(leagueWindowDefaults({ default_trading_open_days: null, default_trading_close_days: -4 }),
+    { openDays: 7, closeDays: 7 });
+  assert.deepEqual(leagueWindowDefaults({ default_trading_open_days: 0, default_trading_close_days: 0 }),
+    { openDays: 0, closeDays: 0 });
+});
+
+test("seeding reproduces the legacy timeline's ±7 bars exactly", () => {
+  // The pre-migration timeline drew addDays(start,7) and addDays(end,-7).
+  const { windows, tooShort } = seedTradingWindows("2026-01-01", "2026-03-31", D);
+  assert.equal(windows.openStarts, "2026-01-01");
+  assert.equal(windows.openEnds, "2026-01-08");
+  assert.equal(windows.closeStarts, "2026-03-24");
+  assert.equal(windows.closeEnds, "2026-03-31");
+  assert.equal(tooShort, false);
+});
+
+test("seeding honours non-default league lengths", () => {
+  const { windows } = seedTradingWindows("2026-01-01", "2026-03-31", { openDays: 3, closeDays: 10 });
+  assert.equal(windows.openEnds, "2026-01-04");
+  assert.equal(windows.closeStarts, "2026-03-21");
+});
+
+test("seeding is inert on an unset or backwards season window", () => {
+  assert.deepEqual(seedTradingWindows("", "", D).windows,
+    { openStarts: "", openEnds: "", closeStarts: "", closeEnds: "" });
+  assert.deepEqual(seedTradingWindows("2026-03-31", "2026-01-01", D).windows,
+    { openStarts: "", openEnds: "", closeStarts: "", closeEnds: "" });
+});
+
+test("a too-short season clamps the tail to ends_on and flags it", () => {
+  // 10 days cannot hold 7 + 7.
+  const { windows, tooShort } = seedTradingWindows("2026-01-01", "2026-01-10", D);
+  assert.equal(tooShort, true);
+  assert.equal(windows.openStarts, "2026-01-01");
+  assert.equal(windows.openEnds, "2026-01-08");
+  // the closing window takes the remainder, tail pinned to ends_on
+  assert.equal(windows.closeStarts, "2026-01-08");
+  assert.equal(windows.closeEnds, "2026-01-10");
+  // and what it produced is still valid against the CHECK constraints
+  const v = validateTradingWindows(windows, "2026-01-01", "2026-01-10");
+  assert.deepEqual(v.fields, {});
+});
+
+test("the closing window collapses rather than emitting a zero-length range", () => {
+  // 5-day season, 7-day opening default: the head clamps to ends_on and there
+  // is nothing left for the closing window. A zero-length range would violate
+  // seasons_trading_close_ordered.
+  const { windows, tooShort } = seedTradingWindows("2026-01-01", "2026-01-05", D);
+  assert.equal(tooShort, true);
+  assert.equal(windows.openEnds, "2026-01-05");
+  assert.equal(windows.closeStarts, "");
+  assert.equal(windows.closeEnds, "");
+  assert.deepEqual(validateTradingWindows(windows, "2026-01-01", "2026-01-05").fields, {});
+});
+
+test("tradingWindowsFit agrees with the seeder's tooShort", () => {
+  assert.equal(tradingWindowsFit("2026-01-01", "2026-03-31", D), true);
+  assert.equal(tradingWindowsFit("2026-01-01", "2026-01-10", D), false);
+  // exactly 14 days apart fits: the windows touch but do not overlap
+  assert.equal(tradingWindowsFit("2026-01-01", "2026-01-15", D), true);
+});
+
+test("validation catches every window rule", () => {
+  const base = { openStarts: "2026-01-01", openEnds: "2026-01-08", closeStarts: "2026-03-24", closeEnds: "2026-03-31" };
+  assert.deepEqual(validateTradingWindows(base, "2026-01-01", "2026-03-31").fields, {});
+
+  // outside the season
+  const outside = validateTradingWindows({ ...base, closeEnds: "2026-04-05" }, "2026-01-01", "2026-03-31");
+  assert.match(outside.fields.closeEnds ?? "", /outside the season/);
+
+  // backwards window
+  const backwards = validateTradingWindows({ ...base, openEnds: "2025-12-30" }, "2026-01-01", "2026-03-31");
+  assert.ok(backwards.fields.openEnds);
+
+  // overlapping windows
+  const overlap = validateTradingWindows({ ...base, closeStarts: "2026-01-04" }, "2026-01-01", "2026-03-31");
+  assert.match(overlap.fields.closeStarts ?? "", /cannot start before/);
+
+  // half a window
+  const half = validateTradingWindows({ ...base, closeEnds: "" }, "2026-01-01", "2026-03-31");
+  assert.match(half.fields.closeEnds ?? "", /Both ends/);
+});
+
+test("validation asks for the season window before anything else", () => {
+  const v = validateTradingWindows(
+    { openStarts: "2026-01-01", openEnds: "2026-01-08", closeStarts: "", closeEnds: "" }, "", ""
+  );
+  assert.equal(v.general.length, 1);
+  assert.deepEqual(v.fields, {});
+});
+
+test("windows that touch exactly are legal", () => {
+  const touching = { openStarts: "2026-01-01", openEnds: "2026-01-08", closeStarts: "2026-01-08", closeEnds: "2026-01-15" };
+  assert.deepEqual(validateTradingWindows(touching, "2026-01-01", "2026-01-15").fields, {});
+});
+
+test("season day offsets are 1-based from starts_on", () => {
+  assert.equal(dayOfSeason("2026-01-01", "2026-01-01"), 1);
+  assert.equal(dayOfSeason("2026-01-08", "2026-01-01"), 8);
+  assert.equal(seasonDayRangeLabel("2026-01-01", "2026-01-08", "2026-01-01"), "Day 1–8 of season");
+  assert.equal(seasonDayRangeLabel("", "2026-01-08", "2026-01-01"), null);
+});
+
+test("iso date helpers survive a DST boundary", () => {
+  // US DST starts 2026-03-08; parsing at UTC noon keeps the day count honest.
+  assert.equal(isoAddDays("2026-03-07", 2), "2026-03-09");
+  assert.equal(isoDiffDays("2026-03-07", "2026-03-09"), 2);
+  assert.equal(isoAddDays("", 3), null);
+  assert.equal(isoDiffDays("2026-01-01", ""), null);
+});
+
+test("the too-short message is the spec's sentence verbatim", () => {
+  assert.equal(TOO_SHORT_MESSAGE,
+    "Season is too short for the league default windows — adjust dates or shorten windows.");
+});
+
+// ── re-anchoring (the wizard's seed/dirty/reset contract) ────────────────────
+
+test("untouched fields re-anchor when the season dates move; edited ones do not", () => {
+  const seedA = seedTradingWindows("2026-01-01", "2026-03-31", D).windows;
+  // commissioner edits ONLY the opening window's close date
+  const overrides = { openEnds: "2026-01-20" };
+  const before = mergeTradingWindows(seedA, overrides);
+  assert.equal(before.openStarts, "2026-01-01");
+  assert.equal(before.openEnds, "2026-01-20");
+  assert.equal(before.closeStarts, "2026-03-24");
+
+  // step 2 dates change → everything untouched follows, the edit survives
+  const seedB = seedTradingWindows("2026-02-01", "2026-04-30", D).windows;
+  const after = mergeTradingWindows(seedB, overrides);
+  assert.equal(after.openStarts, "2026-02-01", "untouched start re-anchored");
+  assert.equal(after.closeStarts, "2026-04-23", "untouched close re-anchored");
+  assert.equal(after.openEnds, "2026-01-20", "the edited field was NOT overwritten");
+});
+
+test("an edit that falls outside the new season window is flagged, not silently fixed", () => {
+  // This is the case the wizard shows a field error + Reset link for.
+  const overrides = { openEnds: "2026-01-20" };
+  const seedB = seedTradingWindows("2026-02-01", "2026-04-30", D).windows;
+  const merged = mergeTradingWindows(seedB, overrides);
+  const v = validateTradingWindows(merged, "2026-02-01", "2026-04-30");
+  assert.match(v.fields.openEnds ?? "", /outside the season/);
+});
+
+test("resetting a field restores the seeded value", () => {
+  const seedB = seedTradingWindows("2026-02-01", "2026-04-30", D).windows;
+  const overrides: Record<string, string> = { openEnds: "2026-01-20" };
+  delete overrides.openEnds; // the reset link
+  const merged = mergeTradingWindows(seedB, overrides);
+  assert.equal(merged.openEnds, "2026-02-08");
+  assert.deepEqual(validateTradingWindows(merged, "2026-02-01", "2026-04-30").fields, {});
+});
+
+test("clearing a field is an override, not an absence — it is never re-seeded over", () => {
+  // `?? ` (not `||`) is load-bearing: an intentionally emptied field must stay
+  // empty rather than snapping back to the league default on the next re-seed.
+  const seed = seedTradingWindows("2026-01-01", "2026-03-31", D).windows;
+  const merged = mergeTradingWindows(seed, { closeStarts: "", closeEnds: "" });
+  assert.equal(merged.closeStarts, "");
+  assert.equal(merged.closeEnds, "");
+  // and dropping just one end is the half-a-window error
+  const half = mergeTradingWindows(seed, { closeEnds: "" });
+  assert.match(validateTradingWindows(half, "2026-01-01", "2026-03-31").fields.closeEnds ?? "", /Both ends/);
 });

@@ -16,7 +16,8 @@
 import { q, type Svc } from "./service";
 import { type Season } from "./data";
 import {
-  configFingerprint, type ConfigState, type Finding,
+  configFingerprint, leagueWindowDefaults,
+  type ConfigState, type Finding, type LeagueWindowDefaults,
 } from "./season-config-logic";
 import {
   ASSIGNABLE_LIFECYCLE_STATES, type LifecycleState,
@@ -190,6 +191,30 @@ export const loadLeagues = (s: Svc) =>
     s,
     `leagues?archived_at=is.null&select=id,code,name&order=name.asc`
   );
+
+/** The league the New Season wizard creates into, with its default trading
+ *  window lengths. Resolved by `code`, never a hardcoded uuid — and it mirrors
+ *  `createSeason`, which also resolves INDEPENDENT until a league picker
+ *  exists. Falls back to the 7/7 constants when the row or the columns are
+ *  missing, so the wizard still seeds on a database that predates migration
+ *  20260907120000. */
+export async function getWizardLeagueDefaults(
+  s: Svc
+): Promise<{ name: string; defaults: LeagueWindowDefaults }> {
+  const rows = await q<{
+    name: string;
+    default_trading_open_days: number | null;
+    default_trading_close_days: number | null;
+  }>(
+    s,
+    `leagues?code=eq.INDEPENDENT&select=name,default_trading_open_days,default_trading_close_days&limit=1`
+  );
+  const row = rows?.[0];
+  return {
+    name: row?.name ?? "the league",
+    defaults: leagueWindowDefaults(row),
+  };
+}
 
 // ── RPC helper ───────────────────────────────────────────────────────────────
 
