@@ -178,3 +178,14 @@ BEGIN
 END $$;
 
 commit;
+
+-- ── APPLIED-STATE NOTE ───────────────────────────────────────────────────────
+-- Applied to prod 2026-09-08 as three ledger entries rather than two files:
+--   fa_trading_window_gate         — fn_season_move_window_open only
+--   fa_config_rules_predicate      — the default flip, the guarded backfill and
+--                                    fn_season_roster_move_block
+--   fa_config_rules_rpc_callers    — team_join / team_leave
+-- The team_join/team_leave bodies in THIS file were superseded by
+-- 20260908010000 before they ever ran, so prod skipped the intermediate
+-- version. Replaying both files on a fresh environment reaches the identical
+-- end state; only the number of intermediate steps differs.

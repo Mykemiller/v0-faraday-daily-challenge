@@ -31,9 +31,18 @@ begin;
 alter table public.season_config
   alter column allow_mid_season_team_switch set default true;
 
-update public.season_config
+-- LOCKED SEASONS ARE EXCLUDED. `fn_season_config_locked_guard` freezes config
+-- for any season with `locked_at` set, and it correctly rejected the first
+-- attempt at this backfill (55P03). Only `hot-summer-final-beta` is locked; it
+-- is CLOSED and has no effective config (v1 expired 2026-09-05, v2 is a draft),
+-- so leaving it false changes no behaviour. Reaching around a deliberate lock to
+-- rewrite frozen history would be worse than the inconsistency.
+update public.season_config c
    set allow_mid_season_team_switch = true
- where allow_mid_season_team_switch = false;
+  from public.seasons s
+ where s.id = c.season_id
+   and c.allow_mid_season_team_switch = false
+   and s.locked_at is null;
 
 -- ── the predicate ────────────────────────────────────────────────────────────
 -- Returns NULL when the write may proceed, else the wire error code. Returning
