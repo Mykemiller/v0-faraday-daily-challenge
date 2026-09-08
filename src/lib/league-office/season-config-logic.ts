@@ -467,7 +467,11 @@ export function dayOfSeason(date: string | null | undefined, startsOn: string | 
   return n === null ? null : n + 1;
 }
 
-/** e.g. "Day 1–8 of season". Returns null when either end is unset. */
+/** e.g. "Day 1–8 of season". Returns null when either end is unset, or when the
+ *  range does not describe real season days — a date BEFORE `starts_on` yields
+ *  a negative offset, which rendered as the nonsense "Day 1–-11 of season". A
+ *  window in that state already carries its own field-level error, so the right
+ *  move is to drop the label rather than print a broken one. */
 export function seasonDayRangeLabel(
   from: string | null | undefined,
   to: string | null | undefined,
@@ -476,6 +480,7 @@ export function seasonDayRangeLabel(
   const a = dayOfSeason(from, startsOn);
   const b = dayOfSeason(to, startsOn);
   if (a === null || b === null) return null;
+  if (a < 1 || b < 1 || b < a) return null;
   return `Day ${a}–${b} of season`;
 }
 

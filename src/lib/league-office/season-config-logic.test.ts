@@ -535,3 +535,15 @@ test("clearing a field is an override, not an absence — it is never re-seeded 
   const half = mergeTradingWindows(seed, { closeEnds: "" });
   assert.match(validateTradingWindows(half, "2026-01-01", "2026-03-31").fields.closeEnds ?? "", /Both ends/);
 });
+
+test("the day-range label is dropped rather than rendered nonsensically", () => {
+  // Regression: an override left behind by a later season start produced
+  // "Day 1–-11 of season" on the preview. The field's own error says what is
+  // wrong; the label must not invent a negative day.
+  assert.equal(seasonDayRangeLabel("2026-10-20", "2026-11-08", "2026-11-01"), null,
+    "a start before the season has no season-day");
+  assert.equal(seasonDayRangeLabel("2026-11-20", "2026-11-08", "2026-11-01"), null,
+    "a reversed range has no label");
+  // the ordinary case still renders
+  assert.equal(seasonDayRangeLabel("2026-11-01", "2026-11-08", "2026-11-01"), "Day 1–8 of season");
+});
