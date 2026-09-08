@@ -248,6 +248,36 @@ export function parseScoringPhase(raw: string | null | undefined): ScoringPhase 
 //   3. THE PLAYOFF FREEZE STILL WINS. `roster_freeze_on` is an absolute stop and
 //      is checked first — free agency does NOT reopen a frozen roster.
 
+/**
+ * The League Office knobs that govern roster writes, as resolved by
+ * `v_season_effective_config` — the ONE place "which config is in force right
+ * now" is decided (state active|scheduled, effective_from <= now < effective_to).
+ * A `draft` config is deliberately not effective, so a season whose only version
+ * is a draft yields all-nulls here.
+ *
+ * EVERY field is optional and null-permissive: a null means "not configured",
+ * and not-configured never blocks. That is what keeps the five seasons with no
+ * effective config — `testing` among them, live with 18 memberships — ungated.
+ */
+export type SeasonRules = {
+  /** false ⇒ free agency does NOT count as an open period. */
+  allow_free_agency?: boolean | null;
+  /** false ⇒ a FIRST join is refused once late-join has closed. */
+  allow_late_join?: boolean | null;
+  /** false ⇒ no moves at all, whatever the windows say. */
+  allow_mid_season_team_switch?: boolean | null;
+  /** Config-level roster lock. A softer sibling of `seasons.roster_freeze_on`:
+   *  same one-way effect, but versioned and set on the config, not the season. */
+  roster_lock_on?: string | null;
+  /** Anchors "late". Falls back to `starts_on` when unset (Myke, 2026-09-08). */
+  registration_closes_on?: string | null;
+};
+
+/** Treat a null/absent flag as permissive — see `SeasonRules`. */
+function allows(flag: boolean | null | undefined): boolean {
+  return flag !== false;
+}
+
 /** Does this season gate roster moves at all? False = fail open. */
 export function seasonGatesMoves(season: SeasonDates | null): boolean {
   if (!season) return false;
@@ -260,7 +290,7 @@ export function seasonGatesMoves(season: SeasonDates | null): boolean {
 /** The open periods for a gated season, in chronological order. Empty for a
  *  season that does not gate (callers should check `seasonGatesMoves` first —
  *  an empty list means "nothing is open", not "everything is"). */
-export function moveWindows(season: SeasonDates): DateWindow[] {
+export function moveWindows(season: SeasonDates, rules: SeasonRules = {}): DateWindow[] {
   const out: DateWindow[] = [];
   const push = (from: string | null | undefined, to: string | null | undefined) => {
     if (isDate(from) && isDate(to) && to >= from) out.push({ from, to });
@@ -271,8 +301,9 @@ export function moveWindows(season: SeasonDates): DateWindow[] {
   // Free agency: from the generated start through the season end. It is clamped
   // to `ends_on` because a roster move after the season is over is meaningless
   // — the season-detail timeline deliberately draws the FA band overhanging the
-  // end, but that is presentation, not permission.
-  push(season.free_agency_start, season.ends_on);
+  // end, but that is presentation, not permission. Suppressed entirely when the
+  // config turns free agency off.
+  if (allows(rules.allow_free_agency)) push(season.free_agency_start, season.ends_on);
 
   return out.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
 }
@@ -292,11 +323,15 @@ export type RosterMoveState = {
 };
 
 /** Where `today` sits relative to a season's roster-move periods. */
-export function rosterMoveState(season: SeasonDates, today: string): RosterMoveState {
+export function rosterMoveState(
+  season: SeasonDates,
+  today: string,
+  rules: SeasonRules = {}
+): RosterMoveState {
   if (!seasonGatesMoves(season)) {
     return { gated: false, open: true, currentWindow: null, nextWindow: null, windows: [] };
   }
-  const windows = moveWindows(season);
+  const windows = moveWindows(season, rules);
   const currentWindow = windows.find((w) => windowContains(w, today)) ?? null;
   const nextWindow = windows.find((w) => w.from > today) ?? null;
   return { gated: true, open: currentWindow != null, currentWindow, nextWindow, windows };
@@ -311,22 +346,84 @@ export const MOVE_WINDOW_CLOSED_CODE = "trading_window_closed";
 export const MOVE_WINDOW_CLOSED_MESSAGE =
   "Rosters are locked outside the trading windows.";
 
-/** The one place the "may this roster write proceed?" question is answered.
+/** Config-level roster lock (`season_config.roster_lock_on`). One-way like the
+ *  playoff freeze, but versioned — hence its own code and copy. */
+export const ROSTER_LOCKED_CODE = "roster_locked";
+export const ROSTER_LOCKED_MESSAGE = "Rosters are locked for this season.";
+
+/** `allow_mid_season_team_switch = false`. */
+export const SWITCHING_DISABLED_CODE = "switching_disabled";
+export const SWITCHING_DISABLED_MESSAGE =
+  "Team switching is turned off for this season.";
+
+/** `allow_late_join = false`, past the late-join deadline. */
+export const LATE_JOIN_CLOSED_CODE = "late_join_closed";
+export const LATE_JOIN_CLOSED_MESSAGE = "This season is closed to new players.";
+
+export type MoveBlockReason =
+  | "ok"
+  | "frozen"
+  | "locked"
+  | "switching_disabled"
+  | "late_join_closed"
+  | "window_closed";
+
+/** The date after which a FIRST join counts as "late". `registration_closes_on`
+ *  when the config sets one, else the season start (Myke, 2026-09-08). Null when
+ *  neither is a usable date, in which case nothing is ever late. */
+export function lateJoinDeadline(
+  season: SeasonDates,
+  rules: SeasonRules = {}
+): string | null {
+  if (isDate(rules.registration_closes_on)) return rules.registration_closes_on;
+  return isDate(season.starts_on) ? season.starts_on : null;
+}
+
+/**
+ * The one place the "may this roster write proceed?" question is answered.
  *
- *  `isFirstJoin` must be true only when the player currently holds NO team in
- *  this season AND the write adds one. Leaving is never a first join. */
+ * Precedence, strictest first — order is the whole contract:
+ *
+ *   1. `seasons.roster_freeze_on`      playoff freeze, absolute
+ *   2. `season_config.roster_lock_on`  config lock, absolute
+ *   3. first join?  → `allow_late_join` decides, and nothing else applies
+ *   4. `allow_mid_season_team_switch`  a hard off-switch for moves
+ *   5. the trading windows             (free agency included per `allow_free_agency`)
+ *
+ * `isFirstJoin` must be true only when the player currently holds NO team in
+ * this season AND the write adds one. Leaving is never a first join.
+ */
 export function canMoveRoster(
   season: SeasonDates,
   today: string,
-  opts: { isFirstJoin?: boolean } = {}
-): { allowed: boolean; reason: "ok" | "frozen" | "window_closed"; state: RosterMoveState } {
-  const state = rosterMoveState(season, today);
-  // The playoff freeze is absolute and is checked BEFORE the windows, so an
-  // open free-agency period can never thaw a frozen roster.
-  if (isRosterFrozen(season, today)) return { allowed: false, reason: "frozen", state };
+  opts: { isFirstJoin?: boolean; rules?: SeasonRules } = {}
+): { allowed: boolean; reason: MoveBlockReason; state: RosterMoveState } {
+  const rules = opts.rules ?? {};
+  const state = rosterMoveState(season, today, rules);
+  const no = (reason: MoveBlockReason) => ({ allowed: false, reason, state });
+
+  // 1. The playoff freeze is absolute and is checked BEFORE everything, so an
+  //    open free-agency period can never thaw a frozen roster.
+  if (isRosterFrozen(season, today)) return no("frozen");
+
+  // 2. The config-level lock behaves the same way, one version down.
+  if (isDate(rules.roster_lock_on) && today >= rules.roster_lock_on) return no("locked");
+
+  // 3. A first join answers to `allow_late_join` alone. It is deliberately NOT
+  //    subject to the windows or the switch flag: joining your first team is
+  //    onboarding, not trading.
+  if (opts.isFirstJoin) {
+    if (allows(rules.allow_late_join)) return { allowed: true, reason: "ok", state };
+    const deadline = lateJoinDeadline(season, rules);
+    return deadline && today > deadline
+      ? no("late_join_closed")
+      : { allowed: true, reason: "ok", state };
+  }
+
+  // 4. A hard off-switch for moves, independent of any window.
+  if (!allows(rules.allow_mid_season_team_switch)) return no("switching_disabled");
+
+  // 5. Finally the windows. An ungated season (no stored windows) is open.
   if (!state.gated) return { allowed: true, reason: "ok", state };
-  if (opts.isFirstJoin) return { allowed: true, reason: "ok", state };
-  return state.open
-    ? { allowed: true, reason: "ok", state }
-    : { allowed: false, reason: "window_closed", state };
+  return state.open ? { allowed: true, reason: "ok", state } : no("window_closed");
 }

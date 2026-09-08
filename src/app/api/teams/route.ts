@@ -11,7 +11,7 @@
 // NOT cover this route: the guards below are the matching fence, using the same
 // predicate from the same pure module. Add a guard to any NEW write path here.
 
-import { rosterMoveGuard } from '@/lib/league-playoffs/server';
+import { fetchSeasonRules, rosterMoveGuard } from '@/lib/league-playoffs/server';
 import { SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
 
 const SUPABASE_URL =
@@ -154,10 +154,15 @@ export async function POST(request: Request) {
     }
     if (curRows.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
 
-    // Playoff freeze + trading windows, in that precedence. A player holding no
-    // team yet is joining for the first time and is exempt from the windows —
-    // an invite should never be dead on arrival for a newcomer.
-    const blocked = rosterMoveGuard(season, { isFirstJoin: curRows.length === 0 });
+    // Freeze → config lock → late-join / switch flags → windows, in that
+    // precedence (see canMoveRoster). A player holding no team yet is joining
+    // for the first time, so `allow_late_join` is what governs them — an invite
+    // should never be dead on arrival for a newcomer the season still wants.
+    const inviteRules = await fetchSeasonRules(h, season.id);
+    const blocked = rosterMoveGuard(season, {
+      isFirstJoin: curRows.length === 0,
+      rules: inviteRules,
+    });
     if (blocked) return blocked;
 
     const insR = await fetch(`${SUPABASE_URL}/rest/v1/team_memberships`, {
@@ -201,6 +206,10 @@ export async function POST(request: Request) {
   const heldRows: Array<{ team_id: string }> = heldR.ok ? await heldR.json().catch(() => []) : [];
   const heldTeamIds = Array.from(new Set(heldRows.map(r => r.team_id)));
 
+  // The League Office knobs in force right now. Resolved once and passed to
+  // every guard below so two writes in one request cannot see different rules.
+  const rules = await fetchSeasonRules(h, seasonId);
+
   // Playoff freeze THEN trading windows — covers BOTH remaining actions below
   // (`create`, which self-joins the new team, and the default membership upsert,
   // which is how a player joins AND leaves from the pickers). Placed once here
@@ -214,6 +223,7 @@ export async function POST(request: Request) {
   if (action !== 'upsert') {
     const frozenGuard = rosterMoveGuard(season, {
       isFirstJoin: heldTeamIds.length === 0 && action === 'create',
+      rules,
     });
     if (frozenGuard) return frozenGuard;
   }
@@ -351,6 +361,7 @@ export async function POST(request: Request) {
   if (toRemove.length > 0 || toAdd.length > 0) {
     const moveBlocked = rosterMoveGuard(season, {
       isFirstJoin: currentTeamIds.length === 0 && toRemove.length === 0,
+      rules,
     });
     if (moveBlocked) return moveBlocked;
   }

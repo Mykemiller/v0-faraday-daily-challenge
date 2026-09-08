@@ -2,7 +2,11 @@ import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import DcStubPage from "@/components/DcStubPage";
-import { fetchActiveSeason, type PlayoffSeason } from "@/lib/league-playoffs/server";
+import {
+  fetchActiveSeason,
+  fetchSeasonRules,
+  type PlayoffSeason,
+} from "@/lib/league-playoffs/server";
 import {
   isRosterFrozen,
   moveWindows,
@@ -50,7 +54,11 @@ function windowLabel(w: DateWindow, season: PlayoffSeason): string {
 export default async function FreeAgencyPage() {
   const h = svcHeaders();
   const season = h ? await fetchActiveSeason(h) : null;
-  const state = season ? rosterMoveState(season, seasonToday(season.tz)) : null;
+  // The League Office knobs in force now — free agency can be switched off, and
+  // the roster lock can shut everything, so the page must read them or it would
+  // advertise a window the API will refuse.
+  const rules = season && h ? await fetchSeasonRules(h, season.id) : {};
+  const state = season ? rosterMoveState(season, seasonToday(season.tz), rules) : null;
 
   // Not gated (or unknowable) → the honest stub, unchanged.
   if (!season || !state?.gated) {
@@ -70,8 +78,11 @@ export default async function FreeAgencyPage() {
 
   const today = seasonToday(season.tz);
   const frozen = isRosterFrozen(season, today);
-  const windows = moveWindows(season);
-  const open = state.open && !frozen;
+  const locked = !!rules.roster_lock_on && today >= rules.roster_lock_on;
+  const switchingOff = rules.allow_mid_season_team_switch === false;
+  const windows = moveWindows(season, rules);
+  const shut = frozen || locked || switchingOff;
+  const open = state.open && !shut;
 
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
@@ -82,7 +93,15 @@ export default async function FreeAgencyPage() {
             open ? "bg-forest/15 text-forest" : "bg-gold/20 text-amber-dark"
           }`}
         >
-          {frozen ? "Rosters frozen" : open ? "Open now" : "Closed"}
+          {frozen
+            ? "Rosters frozen"
+            : locked
+              ? "Rosters locked"
+              : switchingOff
+                ? "Switching off"
+                : open
+                  ? "Open now"
+                  : "Closed"}
         </span>
 
         <h1 className="mt-4 font-serif text-3xl font-bold text-forest">Free Agency</h1>
@@ -90,12 +109,16 @@ export default async function FreeAgencyPage() {
         <p className="mt-3 max-w-[52ch] text-[15px] leading-relaxed text-near-black/70">
           {frozen
             ? "Rosters are frozen for the playoffs. No moves for the rest of the season — free agency does not reopen them."
-            : open
-              ? "You can move between teams right now, without losing your season score."
-              : "Rosters are locked outside the trading windows. Your season score is unaffected while you wait."}
+            : locked
+              ? "Rosters are locked for this season. No further moves."
+              : switchingOff
+                ? "Team switching is turned off for this season. You can still join your first team."
+                : open
+                  ? "You can move between teams right now, without losing your season score."
+                  : "Rosters are locked outside the trading windows. Your season score is unaffected while you wait."}
         </p>
 
-        {!open && !frozen && state.nextWindow ? (
+        {!open && !shut && state.nextWindow ? (
           <p className="mt-3 font-mono text-[13px] text-forest">
             Next window opens {fmt(state.nextWindow.from)}.
           </p>
@@ -107,15 +130,13 @@ export default async function FreeAgencyPage() {
           </div>
           <ul className="mt-3 space-y-2">
             {windows.map((w) => {
-              const isNow = today >= w.from && today <= w.to;
+              const isNow = today >= w.from && today <= w.to && !shut;
               const isPast = today > w.to;
               return (
                 <li
                   key={`${w.from}-${w.to}`}
                   className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded border px-3 py-2 text-[14px] ${
-                    isNow && !frozen
-                      ? "border-forest/40 bg-forest/5"
-                      : "border-near-black/10 bg-white"
+                    isNow ? "border-forest/40 bg-forest/5" : "border-near-black/10 bg-white"
                   } ${isPast ? "opacity-55" : ""}`}
                 >
                   <span className="font-semibold text-near-black/85">
@@ -124,7 +145,7 @@ export default async function FreeAgencyPage() {
                   <span className="font-mono text-[12.5px] text-near-black/60">
                     {fmt(w.from)} – {fmt(w.to)}
                   </span>
-                  {isNow && !frozen ? (
+                  {isNow ? (
                     <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest">
                       open
                     </span>

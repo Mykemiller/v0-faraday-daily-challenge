@@ -19,6 +19,7 @@
 
 import { parseScoringPhase } from '@/lib/league-playoffs/phase';
 import {
+  fetchSeasonRules,
   isDbMoveWindowError,
   isDbRosterFrozenError,
   rosterFreezeGuard,
@@ -379,7 +380,8 @@ export async function POST(
     // (migrations 20260802120000 and 20260908000000) — checking here first
     // turns a raw PostgREST 500 into the same {error:…} shape the other player
     // routes return. Leaving is never a first join, so no exemption applies.
-    const frozen = rosterMoveGuard(season);
+    const leaveRules = await fetchSeasonRules(h, season.id);
+    const frozen = rosterMoveGuard(season, { rules: leaveRules });
     if (frozen) return frozen;
     // Reuse the canonical team_leave RPC: season-scoped delete + captaincy roll +
     // last-member team cleanup (company-with-children preserved). Preserves the
@@ -401,7 +403,7 @@ export async function POST(
       // Same race for the trading windows: a window can close between the guard
       // above and this call (a midnight boundary in the season's own zone).
       if (isDbMoveWindowError(err)) {
-        return rosterMoveGuard(season) ??
+        return rosterMoveGuard(season, { rules: leaveRules }) ??
           Response.json({ error: MOVE_WINDOW_CLOSED_CODE }, { status: 403 });
       }
       console.error('team leave failed', err);

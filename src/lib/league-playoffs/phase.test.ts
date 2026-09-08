@@ -20,8 +20,10 @@ import {
   moveWindows,
   rosterMoveState,
   seasonGatesMoves,
+  lateJoinDeadline,
   MOVE_WINDOW_CLOSED_CODE,
   type SeasonDates,
+  type SeasonRules,
 } from "./phase.ts";
 
 // The real Hot summer Final Beta row (the only season carrying playoff dates).
@@ -368,4 +370,130 @@ test("the closed code is distinct from the frozen code", () => {
 test("a move before the season opens is closed, not crashed", () => {
   assert.equal(canMoveRoster(gated, "2026-09-01").allowed, false);
   assert.equal(canMoveRoster(gated, "2026-09-01").reason, "window_closed");
+});
+
+// ── League Office config flags (CC-LO-FA-CONFIG-1.0) ─────────────────────────
+
+/** What five of the six live seasons resolve to: no effective config at all,
+ *  because their only version is a `draft`. Every field null-permissive. */
+const noRules: SeasonRules = {};
+
+test("no effective config leaves a season completely ungated", () => {
+  // This is the `testing` case — active today with 18 memberships.
+  assert.equal(canMoveRoster(ungated, "2026-09-15", { rules: noRules }).allowed, true);
+  // and even a gated season falls back to windows only
+  assert.equal(canMoveRoster(gated, "2026-10-05", { rules: noRules }).allowed, true);
+  assert.equal(canMoveRoster(gated, "2026-11-15", { rules: noRules }).reason, "window_closed");
+});
+
+test("null flags are permissive, false flags are not", () => {
+  // A null must never be read as "off" — that is what keeps unconfigured
+  // seasons working.
+  assert.equal(
+    canMoveRoster(gated, "2026-10-05", { rules: { allow_mid_season_team_switch: null } }).allowed,
+    true
+  );
+  assert.equal(
+    canMoveRoster(gated, "2026-10-05", { rules: { allow_mid_season_team_switch: false } }).reason,
+    "switching_disabled"
+  );
+});
+
+test("allow_mid_season_team_switch=false blocks moves even inside a window", () => {
+  const r: SeasonRules = { allow_mid_season_team_switch: false };
+  assert.equal(canMoveRoster(gated, "2026-10-05", { rules: r }).reason, "switching_disabled");
+  // ...but a FIRST join is onboarding, not trading, and still goes through
+  assert.equal(
+    canMoveRoster(gated, "2026-10-05", { isFirstJoin: true, rules: r }).allowed,
+    true
+  );
+});
+
+test("allow_free_agency=false removes free agency as an open period", () => {
+  const on = canMoveRoster(gated, "2026-12-29", { rules: { allow_free_agency: true } });
+  assert.equal(on.allowed, true);
+  // Dec 29 is inside FA but also inside the closing window (Dec 24–31), so use
+  // a season whose FA does NOT overlap the closing window to isolate the flag.
+  const faOnly: SeasonDates = {
+    ...gated, trading_close_starts_on: null, trading_close_ends_on: null,
+  };
+  assert.equal(canMoveRoster(faOnly, "2026-12-29", {}).allowed, true, "FA opens it by default");
+  assert.equal(
+    canMoveRoster(faOnly, "2026-12-29", { rules: { allow_free_agency: false } }).reason,
+    "window_closed",
+    "with FA off there is no open period left"
+  );
+});
+
+test("config roster_lock_on is absolute, like the playoff freeze", () => {
+  const r: SeasonRules = { roster_lock_on: "2026-10-04" };
+  // inside the opening window, but past the config lock
+  assert.equal(canMoveRoster(gated, "2026-10-05", { rules: r }).reason, "locked");
+  // a first join cannot get past it either
+  assert.equal(
+    canMoveRoster(gated, "2026-10-05", { isFirstJoin: true, rules: r }).allowed,
+    false
+  );
+  // and the day before the lock is still fine
+  assert.equal(canMoveRoster(gated, "2026-10-03", { rules: r }).allowed, true);
+});
+
+test("the playoff freeze outranks the config lock", () => {
+  const frozen: SeasonDates = { ...gated, roster_freeze_on: "2026-10-02" };
+  const verdict = canMoveRoster(frozen, "2026-10-05", {
+    rules: { roster_lock_on: "2026-10-04" },
+  });
+  assert.equal(verdict.reason, "frozen", "freeze is reported, not the config lock");
+});
+
+test("allow_late_join=false closes first joins after the deadline", () => {
+  const r: SeasonRules = { allow_late_join: false };
+  // deadline falls back to starts_on when no registration date is set
+  assert.equal(lateJoinDeadline(gated, r), "2026-10-01");
+  assert.equal(canMoveRoster(gated, "2026-10-01", { isFirstJoin: true, rules: r }).allowed, true);
+  assert.equal(
+    canMoveRoster(gated, "2026-10-02", { isFirstJoin: true, rules: r }).reason,
+    "late_join_closed"
+  );
+});
+
+test("registration_closes_on anchors 'late' when the config sets one", () => {
+  const r: SeasonRules = { allow_late_join: false, registration_closes_on: "2026-10-20" };
+  assert.equal(lateJoinDeadline(gated, r), "2026-10-20");
+  // a newcomer on Oct 15 is inside registration even though the season started
+  assert.equal(canMoveRoster(gated, "2026-10-15", { isFirstJoin: true, rules: r }).allowed, true);
+  assert.equal(
+    canMoveRoster(gated, "2026-10-21", { isFirstJoin: true, rules: r }).reason,
+    "late_join_closed"
+  );
+});
+
+test("allow_late_join governs first joins ONLY — it never blocks a move", () => {
+  const r: SeasonRules = { allow_late_join: false };
+  // an existing player moving inside a window is unaffected by the late-join flag
+  assert.equal(canMoveRoster(gated, "2026-10-05", { rules: r }).allowed, true);
+});
+
+test("full precedence order holds when every rule fires at once", () => {
+  const season: SeasonDates = { ...gated, roster_freeze_on: "2026-10-02" };
+  const rules: SeasonRules = {
+    roster_lock_on: "2026-10-03",
+    allow_mid_season_team_switch: false,
+    allow_late_join: false,
+    allow_free_agency: false,
+  };
+  // strictest wins, and it is the playoff freeze
+  assert.equal(canMoveRoster(season, "2026-10-05", { rules }).reason, "frozen");
+  // drop the freeze → the config lock is next
+  assert.equal(
+    canMoveRoster({ ...season, roster_freeze_on: null }, "2026-10-05", { rules }).reason,
+    "locked"
+  );
+  // drop the lock → switching flag
+  assert.equal(
+    canMoveRoster({ ...season, roster_freeze_on: null }, "2026-10-05", {
+      rules: { ...rules, roster_lock_on: null },
+    }).reason,
+    "switching_disabled"
+  );
 });
