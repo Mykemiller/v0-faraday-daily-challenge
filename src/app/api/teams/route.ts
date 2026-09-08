@@ -11,7 +11,7 @@
 // NOT cover this route: the guards below are the matching fence, using the same
 // predicate from the same pure module. Add a guard to any NEW write path here.
 
-import { rosterFreezeGuard } from '@/lib/league-playoffs/server';
+import { rosterMoveGuard } from '@/lib/league-playoffs/server';
 import { SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
 
 const SUPABASE_URL =
@@ -130,11 +130,9 @@ export async function POST(request: Request) {
     if (season.locked_at && new Date() > new Date(season.locked_at)) {
       return Response.json({ error: 'season_locked' }, { status: 403 });
     }
-    // Joining by invite link is a roster change — frozen once the playoffs field
-    // is set. Independent of the lock check above: a season can be frozen and
-    // unlocked, or locked and unfrozen.
-    const frozen = rosterFreezeGuard(season);
-    if (frozen) return frozen;
+    // NOTE: the roster guard is deliberately NOT here. It needs to know whether
+    // this is the player's FIRST team this season (which is always allowed), and
+    // that is only known after the membership fetch below.
 
     // Resolve the team by its invite token
     const teamR = await fetch(
@@ -155,6 +153,12 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, team_id: team.id, team_name: team.name, already_member: true });
     }
     if (curRows.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
+
+    // Playoff freeze + trading windows, in that precedence. A player holding no
+    // team yet is joining for the first time and is exempt from the windows —
+    // an invite should never be dead on arrival for a newcomer.
+    const blocked = rosterMoveGuard(season, { isFirstJoin: curRows.length === 0 });
+    if (blocked) return blocked;
 
     const insR = await fetch(`${SUPABASE_URL}/rest/v1/team_memberships`, {
       method: 'POST',
@@ -187,12 +191,32 @@ export async function POST(request: Request) {
   const isLocked = season.locked_at && new Date() > new Date(season.locked_at);
   if (isLocked) return Response.json({ error: 'season_locked' }, { status: 403 });
 
-  // Playoff roster freeze — covers BOTH remaining actions below (`create`, which
-  // self-joins the new team, and the default membership upsert, which is how a
-  // player joins AND leaves from the pickers). Placed once here so neither path
-  // can be added to later without inheriting the guard.
-  const frozenGuard = rosterFreezeGuard(season);
-  if (frozenGuard) return frozenGuard;
+  // The player's current membership set, read ONCE here because both remaining
+  // actions need it: `create` (to check the cap and whether this is a first
+  // join) and the upsert (to diff desired against current).
+  const heldR = await fetch(
+    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id`,
+    { headers: h, cache: 'no-store' }
+  );
+  const heldRows: Array<{ team_id: string }> = heldR.ok ? await heldR.json().catch(() => []) : [];
+  const heldTeamIds = Array.from(new Set(heldRows.map(r => r.team_id)));
+
+  // Playoff freeze THEN trading windows — covers BOTH remaining actions below
+  // (`create`, which self-joins the new team, and the default membership upsert,
+  // which is how a player joins AND leaves from the pickers). Placed once here
+  // so neither path can be added to later without inheriting the guard.
+  //
+  // `create` is a first join only when the player holds nothing yet. The UPSERT
+  // is the one exception to "guard once here": its exemption depends on the
+  // diff (a no-op save must never 403, and a first join through the picker is
+  // allowed), so it re-guards itself immediately after computing that diff.
+  // Every other action — now and later — is gated here.
+  if (action !== 'upsert') {
+    const frozenGuard = rosterMoveGuard(season, {
+      isFirstJoin: heldTeamIds.length === 0 && action === 'create',
+    });
+    if (frozenGuard) return frozenGuard;
+  }
   // Joins are immediate — the Free Agency deferral (pending) has been retired.
   // Players may hold up to 5 teams and edits take effect right away.
   const pending = false;
@@ -312,15 +336,24 @@ export async function POST(request: Request) {
     )
   ).slice(0, 5);
 
-  const curR = await fetch(
-    `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id`,
-    { headers: h, cache: 'no-store' }
-  );
-  const curRows: Array<{ team_id: string }> = curR.ok ? await curR.json().catch(() => []) : [];
-  const currentTeamIds = Array.from(new Set(curRows.map(r => r.team_id)));
+  // Reuses the set fetched above — one read, not two.
+  const currentTeamIds = heldTeamIds;
 
   const toRemove = currentTeamIds.filter(tid => !desired.includes(tid));
   const toAdd = desired.filter(tid => !currentTeamIds.includes(tid));
+
+  // Playoff freeze THEN trading windows, on the DIFF:
+  //   - a no-op save (nothing added, nothing removed) is never blocked — the
+  //     picker posts the full desired set on every save, so a player merely
+  //     re-confirming their roster outside a window must not get a 403;
+  //   - holding nothing and only adding is a FIRST JOIN and is exempt;
+  //   - anything else — adding a second team, or leaving one — is a move.
+  if (toRemove.length > 0 || toAdd.length > 0) {
+    const moveBlocked = rosterMoveGuard(season, {
+      isFirstJoin: currentTeamIds.length === 0 && toRemove.length === 0,
+    });
+    if (moveBlocked) return moveBlocked;
+  }
 
   // Remove dropped teams — every row for that team, regardless of pending.
   if (toRemove.length > 0) {

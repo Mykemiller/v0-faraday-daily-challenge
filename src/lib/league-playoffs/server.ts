@@ -11,8 +11,11 @@
 // is not a table trigger.
 
 import {
+  MOVE_WINDOW_CLOSED_CODE,
+  MOVE_WINDOW_CLOSED_MESSAGE,
   ROSTER_FROZEN_CODE,
   ROSTER_FROZEN_MESSAGE,
+  canMoveRoster,
   playoffStatus,
   rosterFreezeState,
   seasonToday,
@@ -26,7 +29,12 @@ const SUPABASE_URL =
 /** Columns every playoff-aware caller needs. Kept in one place so a route can
  *  never half-select and silently lose the freeze date (which would fail open). */
 export const SEASON_PLAYOFF_COLUMNS =
-  "id,name,starts_on,ends_on,locked_at,tz,playoff_starts_on,roster_freeze_on";
+  "id,name,starts_on,ends_on,locked_at,tz,playoff_starts_on,roster_freeze_on," +
+  // Trading windows + the generated FA start. Selected here rather than at each
+  // call site for the same reason the freeze date is: a route that half-selects
+  // would fail OPEN and silently stop gating moves.
+  "trading_open_starts_on,trading_open_ends_on," +
+  "trading_close_starts_on,trading_close_ends_on,free_agency_start";
 
 export type PlayoffSeason = SeasonDates & {
   id: string;
@@ -116,4 +124,53 @@ export function isDbRosterFrozenError(body: string): boolean {
   return body.includes("FRZ01") || body.includes(ROSTER_FROZEN_CODE);
 }
 
-export { ROSTER_FROZEN_CODE, ROSTER_FROZEN_MESSAGE };
+/** True when a PostgREST error body is the DB-side trading-window rejection. */
+export function isDbMoveWindowError(body: string): boolean {
+  return body.includes("TWC01") || body.includes(MOVE_WINDOW_CLOSED_CODE);
+}
+
+/**
+ * The guard for roster MOVES (CC-LO-FA-WINDOWS-1.0). Supersedes a bare
+ * `rosterFreezeGuard` call on any route that writes memberships: it checks the
+ * playoff freeze FIRST and then the trading windows, so one call covers both
+ * and their precedence can never be got wrong at a call site.
+ *
+ * `isFirstJoin` must be true only when the player currently holds no team in
+ * this season and the write adds one — onboarding is never gated. Leaving is
+ * never a first join.
+ *
+ * Returns a ready-to-return 403, or null when the write may proceed.
+ */
+export function rosterMoveGuard(
+  season: SeasonDates | null,
+  opts: { isFirstJoin?: boolean } = {}
+): Response | null {
+  if (!season) return null;
+  const verdict = canMoveRoster(season, todayFor(season), opts);
+  if (verdict.allowed) return null;
+
+  if (verdict.reason === "frozen") {
+    // Delegate so the frozen payload stays byte-identical to the old guard.
+    return rosterFreezeGuard(season);
+  }
+
+  const next = verdict.state.nextWindow;
+  return Response.json(
+    {
+      error: MOVE_WINDOW_CLOSED_CODE,
+      message: next
+        ? `${MOVE_WINDOW_CLOSED_MESSAGE} The next window opens ${next.from}.`
+        : MOVE_WINDOW_CLOSED_MESSAGE,
+      next_window: next,
+      windows: verdict.state.windows,
+    },
+    { status: 403 }
+  );
+}
+
+export {
+  ROSTER_FROZEN_CODE,
+  ROSTER_FROZEN_MESSAGE,
+  MOVE_WINDOW_CLOSED_CODE,
+  MOVE_WINDOW_CLOSED_MESSAGE,
+};

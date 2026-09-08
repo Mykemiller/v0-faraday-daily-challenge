@@ -26,6 +26,16 @@ export type SeasonDates = {
   roster_freeze_on: string | null;
   /** IANA zone from `seasons.tz`. Defaults to the DC serve zone. */
   tz?: string | null;
+  /** Trading windows (CC-LO-TRADING-WINDOWS-1.0). Both ends of a window are
+   *  present together or not at all — the `seasons_trading_*_paired` CHECKs
+   *  guarantee it. NULL on every season created before 2026-09-07. */
+  trading_open_starts_on?: string | null;
+  trading_open_ends_on?: string | null;
+  trading_close_starts_on?: string | null;
+  trading_close_ends_on?: string | null;
+  /** GENERATED ALWAYS as `ends_on - 3`. Free agency runs from here to the end
+   *  of the season and counts as a third open period (Myke, 2026-09-08). */
+  free_agency_start?: string | null;
 };
 
 /** Where "now" sits relative to the season window. */
@@ -219,4 +229,104 @@ export function playoffStatus(season: SeasonDates, today: string): PlayoffStatus
  *  behavior rather than an error or an empty board. */
 export function parseScoringPhase(raw: string | null | undefined): ScoringPhase {
   return raw === "playoff" || raw === "regular" ? raw : "full";
+}
+
+// ── roster move windows (CC-LO-FA-WINDOWS-1.0) ───────────────────────────────
+//
+// A season may declare two trading windows. When it does, a roster MOVE is only
+// legal inside one of three open periods: the opening window, the closing
+// window, or free agency (`free_agency_start` … `ends_on`).
+//
+// Three rules make this safe to ship on a live estate:
+//
+//   1. FAIL OPEN. A season with no stored windows is not using the feature, so
+//      it is never gated. Every season created before 2026-09-07 has NULLs —
+//      including `testing`, which is active right now with 18 memberships.
+//   2. A FIRST JOIN IS ALWAYS ALLOWED. A player holding no team this season may
+//      join, create or accept an invite at any time; onboarding is never
+//      blocked. Only moving once you already hold a team needs an open period.
+//   3. THE PLAYOFF FREEZE STILL WINS. `roster_freeze_on` is an absolute stop and
+//      is checked first — free agency does NOT reopen a frozen roster.
+
+/** Does this season gate roster moves at all? False = fail open. */
+export function seasonGatesMoves(season: SeasonDates | null): boolean {
+  if (!season) return false;
+  return (
+    isDate(season.trading_open_starts_on) ||
+    isDate(season.trading_close_starts_on)
+  );
+}
+
+/** The open periods for a gated season, in chronological order. Empty for a
+ *  season that does not gate (callers should check `seasonGatesMoves` first —
+ *  an empty list means "nothing is open", not "everything is"). */
+export function moveWindows(season: SeasonDates): DateWindow[] {
+  const out: DateWindow[] = [];
+  const push = (from: string | null | undefined, to: string | null | undefined) => {
+    if (isDate(from) && isDate(to) && to >= from) out.push({ from, to });
+  };
+
+  push(season.trading_open_starts_on, season.trading_open_ends_on);
+  push(season.trading_close_starts_on, season.trading_close_ends_on);
+  // Free agency: from the generated start through the season end. It is clamped
+  // to `ends_on` because a roster move after the season is over is meaningless
+  // — the season-detail timeline deliberately draws the FA band overhanging the
+  // end, but that is presentation, not permission.
+  push(season.free_agency_start, season.ends_on);
+
+  return out.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+}
+
+export type RosterMoveState = {
+  /** Whether this season gates moves at all. */
+  gated: boolean;
+  /** Whether a move is permitted right now (ignoring the playoff freeze, which
+   *  the caller checks first and which overrides this). */
+  open: boolean;
+  /** The period containing `today`, when one does. */
+  currentWindow: DateWindow | null;
+  /** The next period that opens after `today`, when one does. */
+  nextWindow: DateWindow | null;
+  /** All open periods, chronological. */
+  windows: DateWindow[];
+};
+
+/** Where `today` sits relative to a season's roster-move periods. */
+export function rosterMoveState(season: SeasonDates, today: string): RosterMoveState {
+  if (!seasonGatesMoves(season)) {
+    return { gated: false, open: true, currentWindow: null, nextWindow: null, windows: [] };
+  }
+  const windows = moveWindows(season);
+  const currentWindow = windows.find((w) => windowContains(w, today)) ?? null;
+  const nextWindow = windows.find((w) => w.from > today) ?? null;
+  return { gated: true, open: currentWindow != null, currentWindow, nextWindow, windows };
+}
+
+/** The wire error code a blocked roster MOVE returns. Distinct from
+ *  `roster_frozen`: that one is terminal for the season, this one reopens. */
+export const MOVE_WINDOW_CLOSED_CODE = "trading_window_closed";
+
+/** Player-facing sentence for a blocked move. `nextOpensOn` is appended by the
+ *  guard when a later window exists, so the player learns when to come back. */
+export const MOVE_WINDOW_CLOSED_MESSAGE =
+  "Rosters are locked outside the trading windows.";
+
+/** The one place the "may this roster write proceed?" question is answered.
+ *
+ *  `isFirstJoin` must be true only when the player currently holds NO team in
+ *  this season AND the write adds one. Leaving is never a first join. */
+export function canMoveRoster(
+  season: SeasonDates,
+  today: string,
+  opts: { isFirstJoin?: boolean } = {}
+): { allowed: boolean; reason: "ok" | "frozen" | "window_closed"; state: RosterMoveState } {
+  const state = rosterMoveState(season, today);
+  // The playoff freeze is absolute and is checked BEFORE the windows, so an
+  // open free-agency period can never thaw a frozen roster.
+  if (isRosterFrozen(season, today)) return { allowed: false, reason: "frozen", state };
+  if (!state.gated) return { allowed: true, reason: "ok", state };
+  if (opts.isFirstJoin) return { allowed: true, reason: "ok", state };
+  return state.open
+    ? { allowed: true, reason: "ok", state }
+    : { allowed: false, reason: "window_closed", state };
 }

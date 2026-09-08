@@ -19,8 +19,11 @@
 
 import { parseScoringPhase } from '@/lib/league-playoffs/phase';
 import {
+  isDbMoveWindowError,
   isDbRosterFrozenError,
   rosterFreezeGuard,
+  rosterMoveGuard,
+  MOVE_WINDOW_CLOSED_CODE,
   SEASON_PLAYOFF_COLUMNS,
   statusFor,
 } from '@/lib/league-playoffs/server';
@@ -372,10 +375,11 @@ export async function POST(
   if (action === 'leave') {
     if (!isMember) return Response.json({ error: 'not_a_member' }, { status: 403 });
     if (!viewer.email) return Response.json({ error: 'subscriber_not_found' }, { status: 400 });
-    // Playoff roster freeze. team_leave enforces this at the DB too (migration
-    // 20260802120000) — checking here first turns a raw PostgREST 500 into the
-    // same {error:'roster_frozen'} shape the other player routes return.
-    const frozen = rosterFreezeGuard(season);
+    // Playoff freeze THEN trading windows. Both are enforced at the DB too
+    // (migrations 20260802120000 and 20260908000000) — checking here first
+    // turns a raw PostgREST 500 into the same {error:…} shape the other player
+    // routes return. Leaving is never a first join, so no exemption applies.
+    const frozen = rosterMoveGuard(season);
     if (frozen) return frozen;
     // Reuse the canonical team_leave RPC: season-scoped delete + captaincy roll +
     // last-member team cleanup (company-with-children preserved). Preserves the
@@ -393,6 +397,12 @@ export async function POST(
       if (isDbRosterFrozenError(err)) {
         return rosterFreezeGuard({ ...season, roster_freeze_on: season.roster_freeze_on }) ??
           Response.json({ error: 'roster_frozen' }, { status: 403 });
+      }
+      // Same race for the trading windows: a window can close between the guard
+      // above and this call (a midnight boundary in the season's own zone).
+      if (isDbMoveWindowError(err)) {
+        return rosterMoveGuard(season) ??
+          Response.json({ error: MOVE_WINDOW_CLOSED_CODE }, { status: 403 });
       }
       console.error('team leave failed', err);
       return Response.json({ error: 'leave_failed' }, { status: 500 });
