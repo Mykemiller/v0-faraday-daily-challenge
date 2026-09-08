@@ -229,7 +229,7 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-/** Trading windows are STORED on the season (migration 20260907120000). Before
+/** Trading windows are STORED on the season (migration 20260907203000). Before
  *  that they were drawn from hardcoded ±7 offsets, so seasons created earlier
  *  carry NULLs — those fall back to the old derivation rather than losing their
  *  bars. New seasons seed to the same 7/7 by default, so nothing moves. */

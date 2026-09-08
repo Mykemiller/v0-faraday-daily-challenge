@@ -279,7 +279,7 @@ export function validateWindow(w: WindowInput): string[] {
 // ── trading windows ──────────────────────────────────────────────────────────
 
 /** A season carries TWO trading windows — one at the open, one at the close.
- *  Both are stored on `seasons` (migration 20260907120000); before that they
+ *  Both are stored on `seasons` (migration 20260907203000); before that they
  *  existed only as hardcoded ±7 bars in the season-detail timeline, which these
  *  defaults reproduce exactly. Lengths live on the LEAGUE (in days, because a
  *  league default cannot know a season's window); the dates live on the season.

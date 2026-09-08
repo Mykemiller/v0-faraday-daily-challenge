@@ -170,7 +170,7 @@ export type CreateSeasonInput = {
   ends_on: string;
   /** free_agency_start / free_agency_notice_start are NOT accepted — they are
    *  GENERATED ALWAYS from ends_on (−3 / −7) and cannot be written. */
-  /** The two trading windows (migration 20260907120000). Both ends of a window
+  /** The two trading windows (migration 20260907203000). Both ends of a window
    *  are required together; either window may be omitted entirely. */
   trading_open_starts_on?: string | null;
   trading_open_ends_on?: string | null;
@@ -905,7 +905,7 @@ const SEASON_FIELDS = [
   // REQUIRES these before a season can generate, but nothing wrote them — they
   // had no editor. They live on `seasons`, not season_config.
   "playoff_starts_on", "roster_freeze_on",
-  // Trading windows (migration 20260907120000). Patchable so that shrinking a
+  // Trading windows (migration 20260907203000). Patchable so that shrinking a
   // season is recoverable: the `seasons_trading_within_window` CHECK would
   // otherwise strand a commissioner with windows they had no way to move.
   "trading_open_starts_on", "trading_open_ends_on",

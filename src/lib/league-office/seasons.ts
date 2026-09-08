@@ -197,7 +197,7 @@ export const loadLeagues = (s: Svc) =>
  *  `createSeason`, which also resolves INDEPENDENT until a league picker
  *  exists. Falls back to the 7/7 constants when the row or the columns are
  *  missing, so the wizard still seeds on a database that predates migration
- *  20260907120000. */
+ *  20260907203000. */
 export async function getWizardLeagueDefaults(
   s: Svc
 ): Promise<{ name: string; defaults: LeagueWindowDefaults }> {

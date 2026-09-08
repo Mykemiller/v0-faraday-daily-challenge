@@ -84,7 +84,7 @@ export type Season = {
   free_agency_notice_start: string | null;
   playoff_starts_on: string | null;
   roster_freeze_on: string | null;
-  /** The two trading windows (migration 20260907120000). NULL on seasons
+  /** The two trading windows (migration 20260907203000). NULL on seasons
    *  created before it — the timeline falls back to the legacy ±7 offsets. */
   trading_open_starts_on: string | null;
   trading_open_ends_on: string | null;
