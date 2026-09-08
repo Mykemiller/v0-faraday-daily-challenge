@@ -61,11 +61,19 @@ export function Field({
   hint,
   children,
   width,
+  error,
+  aside,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
   width?: string;
+  /** Field-level error. Replaces the hint when set — two lines of small print
+   *  under one input is noise, and the error is the one that matters. */
+  error?: string | null;
+  /** Rendered on the label row, right-aligned: the provenance chip and its
+   *  reset link (see `Provenance` below). */
+  aside?: React.ReactNode;
 }) {
   return (
     <label style={{ display: "block", minWidth: 0, width }}>
@@ -82,13 +90,68 @@ export function Field({
       >
         {label}
       </span>
+      {aside ? (
+        <span style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, marginTop: -3 }}>{aside}</span>
+      ) : null}
       {children}
-      {hint ? (
+      {error ? (
+        <span style={{ display: "block", fontSize: 11.5, color: "#9c3b2e", marginTop: 4, lineHeight: 1.45 }}>
+          {error}
+        </span>
+      ) : hint ? (
         <span style={{ display: "block", fontSize: 11.5, color: FAINT, marginTop: 4, lineHeight: 1.45 }}>
           {hint}
         </span>
       ) : null}
     </label>
+  );
+}
+
+/** Provenance chip for a field whose value can come from a league default.
+ *  "Inherited from league default" until the commissioner types something, then
+ *  "Overridden" with a reset link back to the seeded value. This is the first
+ *  inheritance affordance in League Office — later inherited fields should
+ *  reuse it rather than inventing a second look. */
+export function Provenance({
+  overridden,
+  onReset,
+  label = "league default",
+}: {
+  overridden: boolean;
+  onReset: () => void;
+  label?: string;
+}) {
+  return (
+    <>
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 9.5,
+          letterSpacing: ".06em",
+          textTransform: "uppercase",
+          padding: "2px 6px",
+          borderRadius: 999,
+          border: `1px solid ${overridden ? "rgba(196,146,42,.45)" : "var(--color-cream-border)"}`,
+          background: overridden ? "rgba(196,146,42,.12)" : "#fff",
+          color: overridden ? "#94560a" : FAINT,
+        }}
+      >
+        {overridden ? "Overridden" : `Inherited from ${label}`}
+      </span>
+      {overridden ? (
+        <button
+          type="button"
+          onClick={onReset}
+          style={{
+            fontSize: 11.5, color: "var(--color-amber-dark)", background: "none",
+            border: "none", padding: 0, cursor: "pointer", textDecoration: "underline",
+            font: "inherit", fontFamily: "inherit",
+          }}
+        >
+          Reset to default
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -126,6 +189,9 @@ export function TextInput({
   disabled,
   type = "text",
   mono,
+  min,
+  max,
+  invalid,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -133,6 +199,12 @@ export function TextInput({
   disabled?: boolean;
   type?: string;
   mono?: boolean;
+  /** Native bounds for `type="date"`. The picker greys out everything outside
+   *  them, but a typed date still gets through — always validate as well. */
+  min?: string;
+  max?: string;
+  /** Paints the error border. The message itself belongs on the Field. */
+  invalid?: boolean;
 }) {
   return (
     <input
@@ -141,8 +213,16 @@ export function TextInput({
       value={value}
       disabled={disabled}
       placeholder={placeholder}
+      min={min}
+      max={max}
+      aria-invalid={invalid || undefined}
       onChange={(e) => onChange(e.target.value)}
-      style={{ ...inputStyle, opacity: disabled ? 0.55 : 1, cursor: disabled ? "not-allowed" : "auto" }}
+      style={{
+        ...inputStyle,
+        opacity: disabled ? 0.55 : 1,
+        cursor: disabled ? "not-allowed" : "auto",
+        ...(invalid ? { border: "1px solid rgba(156,59,46,.55)", background: "rgba(156,59,46,.03)" } : null),
+      }}
     />
   );
 }

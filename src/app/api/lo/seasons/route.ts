@@ -39,7 +39,13 @@ export async function POST(request: Request) {
     starts_on: body.starts_on,
     ends_on: body.ends_on,
     // free_agency_* are GENERATED ALWAYS on `seasons` (ends_on − 3 / − 7) and
-    // are intentionally not forwarded, even if a client sends them.
+    // are intentionally not forwarded, even if a client sends them. The trading
+    // windows ARE ordinary columns, so they pass through — createSeason
+    // re-validates them before the INSERT.
+    trading_open_starts_on: body.trading_open_starts_on ?? null,
+    trading_open_ends_on: body.trading_open_ends_on ?? null,
+    trading_close_starts_on: body.trading_close_starts_on ?? null,
+    trading_close_ends_on: body.trading_close_ends_on ?? null,
     roster_lock_on: body.roster_lock_on ?? null,
     scope: body.scope ?? { mode: "platform" },
     startingPoint: body.startingPoint ?? { mode: "defaults" },

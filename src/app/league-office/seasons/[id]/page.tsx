@@ -116,6 +116,10 @@ export default async function SeasonDetailPage({
           end={s.ends_on}
           faStart={s.free_agency_start}
           today={ctToday()}
+          tradeOpenStart={s.trading_open_starts_on ?? null}
+          tradeOpenEnd={s.trading_open_ends_on ?? null}
+          tradeCloseStart={s.trading_close_starts_on ?? null}
+          tradeCloseEnd={s.trading_close_ends_on ?? null}
         />
         <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
           <Legend color="#325638" label="Regular play" />
@@ -225,16 +229,28 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
+/** Trading windows are STORED on the season (migration 20260907203000). Before
+ *  that they were drawn from hardcoded ±7 offsets, so seasons created earlier
+ *  carry NULLs — those fall back to the old derivation rather than losing their
+ *  bars. New seasons seed to the same 7/7 by default, so nothing moves. */
 function Timeline({
   start,
   end,
   faStart,
   today,
+  tradeOpenStart,
+  tradeOpenEnd,
+  tradeCloseStart,
+  tradeCloseEnd,
 }: {
   start: string | null;
   end: string | null;
   faStart: string | null;
   today: string;
+  tradeOpenStart: string | null;
+  tradeOpenEnd: string | null;
+  tradeCloseStart: string | null;
+  tradeCloseEnd: string | null;
 }) {
   if (!start || !end) return <EmptyState>Season dates not set.</EmptyState>;
   const s = dnum(start)!;
@@ -246,8 +262,18 @@ function Timeline({
   const pct = (t: number) => `${Math.min(100, Math.max(0, ((t - s) / span) * 100))}%`;
   const width = (a: number, b: number) => `${Math.max(0, ((b - a) / span) * 100)}%`;
 
-  const tradeFirst = { left: pct(s), width: width(s, dnum(addDays(start, 7))!) };
-  const tradeLast = { left: pct(dnum(addDays(end, -7))!), width: width(dnum(addDays(end, -7))!, e) };
+  // Stored dates win; the legacy ±7 derivation is the fallback for rows that
+  // predate the migration. A window is drawn only when BOTH ends resolve.
+  const bar = (from: string | null, to: string | null) => {
+    const a = dnum(from);
+    const b = dnum(to);
+    if (a == null || b == null || b <= a) return null;
+    return { left: pct(a), width: width(a, b) };
+  };
+  const tradeFirst =
+    bar(tradeOpenStart ?? start, tradeOpenEnd ?? addDays(start, 7));
+  const tradeLast =
+    bar(tradeCloseStart ?? addDays(end, -7), tradeCloseEnd ?? end);
   const todayT = dnum(today)!;
 
   return (
@@ -255,8 +281,12 @@ function Timeline({
       {/* regular play base */}
       <div style={{ position: "absolute", top: 14, left: pct(s), width: width(s, e), height: 18, background: "#325638", borderRadius: 4 }} />
       {/* trading windows */}
-      <div style={{ position: "absolute", top: 14, left: tradeFirst.left, width: tradeFirst.width, height: 18, background: "#c4922a", borderRadius: 4 }} />
-      <div style={{ position: "absolute", top: 14, left: tradeLast.left, width: tradeLast.width, height: 18, background: "#c4922a", borderRadius: 4 }} />
+      {tradeFirst ? (
+        <div style={{ position: "absolute", top: 14, left: tradeFirst.left, width: tradeFirst.width, height: 18, background: "#c4922a", borderRadius: 4 }} title="Opening trading window" />
+      ) : null}
+      {tradeLast ? (
+        <div style={{ position: "absolute", top: 14, left: tradeLast.left, width: tradeLast.width, height: 18, background: "#c4922a", borderRadius: 4 }} title="Closing trading window" />
+      ) : null}
       {/* free agency (overhangs end) */}
       {faS != null && faE != null && (
         <div style={{ position: "absolute", top: 8, left: pct(faS), width: width(faS, faE), height: 10, background: "#8ca68a", borderRadius: 4, opacity: 0.9 }} title="Free agency" />
