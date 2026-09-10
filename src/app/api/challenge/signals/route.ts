@@ -7,7 +7,9 @@
 // role and stripped to a public-safe shape, matching the /api/challenge/answers
 // + /api/challenge/day-content posture. No anon SELECT policy is added.
 //
-// "Today" is computed in the ACTIVE SEASON's timezone (seasons.tz), never in
+// "Today" is computed in the DEFAULT SEASON's timezone (seasons.tz — the
+// platform-scoped active season, CC-LO-CONCURRENT-SEASONS-1.0 D4; the route is
+// anonymous so there is no subscriber to resolve against), never in
 // UTC and never in the browser — a signal fired at 23:30 local counts for that
 // local day; one fired at 00:30 the next local day does not.
 //
@@ -16,6 +18,7 @@
 // cap 10. NEVER backfill from a prior day — zero signals today → empty state.
 
 import { resolveDomainName } from "@/lib/idf-labels";
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
 
 export const dynamic = "force-dynamic";
 
@@ -71,13 +74,8 @@ function zonedMidnightUtc(dateStr: string, timeZone: string): Date {
 
 async function fetchActiveSeasonTz(key: string): Promise<string> {
   try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=tz&limit=1`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
-    );
-    if (!r.ok) return FALLBACK_TZ;
-    const rows = await r.json().catch(() => null);
-    const tz = Array.isArray(rows) ? rows[0]?.tz : null;
+    const season = await resolveSeasonFor({ apikey: key, Authorization: `Bearer ${key}` }, null);
+    const tz = season?.tz;
     return typeof tz === "string" && tz.trim() ? tz.trim() : FALLBACK_TZ;
   } catch {
     return FALLBACK_TZ;

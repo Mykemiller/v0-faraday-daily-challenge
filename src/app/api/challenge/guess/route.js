@@ -6,7 +6,7 @@
 // ordered guess list, the server compares against the live answer and returns
 // per-letter feedback — never the plaintext answer — until the game is over.
 //
-// Body: { gameType: "Signal Drop", publicId?: string, guesses: string[] }
+// Body: { gameType: "Signal Drop", publicId?: string, guesses: string[], token?: string }
 //   guesses = every guess the player has submitted so far, oldest → newest.
 //
 // Response: {
@@ -23,6 +23,35 @@
 
 // DC_PUZZLE_SOURCE selects airtable (default) or supabase — see puzzle-bank.js.
 import { getSignalDropAnswer } from "@/lib/puzzle-bank";
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
+
+const GUESS_SUPABASE_URL =
+  process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+
+// The caller's season (CC-LO-CONCURRENT-SEASONS-1.0) so a guess without a
+// publicId is scored against THEIR Signal Drop, not an arbitrary live one.
+// Token optional; any failure → anonymous → platform default season.
+async function seasonIdForToken(token) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) return null;
+  const h = { apikey: key, Authorization: `Bearer ${key}` };
+  let subscriberId = null;
+  if (typeof token === "string" && token.trim()) {
+    try {
+      const r = await fetch(
+        `${GUESS_SUPABASE_URL}/rest/v1/dc_sessions?token=eq.${encodeURIComponent(token.trim())}&select=subscriber_id,expires_at&limit=1`,
+        { headers: h, cache: "no-store" }
+      );
+      const rows = r.ok ? await r.json().catch(() => null) : null;
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (row && !(row.expires_at && new Date(row.expires_at) < new Date())) subscriberId = row.subscriber_id ?? null;
+    } catch {
+      subscriberId = null;
+    }
+  }
+  const season = await resolveSeasonFor(h, subscriberId);
+  return season?.id ?? null;
+}
 import { resolveGuesses, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +80,8 @@ export async function POST(request) {
 
   let answer;
   try {
-    answer = await getSignalDropAnswer({ publicId: body?.publicId });
+    const seasonId = await seasonIdForToken(body?.token);
+    answer = await getSignalDropAnswer({ publicId: body?.publicId, seasonId });
   } catch (err) {
     console.error("[/api/challenge/guess] answer lookup failed:", err);
     return Response.json({ error: "validation unavailable" }, { status: 502 });

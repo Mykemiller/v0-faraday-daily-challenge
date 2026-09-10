@@ -1,6 +1,8 @@
 // Season slate — server-side resolution of which games the active season serves.
 //
-// Reads: active season → its ACTIVE season_config → enabled season_games →
+// Reads: the CALLER'S season (CC-LO-CONCURRENT-SEASONS-1.0 — resolved by
+// /api/challenge/today via lib/seasons/resolve, never here) → its ACTIVE
+// season_config → enabled season_games →
 // game_catalog.runtime_key. That last hop matters: `runtime_key` is the join key
 // the runtime actually uses (D3), while `game_key` is a snake_case slug nothing
 // joins on. Keying off game_key here would silently match nothing and — via the
@@ -37,25 +39,23 @@ async function rows<T>(headers: Record<string, string>, path: string): Promise<T
 }
 
 /**
- * The enabled `runtime_key` list for the active season, or null.
+ * The enabled `runtime_key` list for `seasonId`, or null.
  *
  * null means "serve everything" and is returned for every one of:
  *   · enforcement killed by env
  *   · no service-role key
- *   · no active season
+ *   · no season (the caller resolved none — anonymous with no default season)
  *   · the season has no ACTIVE config (true for 3 of 6 seasons in prod today)
  *   · the config has no enabled games
  *   · any fetch/parse failure
  */
-export async function resolveActiveSeasonSlate(): Promise<string[] | null> {
+export async function resolveSeasonSlate(seasonId: string | null | undefined): Promise<string[] | null> {
   if (enforcementDisabled()) return null;
 
   const h = svcHeaders();
   if (!h) return null;
 
-  const season = (
-    await rows<{ id: string }>(h, `seasons?status=eq.active&select=id&order=starts_on.desc&limit=1`)
-  )[0];
+  const season = seasonId ? { id: seasonId } : null;
   if (!season?.id) return null;
 
   // The config actually in force. `state=eq.active` is the same predicate the

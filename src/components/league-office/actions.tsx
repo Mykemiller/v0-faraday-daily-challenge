@@ -54,6 +54,8 @@ type Payload = {
   conferenceId?: string;
   auditId?: string;
   broadcastId?: string;
+  // CC-LO-CONCURRENT-SEASONS-1.0 D9: roster placement names its season.
+  seasonId?: string;
 };
 
 export function ActionButton({

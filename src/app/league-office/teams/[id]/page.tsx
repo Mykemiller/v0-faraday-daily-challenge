@@ -32,7 +32,9 @@ export default async function TeamDetailPage({
     );
   }
 
-  const canAdd = d.addable.length > 0;
+  // D9 (CC-LO-CONCURRENT-SEASONS-1.0): seasons may overlap, so "Add member"
+  // writes to the header-selected season and is unavailable under All Seasons.
+  const canAdd = !!scope && d.addable.length > 0;
   const canMove = d.otherTeams.length > 0;
 
   return (
@@ -102,9 +104,9 @@ export default async function TeamDetailPage({
               <ActionButton
                 label="+ Add member"
                 title="Add a subscriber to this team"
-                description={`Add a subscriber to ${d.team.name} for the active season. They become a confirmed member immediately.`}
+                description={`Add a subscriber to ${d.team.name} for ${scope?.name ?? "the selected season"}. They become a confirmed member immediately.`}
                 confirmLabel="Add member"
-                payload={{ action: "membership.add", teamId: d.team.id }}
+                payload={{ action: "membership.add", teamId: d.team.id, seasonId: scope?.id }}
                 extraField={{
                   kind: "select",
                   name: "subscriberId",
@@ -112,8 +114,10 @@ export default async function TeamDetailPage({
                   options: d.addable.map((a) => ({ value: a.subscriberId, label: `@${a.handle}` })),
                 }}
               />
+            ) : !scope ? (
+              <span style={{ fontSize: 11.5, color: "#8d8375" }}>Pick a season in the header to add members — seasons may overlap, so a member is added to one named season.</span>
             ) : (
-              <span style={{ fontSize: 11.5, color: "#8d8375" }}>Every active subscriber is already on this team.</span>
+              <span style={{ fontSize: 11.5, color: "#8d8375" }}>Every active subscriber is already on this team for {scope.name}.</span>
             )}
           </div>
           {d.roster.length === 0 ? (

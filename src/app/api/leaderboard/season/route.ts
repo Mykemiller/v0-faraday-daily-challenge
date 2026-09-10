@@ -1,5 +1,5 @@
 // GET /api/leaderboard/season
-//   ?token=...                     → global leaderboard for active season + player's teams
+//   ?token=...                     → global leaderboard for the VIEWER's season + player's teams
 //   ?token=...&team_id=...         → team leaderboard for one team
 //   &phase=full|regular|playoff    → which slice of the season scores (default full)
 //
@@ -12,7 +12,8 @@
 // functions, so the app is safe to deploy in either order.
 
 import { parseScoringPhase } from '@/lib/league-playoffs/phase';
-import { SEASON_PLAYOFF_COLUMNS, statusFor } from '@/lib/league-playoffs/server';
+import { statusFor } from '@/lib/league-playoffs/server';
+import { resolveSeasonFor } from '@/lib/seasons/resolve';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -96,14 +97,12 @@ export async function GET(request: Request) {
   // today's behaviour rather than an error or a silently empty board.
   const phase = parseScoringPhase(searchParams.get('phase'));
 
-  // Resolve active season
-  const seasonR = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?status=eq.active` +
-      `&select=${SEASON_PLAYOFF_COLUMNS},free_agency_start,free_agency_notice_start&limit=1`,
-    { headers: h, cache: 'no-store' }
-  );
-  const seasonRows = await seasonR.json().catch(() => null);
-  const season = Array.isArray(seasonRows) ? seasonRows[0] : null;
+  // Resolve authenticated player (optional) FIRST — the board shown is the
+  // VIEWER's season (CC-LO-CONCURRENT-SEASONS-1.0); anonymous → the default.
+  let sub: { id: string; handle: string | null } | null = null;
+  if (token) sub = await resolveSubscriber(token);
+
+  const season = await resolveSeasonFor(h, sub?.id ?? null);
   if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
 
   // Derived playoff state — lets the client render "Playoffs begin <date>"
@@ -124,10 +123,6 @@ export async function GET(request: Request) {
   const teamBoardRpc = phase === 'full' ? 'team_leaderboard_season' : 'team_leaderboard_phase';
   const teamTotalRpc = phase === 'full' ? 'team_total_score' : 'team_total_score_phase';
   const phaseArg = phase === 'full' ? {} : { p_phase: phase };
-
-  // Resolve authenticated player (optional)
-  let sub: { id: string; handle: string | null } | null = null;
-  if (token) sub = await resolveSubscriber(token);
 
   // Today's per-subscriber points (CT date) — annotates every row so the board
   // can show "Today" alongside the season total.

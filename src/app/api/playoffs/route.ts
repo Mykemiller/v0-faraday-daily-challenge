@@ -9,7 +9,8 @@
 // 500 the lobby. The phase/countdown half of this route reads only `seasons`,
 // which always exists — so the banner works before the bracket does.
 
-import { statusFor, SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
+import { statusFor } from '@/lib/league-playoffs/server';
+import { resolveSeasonFor } from '@/lib/seasons/resolve';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -59,11 +60,10 @@ export async function GET(request: Request) {
 
   const token = new URL(request.url).searchParams.get('token') ?? '';
 
-  const seasons = await softQuery<Record<string, unknown>>(
-    h,
-    `seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&limit=1`
-  );
-  const season = seasons[0];
+  // The VIEWER's season (CC-LO-CONCURRENT-SEASONS-1.0): a member of a carve-out
+  // season sees that season's playoffs; anonymous → the platform default.
+  const viewerForSeason = await resolveSubscriberId(h, token);
+  const season = await resolveSeasonFor(h, viewerForSeason);
   if (!season) return Response.json({ season: null, playoffs: null });
 
   const status = statusFor(season as never);

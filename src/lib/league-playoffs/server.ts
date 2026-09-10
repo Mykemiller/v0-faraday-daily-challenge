@@ -29,6 +29,7 @@ import {
   type PlayoffStatus,
   type SeasonDates,
 } from "./phase";
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -60,14 +61,14 @@ export async function fetchSeasonById(
   );
 }
 
-/** Fetch the active season with the playoff columns. */
+/** The season for `subscriberId` (null = the platform default season) with the
+ *  playoff columns — CC-LO-CONCURRENT-SEASONS-1.0. */
 export async function fetchActiveSeason(
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  subscriberId: string | null = null
 ): Promise<PlayoffSeason | null> {
-  return firstRow(
-    headers,
-    `seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&order=starts_on.desc&limit=1`
-  );
+  const s = await resolveSeasonFor(headers, subscriberId);
+  return s ? (s as unknown as PlayoffSeason) : null;
 }
 
 async function firstRow(

@@ -5,6 +5,7 @@
 // the pure rules live in ./rules.ts.
 
 import { isPairBlocked } from './rules';
+import { resolveSeasonFor } from '@/lib/seasons/resolve';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -60,13 +61,12 @@ export interface Season {
   locked_at: string | null;
 }
 
-export async function activeSeason(h: Svc): Promise<Season | null> {
-  const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=id,name,ends_on,locked_at&limit=1`,
-    { headers: h, cache: 'no-store' }
-  );
-  const rows = await r.json().catch(() => null);
-  return Array.isArray(rows) ? (rows[0] ?? null) : null;
+/** The VIEWER's season (CC-LO-CONCURRENT-SEASONS-1.0): broadcast channels are
+ *  keyed (team_id, season_id), so the channel a captain posts into and the one
+ *  a member reads must come from the same resolver. Anonymous → the default. */
+export async function activeSeason(h: Svc, viewerId: string | null): Promise<Season | null> {
+  const s = await resolveSeasonFor(h, viewerId);
+  return s ? { id: s.id, name: s.name, ends_on: s.ends_on, locked_at: s.locked_at } : null;
 }
 
 export interface BlockRow {
@@ -214,7 +214,7 @@ export async function visibleThreads(
 ): Promise<VisibleThreads> {
   const vid = encodeURIComponent(viewerId);
   const [season, directR] = await Promise.all([
-    activeSeason(h),
+    activeSeason(h, viewerId),
     fetch(
       `${SUPABASE_URL}/rest/v1/dc_conversations?kind=eq.direct&or=(pair_low.eq.${vid},pair_high.eq.${vid})&select=id,kind,team_id,season_id,pair_low,pair_high,last_message_at`,
       { headers: h, cache: 'no-store' }

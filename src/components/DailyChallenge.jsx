@@ -2702,9 +2702,15 @@ function DailyChallengeInner() {
     setShowSplash(false);
   }
 
+  // Keyed on sessionToken (CC-LO-CONCURRENT-SEASONS-1.0): the served set is the
+  // caller's SEASON's puzzles, so signing in or out re-fetches with the token.
+  // The first (anonymous) fetch still paints the lobby before hydration.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/challenge/today")
+    const todayUrl = sessionToken
+      ? `/api/challenge/today?token=${encodeURIComponent(sessionToken)}`
+      : "/api/challenge/today";
+    fetch(todayUrl)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(data => {
         if (cancelled || !data) return;
@@ -2718,7 +2724,7 @@ function DailyChallengeInner() {
       })
       .catch(() => { /* keep mock fallback */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [sessionToken]);
 
   // Hydrate the subscriber's real state (play streak, today's
   // completions) from Supabase when a verified session exists in storage.
