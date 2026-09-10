@@ -39,7 +39,7 @@ export const PUZZLE_BANK_TABLE = "dc_puzzle_bank_staging";
 // a plaintext answer column and must never be selected into anything that can
 // reach a client-facing payload. (Signal Drop's in-content `word` is stripped
 // separately via toPublicSignalPuzzle below.)
-const SERVE_COLUMNS = "puzzle_type,puzzle_content,public_id";
+const SERVE_COLUMNS = "puzzle_type,puzzle_content,public_id,season_id";
 
 class SupabaseConfigError extends Error {}
 
@@ -54,15 +54,31 @@ function getServiceKey() {
   return key;
 }
 
-// Low-level: fetch the Live rows. Same caching contract as the Airtable
-// helper: puzzles change at most daily, so serving reads let the platform
-// cache for an hour; the rotator passes noStore so its reads (none today, but
-// kept for parity) always see current state.
-async function fetchLiveRows({ noStore = false } = {}) {
+// Low-level: fetch the Live rows FOR A SEASON. Same caching contract as the
+// Airtable helper: puzzles change at most daily, so serving reads let the
+// platform cache for an hour; the rotator passes noStore so its reads (none
+// today, but kept for parity) always see current state.
+//
+// CC-LO-CONCURRENT-SEASONS-1.0 D6: a season-less row (season_id NULL) is a
+// PLATFORM puzzle and serves to anyone whose season has no row of that type
+// today; a season's own row beats it for that season's members. So the read is
+// `season_id = <id> OR season_id IS NULL`, ordered with the season's rows
+// FIRST — getLivePuzzles keeps the first valid row per type, which is what
+// makes the precedence hold. No seasonId (anonymous, no default season) →
+// platform rows only. The old unconditional `published=eq.Live` read would
+// return one arbitrary row per type once two seasons are live on the same day.
+function liveRowsFilter(seasonId) {
+  const sid = typeof seasonId === "string" && seasonId.trim() ? seasonId.trim() : null;
+  return sid
+    ? `&or=(season_id.eq.${encodeURIComponent(sid)},season_id.is.null)&order=season_id.desc.nullslast,go_live_date.desc`
+    : `&season_id=is.null&order=go_live_date.desc`;
+}
+
+async function fetchLiveRows({ noStore = false, seasonId = null } = {}) {
   const key = getServiceKey();
   const url =
     `${SUPABASE_URL}/rest/v1/${PUZZLE_BANK_TABLE}` +
-    `?published=eq.Live&select=${SERVE_COLUMNS}&order=go_live_date.desc`;
+    `?published=eq.Live&select=${SERVE_COLUMNS}${liveRowsFilter(seasonId)}`;
   const res = await fetch(url, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
     ...(noStore ? { cache: "no-store" } : { next: { revalidate: 3600 } }),
@@ -108,8 +124,10 @@ export { fetchLiveGameKeys };
 // card can deep-link the shared result to the exact puzzle. Types whose row is
 // missing or unusable are omitted — the component falls back to its built-in
 // mock for that single game. Identical shape to the Airtable getLivePuzzles.
-export async function getLivePuzzles() {
-  const [rows, liveKeys] = await Promise.all([fetchLiveRows(), fetchLiveGameKeys()]);
+// `seasonId` selects WHOSE puzzles (CC-LO-CONCURRENT-SEASONS-1.0 — the caller's
+// season, resolved by the route); omitted = platform rows only.
+export async function getLivePuzzles({ seasonId = null } = {}) {
+  const [rows, liveKeys] = await Promise.all([fetchLiveRows({ seasonId }), fetchLiveGameKeys()]);
   const allowed = liveKeys ? new Set(liveKeys) : null;
   const puzzles = {};
   for (const row of rows) {
@@ -136,10 +154,12 @@ export async function getLivePuzzles() {
 // puzzle, so /api/challenge/guess can validate a guess without the answer ever
 // reaching the client. When `publicId` is given, the exact live row is matched
 // (so a guess is scored against the puzzle the player is actually looking at);
-// otherwise the current live Signal Drop is used. Returns
+// otherwise the caller's SEASON's live Signal Drop is used (D6 precedence, same
+// read as getLivePuzzles) — never "whichever Signal Drop is live", which is
+// ambiguous once two seasons are live on one day. Returns
 // { word, publicId, wordLength } or null when no live Signal Drop exists.
-export async function getSignalDropAnswer({ publicId } = {}) {
-  const rows = await fetchLiveRows();
+export async function getSignalDropAnswer({ publicId, seasonId = null } = {}) {
+  const rows = await fetchLiveRows({ seasonId });
   const wanted = typeof publicId === "string" && publicId.trim() ? publicId.trim() : null;
   let fallback = null;
   for (const row of rows) {

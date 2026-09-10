@@ -171,7 +171,7 @@ async function getCommissioner(h: Svc, viewerId: string) {
  * team_memberships source authorizeConversation uses.
  */
 async function getCaptains(h: Svc, viewerId: string) {
-  const season = await activeSeason(h);
+  const season = await activeSeason(h, viewerId);
   if (!season) return Response.json({ teams: [] });
   const memR = await fetch(
     `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${encodeURIComponent(viewerId)}&season_id=eq.${encodeURIComponent(season.id)}&pending=eq.false&select=team_id,teams(id,name,captain_id)`,
@@ -297,7 +297,7 @@ async function getThread(
   if (teamId) {
     // Broadcast channel by team: resolve or lazily create for the active
     // season, then authorize by membership like any other conversation.
-    const season = await activeSeason(h);
+    const season = await activeSeason(h, viewerId);
     if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
     const team = await fetchTeam(h, teamId);
     if (!team) return Response.json({ error: 'not_permitted' }, { status: 403 });
@@ -550,7 +550,7 @@ async function doSend(h: Svc, viewerId: string, payload: Record<string, unknown>
 
   // --- broadcast by team_id -------------------------------------------------
   if (teamId) {
-    const season = await activeSeason(h);
+    const season = await activeSeason(h, viewerId);
     if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
     // Captain is re-fetched on EVERY send — captaincy rolls when the captain
     // leaves, so a cached or client-supplied value would be a security bug.

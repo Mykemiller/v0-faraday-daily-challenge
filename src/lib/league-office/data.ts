@@ -7,6 +7,7 @@
 // FK-embedding-free; revisit with count headers / RPCs at growth scale
 // (see LEAGUE-OFFICE-FINDINGS.md).
 
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
 import { q, type Svc } from "./service";
 // The game roster is game_catalog (CC-DC-GAME-REGISTRY-1.0), not a hardcoded
 // list of seven with its own retired neon palette.
@@ -129,6 +130,17 @@ async function loadMemberCounts(s: Svc, seasonId?: string): Promise<MemberCounts
   return tallyMemberCounts(await q<MembershipRow>(s, memberCountsPath(seasonId)));
 }
 
+/** The platform DEFAULT season (CC-LO-CONCURRENT-SEASONS-1.0 D4/D9) as a
+ *  console `Season`, or null. Seasons may overlap, so the console never picks
+ *  "the active season" by status any more: pages that need a season with no
+ *  header selection fall back to this and SAY SO on screen. */
+export async function loadDefaultSeason(s: Svc): Promise<Season | null> {
+  const d = await resolveSeasonFor(s.headers, null);
+  if (!d) return null;
+  const seasons = await loadSeasons(s);
+  return seasons.find((x) => x.id === d.id) ?? null;
+}
+
 /** Resolve the header's `?season` param to a real season, or null for "All
  *  Seasons". An id that matches no season degrades to All Seasons — filtering
  *  on a bogus id would 400 the PostgREST read and silently zero every count. */
@@ -175,9 +187,12 @@ export async function getDashboard(s: Svc, seasonId?: string): Promise<Dashboard
       ),
     ]);
 
+  // Header selection, else the platform default season (D4) — never "the
+  // active one by status" (seasons may overlap, CC-LO-CONCURRENT-SEASONS-1.0).
+  const defaultSeason = seasonId ? null : await loadDefaultSeason(s);
   const season =
     seasons.find((x) => x.id === seasonId) ??
-    seasons.find((x) => x.status === "active") ??
+    defaultSeason ??
     seasons[0] ??
     null;
 
@@ -389,9 +404,9 @@ export async function getTeam(s: Svc, id: string, seasonId?: string): Promise<Te
     // people and offered each of them 2–3 times in the captain picker.
     //
     // Deliberately fetched UNSCOPED and narrowed in JS: the roster follows the
-    // header's season, but `addable` must always reflect the ACTIVE season
-    // (that is the only season `membership.add` writes to). One query, two
-    // readings — a season-filtered fetch could not serve both.
+    // header's season, and `addable` reflects that same season (the one
+    // `membership.add` writes to, D9) — kept whole so "All Seasons" can still
+    // render every person's rows.
     q<{ id: string; subscriber_id: string; pending: boolean; season_id: string }>(
       s,
       `team_memberships?team_id=eq.${id}&select=id,subscriber_id,pending,season_id&left_at=is.null`
@@ -439,14 +454,16 @@ export async function getTeam(s: Svc, id: string, seasonId?: string): Promise<Te
       seasonName: seasonName.get(m.season_id) ?? "Unknown season",
     }));
 
-  // `membership.add` resolves the ACTIVE season and refuses a duplicate there,
-  // so the add list must be filtered on that same season. Filtering on "ever on
-  // this team" instead made a Season-1-only member permanently un-re-addable.
-  const activeSeasonId = seasons.find((x) => x.status === "active")?.id;
+  // `membership.add` writes to the HEADER-SELECTED season (D9 — seasons may
+  // overlap, so there is no "the active season" to default to) and refuses a
+  // duplicate there, so the add list is filtered on that same season. With no
+  // selection there is nothing to add to: `addable` is empty and the page says
+  // to pick a season. Filtering on "ever on this team" instead made a
+  // Season-1-only member permanently un-re-addable.
   const onTeamThisSeason = new Set(
-    allRows.filter((m) => !activeSeasonId || m.season_id === activeSeasonId).map((m) => m.subscriber_id)
+    allRows.filter((m) => m.season_id === seasonId).map((m) => m.subscriber_id)
   );
-  const addable = subs
+  const addable = !seasonId ? [] : subs
     .filter((sub) => sub.active !== false && !onTeamThisSeason.has(sub.id))
     .map((sub) => ({ subscriberId: sub.id, handle: handleOf(sub) }));
 
@@ -608,8 +625,8 @@ export type ScoringResetPreview = {
 
 export async function getScoringResetPreview(s: Svc): Promise<ScoringResetPreview> {
   const zero = { score_events: 0, dc_completions: 0, leaderboard_daily: 0, dc_season_state: 0 };
-  const seasons = await loadSeasons(s);
-  const season = seasons.find((x) => x.status === "active") ?? null;
+  // The platform default season (D4) — the same season the reset RPC targets.
+  const season = await loadDefaultSeason(s);
   if (!season || !season.starts_on || !season.ends_on) {
     return { season, counts: zero, total: 0 };
   }

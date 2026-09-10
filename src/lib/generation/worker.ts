@@ -9,7 +9,8 @@
 //                 process memory; phase_cursor records where the last slice was.
 //   IDEMPOTENT  — theme inserts use on_conflict (season_id, theme_date); puzzle
 //                 slots are recomputed each slice against the GLOBAL
-//                 unique(puzzle_type, go_live_date), so a re-run never duplicates.
+//                 unique(season_id, puzzle_type, go_live_date) — CC-LO-CONCURRENT-
+//                 SEASONS-1.0 — so a re-run never duplicates.
 //   HEARTBEAT   — last_heartbeat_at is written with every checkpoint.
 //   BOUNDED     — batch size 8–12, hard time budget per slice.
 //   HONEST      — written_count = rows actually in staging for this run;
@@ -275,10 +276,13 @@ export async function runGenerationSlice(
   report.phase = "puzzles";
 
   // pilot = one puzzle per configured game (DEC-5), on the first date every
-  // enabled game is globally free (the C½ import already covers early dates).
+  // enabled game is free FOR THIS SEASON. CC-LO-CONCURRENT-SEASONS-1.0 D6: the
+  // bank is unique per (season, type, date), so another season's rows — and the
+  // season-less platform rows the C½ import left — do not occupy this season's
+  // dates; a season's own row simply beats the platform row for its members.
   const rangeRows = await sbGet<{ puzzle_type: string; go_live_date: string }>(
     s,
-    `dc_puzzle_bank_staging?go_live_date=gte.${season.starts_on}&go_live_date=lte.${season.ends_on}&select=puzzle_type,go_live_date`
+    `dc_puzzle_bank_staging?season_id=eq.${season.id}&go_live_date=gte.${season.starts_on}&go_live_date=lte.${season.ends_on}&select=puzzle_type,go_live_date`
   );
   const occupied = new Set(rangeRows.map((r) => `${r.puzzle_type}|${r.go_live_date}`));
 

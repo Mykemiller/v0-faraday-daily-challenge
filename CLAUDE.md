@@ -78,6 +78,69 @@ is the intended model.
 - `seasons.league_id` lost its last constraint role; it is still read by
   `fn_season_roster_carry_forward` and the generation `no_league` gate.
 
+## Concurrent seasons — THE season is per subscriber (CC-LO-CONCURRENT-SEASONS-1.0, claude/lo-concurrent-seasons, 2026-09-10)
+
+Step 2 of "seasons may overlap". Design: `docs/lo-concurrent-seasons/README.md`
+(D1–D9 locked by Myke 2026-09-10). Migration
+`supabase/migrations/20260911000000_lo_concurrent_seasons.sql` — **NOT applied
+to prod** (verified against a PGlite stub of the schema, fixture checks in
+`~/.cache/lo-pglite/run.js` pattern; rollback bodies in
+`docs/lo-concurrent-seasons/rollback-pre-phase-a.sql`). ⚠️ Prerequisites, both
+Myke gates: apply `20260910180000` (the overlap EXCLUDE was still on prod on
+2026-09-10) and set `DC_PUZZLE_SOURCE=supabase` (the Airtable serve path has
+no season concept).
+
+- **There is no "the active season" any more. Never pick one by
+  `status=eq.active … limit 1`.** `fn_season_for_subscriber(subscriber)` is THE
+  resolver: a confirmed (`pending=false`, `left_at IS NULL`) membership on a team
+  inside the season's `fn_season_scope_teams()` puts you in that season (D5); a
+  carve-out (league/conference-scoped) season beats the platform season, then
+  latest start, then id (D3); no such membership ⇒ `fn_default_season()` = the
+  platform-scoped active season (D4), which may be NULL. `NULL` subscriber =
+  default season. TS callers go through `src/lib/seasons/resolve.ts`
+  (`resolveSeasonFor(headers, subscriberId|null)`, one RPC, fail-soft null).
+  **`npm run test:season-resolve` fails the build on any `seasons?status=eq.active`
+  / `status === "active"` pick outside the excused files.** Excuses are named in
+  the test; add one only for a status CHIP, never for a pick.
+- **Readers moved (17 in TS + 5 SQL RPCs):** today/guess/season-active/playoffs/
+  score/teams/leaderboard-season/leaderboard-team/signals(tz)/messages(×3)/
+  messaging.server/league-playoffs.server.fetchActiveSeason(subscriberId)/
+  free-agency page/LO data.ts(×3)/LO write.ts; SQL: `team_create`, `team_join`,
+  `team_leave`, `team_get_my_teams` (email → subscriber → resolver),
+  `fn_group_member_emails` + `team_leaderboard(NULL)` (default season).
+  `fn_leaderboard_rollover` now snapshots + precomputes EVERY season containing
+  the day (its `active_season` output key is now the default season).
+- **The bank is one puzzle per (season, type, date)** —
+  `dc_staging_season_type_date_uniq` is `UNIQUE NULLS NOT DISTINCT`, so
+  season-less rows stay one-per-type-per-day. **A NULL `season_id` row is the
+  PLATFORM's puzzle** (D6): it serves to anyone whose season has no row of that
+  type that day; a season's own row beats it for its members. The serve read is
+  `published=eq.Live & (season_id = X or season_id is null)` ordered season rows
+  first; `getLivePuzzles({seasonId})` keeps the first row per type, which IS the
+  precedence — do not "simplify" the ordering away. `/api/challenge/today?token=`
+  and `/api/challenge/guess {token}` carry the session so the set is the
+  caller's; the lobby re-fetches on sign-in/out (`useEffect` keyed on
+  `sessionToken`).
+- **Approve is per season:** `fn_dc_approve_season_puzzles(season, dates, actor)`
+  — a NEW name, not a defaulted third parameter on `fn_dc_approve_puzzles`
+  (that would be an overload and every 2-arg caller would keep hitting the
+  old body — the PWR-01 cron-244 trap). The old function stays for the
+  season-less import path. The generation worker's "occupied dates" check is
+  filtered to the season's own rows: platform rows no longer block generation.
+- **League Office never resolves a season implicitly (D9):** `membership.add`
+  takes `seasonId` from the header `?season` selector and refuses under "All
+  Seasons"; the team page's Add button is hidden until a season is picked.
+  `getDashboard` / `getScoringResetPreview` fall back to `loadDefaultSeason()`.
+- **Known limits, deliberately not this CC:** `global_leaderboard` /
+  `_phase` are date-window based (FAR-415) — under overlap each season's global
+  board includes the other season's players. `dc_daily_page_content` is
+  `UNIQUE(puzzle_date)` (D7): takes/signals describe the DEFAULT season's slate;
+  a carve-out member with a different puzzle gets the explanation fallback.
+  `fn_group_member_emails` (group mail) uses the default season.
+  `workbench_health_compute` picks one season for a status card — informational.
+  `lo_reset_season_scoring` exists only as a never-applied repo migration
+  (Part C renamed its column); it does not exist on prod.
+
 ## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
 
 **Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`

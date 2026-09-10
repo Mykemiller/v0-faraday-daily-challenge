@@ -70,12 +70,14 @@ const del = (s: Svc, table: string, filter: string) =>
 const insert = (s: Svc, table: string, body: Record<string, unknown>) =>
   rq(s, table, { method: "POST", body: JSON.stringify(body) });
 
-/** The single active season's id, or null if none is active. Roster placement is
- *  season-scoped (team_memberships.season_id is NOT NULL) and the League Office
- *  works against "the" active season, exactly like the rest of the console. */
-async function resolveActiveSeasonId(s: Svc): Promise<string | null> {
-  const row = await getOne(s, `seasons?status=eq.active&select=id&order=starts_on.desc&limit=1`);
-  return (row as { id?: string } | null)?.id ?? null;
+/** Roster placement is season-scoped (team_memberships.season_id is NOT NULL)
+ *  and seasons may overlap (CC-LO-CONCURRENT-SEASONS-1.0 D9), so the season is
+ *  an explicit input from the header selector — never "the active one". This
+ *  only checks the id names a real, non-closed season. */
+async function requirePlacementSeason(s: Svc, seasonId?: string): Promise<{ id: string; name: string | null } | null> {
+  if (!seasonId) return null;
+  const row = await getOne(s, `seasons?id=eq.${encodeURIComponent(seasonId)}&status=neq.closed&select=id,name&limit=1`);
+  return (row as { id: string; name: string | null } | null) ?? null;
 }
 
 /** teams.code is citext-UNIQUE with no default, so a created team needs a code.
@@ -320,17 +322,19 @@ export async function executeAction(
     }
 
     // ── Roster placement (add a subscriber · move to another team) ────────────
-    // Both scope to the ACTIVE season and INSERT (never UPDATE) so the
+    // Add writes to the season the header selector names (D9); move carries the
+    // moved row's own season. Both INSERT (never UPDATE) so the
     // team_conference_memberships autofill trigger fires for the destination.
     case "membership.add": {
       if (!input.teamId || !input.subscriberId) return { ok: false, message: "Missing team or subscriber." };
-      const seasonId = await resolveActiveSeasonId(s);
-      if (!seasonId) return { ok: false, message: "No active season — cannot place a member." };
+      const placement = await requirePlacementSeason(s, input.seasonId);
+      if (!placement) return { ok: false, message: "Pick a season in the header first — seasons may overlap, so a member is added to the SELECTED season, never \"the active one\"." };
+      const seasonId = placement.id;
       const existing = await getOne(
         s,
         `team_memberships?team_id=eq.${input.teamId}&subscriber_id=eq.${input.subscriberId}&season_id=eq.${seasonId}&select=id`
       );
-      if (existing) return { ok: false, message: "That subscriber is already on this team for the active season." };
+      if (existing) return { ok: false, message: `That subscriber is already on this team for ${placement.name ?? "that season"}.` };
       const created = await insert(s, "team_memberships", {
         team_id: input.teamId,
         subscriber_id: input.subscriberId,

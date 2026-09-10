@@ -32,6 +32,7 @@
 //                                                       absent → nulls, never
 //                                                       a sync failure.
 
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
 import {
   PUZZLE_BANK_BASE_ID,
   PUZZLE_BANK_TABLE_ID,
@@ -363,6 +364,13 @@ async function fetchAcademyCourse(schoolId: string): Promise<AcademyCourseRef | 
 // staging carries no Faraday Take / Take Byline columns yet (neither does
 // Airtable today — FAR-389 authoring is still blocked on Myke), so the staging
 // path emits null takes and the win screen keeps its explanation fallback.
+// CC-LO-CONCURRENT-SEASONS-1.0 D7: dc_daily_page_content is UNIQUE(puzzle_date)
+// and keys takes/signals by puzzle_type, so it can describe ONE slate per day —
+// the platform DEFAULT season's (its own rows ∪ season-less rows, season rows
+// first, exactly the precedence the lobby serves). A member of a carve-out
+// season whose puzzle differs gets no take/signal for that type and the win
+// screen falls back to the explanation (FAR-389 D14). Keying day-content by
+// public_id is the follow-on, not this.
 async function fetchStagingLiveRows(): Promise<
   Array<Record<string, unknown>>
 > {
@@ -374,11 +382,16 @@ async function fetchStagingLiveRows(): Promise<
   }
   const supabaseUrl =
     process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+  const h = { apikey: key, Authorization: `Bearer ${key}` };
+  const defaultSeason = await resolveSeasonFor(h, null);
+  const seasonFilter = defaultSeason
+    ? `&or=(season_id.eq.${encodeURIComponent(defaultSeason.id)},season_id.is.null)&order=season_id.desc.nullslast,go_live_date.desc`
+    : `&season_id=is.null&order=go_live_date.desc`;
   const res = await fetch(
     `${supabaseUrl}/rest/v1/dc_puzzle_bank_staging` +
       `?published=eq.Live&select=puzzle_type,puzzle_name,public_id,puzzle_content,` +
-      `hint_1,hint_2,hint_3,answer_explanation,domain,sub_domain&order=go_live_date.desc`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
+      `hint_1,hint_2,hint_3,answer_explanation,domain,sub_domain,season_id${seasonFilter}`,
+    { headers: h, cache: "no-store" }
   );
   if (!res.ok) {
     const body = await res.text().catch(() => "");

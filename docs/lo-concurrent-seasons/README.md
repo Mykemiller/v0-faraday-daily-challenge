@@ -1,7 +1,9 @@
 # CC-LO-CONCURRENT-SEASONS-1.0 — Step 2 of "seasons are independent"
 
-**Status: DESIGN LOCKED (Myke, 2026-09-10: "approved" on D1 + D2). Build NOT
-started. Nothing applied, nothing deployed.** Follows CC-LO-SEASONS-OVERLAP-1.0
+**Status: D1–D9 LOCKED (Myke, 2026-09-10). Phases A + B + C BUILT on branch
+`claude/lo-concurrent-seasons` (PR #177). Migration NOT applied to prod, app
+NOT deployed; Phase D (live verification, §7 AC2–AC5) is blocked on the two
+prerequisites in §0.4.** Follows CC-LO-SEASONS-OVERLAP-1.0
 (PR #176, merged 2026-09-10), which removed the overlap refusal but left every
 runtime reader assuming ONE active season.
 
@@ -45,13 +47,13 @@ repo at the merge of PR #176.
 |---|---|---|
 | **D1** | Every runtime reader resolves the season **for a subscriber** (or the platform default for anonymous callers) through ONE SQL function. No TypeScript ever picks a season by `status='active' LIMIT 1` again. | **Locked (Myke, 2026-09-10)** |
 | **D2** | The bank uniqueness widens to `(season_id, puzzle_type, go_live_date)`; the serve path selects the caller's season's puzzle; approve/generate operate per season. | **Locked (Myke, 2026-09-10)** |
-| D3 | **Precedence when a subscriber is in scope of >1 active season:** the season whose scope is NOT platform-wide wins (a conference beta captures its members out of the platform season); among equals, latest `starts_on`, then `id` — deterministic, never LIMIT-1-by-accident. | Recommended, needs lock |
-| D4 | **The default season** (anonymous callers, subscribers on no in-scope team) = the active season whose scope resolves to the whole platform (no include rows, or a `platform` include), latest `starts_on`. If no active season is platform-scoped, there is no default: anonymous lobby serves season-less bank rows, `/api/season/active` returns `season:null` — exactly today's "no active season" behaviour. | Recommended, needs lock |
-| D5 | **Membership, not team, decides scope membership.** A subscriber is "in" season S iff they hold a `team_memberships` row for S with `pending=false`, `left_at IS NULL`, on a team returned by `fn_season_scope_teams(S)`. Mirrors `team_leaderboard` exactly (it is the surface these readers must agree with). | Recommended, needs lock |
-| D6 | **Season-less bank rows are the platform's puzzles.** A row with `season_id IS NULL` (imports, legacy generation) serves to anyone whose season has no row of that type for that date. A season's own row always beats a NULL row for its members. Season-less rows keep their one-per-type-per-day invariant (`NULLS NOT DISTINCT`). | Recommended, needs lock |
-| D7 | **Editorial day-content stays single-slate.** `dc_daily_page_content` is `UNIQUE (puzzle_date)` and keys takes/signals by `puzzle_type`. It will describe the DEFAULT season's puzzle; a member of a carve-out season sees no take/signal for a type where their puzzle differs (the win screen already falls back to the explanation, D14 of FAR-389). Keying day-content by `public_id` is a follow-on, not this CC. | Recommended, needs lock |
-| D8 | **One play per game type per day per subscriber stays.** `dc_daily_attempts` / `dc_completions` uniqueness is untouched. A subscriber plays THEIR season's puzzle; `dc_completions.puzzle_public_id` already records which one. Score attribution is still derived from date + memberships (Part C), which is per season by construction. | Recommended, needs lock |
-| D9 | **The League Office never resolves a season implicitly.** `membership.add` / `membership.move` take the season from the header `?season` selector and refuse without one. Dashboard/preview readers default to D4's default season and say so on screen. | Recommended, needs lock |
+| D3 | **Precedence when a subscriber is in scope of >1 active season:** the season whose scope is NOT platform-wide wins (a conference beta captures its members out of the platform season); among equals, latest `starts_on`, then `id` — deterministic, never LIMIT-1-by-accident. | **Locked (Myke, 2026-09-10)** |
+| D4 | **The default season** (anonymous callers, subscribers on no in-scope team) = the active season whose scope resolves to the whole platform (no include rows, or a `platform` include), latest `starts_on`. If no active season is platform-scoped, there is no default: anonymous lobby serves season-less bank rows, `/api/season/active` returns `season:null` — exactly today's "no active season" behaviour. | **Locked (Myke, 2026-09-10)** |
+| D5 | **Membership, not team, decides scope membership.** A subscriber is "in" season S iff they hold a `team_memberships` row for S with `pending=false`, `left_at IS NULL`, on a team returned by `fn_season_scope_teams(S)`. Mirrors `team_leaderboard` exactly (it is the surface these readers must agree with). | **Locked (Myke, 2026-09-10)** |
+| D6 | **Season-less bank rows are the platform's puzzles.** A row with `season_id IS NULL` (imports, legacy generation) serves to anyone whose season has no row of that type for that date. A season's own row always beats a NULL row for its members. Season-less rows keep their one-per-type-per-day invariant (`NULLS NOT DISTINCT`). | **Locked (Myke, 2026-09-10)** |
+| D7 | **Editorial day-content stays single-slate.** `dc_daily_page_content` is `UNIQUE (puzzle_date)` and keys takes/signals by `puzzle_type`. It will describe the DEFAULT season's puzzle; a member of a carve-out season sees no take/signal for a type where their puzzle differs (the win screen already falls back to the explanation, D14 of FAR-389). Keying day-content by `public_id` is a follow-on, not this CC. | **Locked (Myke, 2026-09-10)** |
+| D8 | **One play per game type per day per subscriber stays.** `dc_daily_attempts` / `dc_completions` uniqueness is untouched. A subscriber plays THEIR season's puzzle; `dc_completions.puzzle_public_id` already records which one. Score attribution is still derived from date + memberships (Part C), which is per season by construction. | **Locked (Myke, 2026-09-10)** |
+| D9 | **The League Office never resolves a season implicitly.** `membership.add` / `membership.move` take the season from the header `?season` selector and refuse without one. Dashboard/preview readers default to D4's default season and say so on screen. | **Locked (Myke, 2026-09-10)** |
 
 ---
 
@@ -127,10 +129,23 @@ The old function stays for the season-less import path and gets a comment
 saying so.
 
 ### 3.7 `fn_dc_rotate_live_set` — report per season
-Promote/retire bodies unchanged. `live_types` / `missing_types` computed for
-`fn_default_season()`'s slate PLUS a `per_season` jsonb map
-`{season_id: {live_types, missing_types}}` for every active season with ≥1 row
-dated today. AUTO-128's log line keeps reading the top-level fields.
+Promote/retire bodies unchanged. **As built:** the top-level `live_types` /
+`missing_types` keep their old meaning (any Live row of the type today, any
+season — so AUTO-128's log line is unchanged); a new `per_season` jsonb map
+`{season_id: {name, live_types, missing_types}}` is computed for EVERY active
+season as its own rows ∪ platform rows (D6). Deviation from the draft (which
+said "default season's slate at top level") — the union is backward compatible
+and the default season's view is in the map.
+
+### 3.8 The email-keyed team RPCs (found during the build)
+A `pg_proc` scan for `status = 'active'` turned up five SQL readers the §6
+inventory missed, all still called by the Supabase edge functions
+(`team-action`, `get-leaderboard`, `get-team-leaderboard`): `team_create`,
+`team_join`, `team_leave`, `team_get_my_teams` now resolve
+`fn_season_for_subscriber(<subscriber by email>)`; `fn_group_member_emails`
+(no caller identity) uses `fn_default_season()`. Same signatures, true
+replacements, gate-checked. `workbench_health_compute` (a status card) and
+`lo_reset_season_scoring` were left alone — listed in §2.
 
 Rollback block: restore the four function bodies from `pg_get_functiondef`
 captured in the migration header; re-add the old UNIQUE (will fail if a
@@ -200,6 +215,43 @@ the LO status chip, and fails on any hit — the same pattern
 `src/app/league-office/seasons/[id]/page.tsx:57` is a status chip, not a reader.
 
 ---
+
+## 6a. Built (2026-09-10) — what changed, per phase
+
+**Phase A** — `supabase/migrations/20260911000000_lo_concurrent_seasons.sql`
+(§3.1–3.8). Verified by applying it to a PGlite (PostgreSQL 18, WASM) stub of
+the touched tables and running fixture checks: resolver precedence A→carve-out,
+B/D/E/X/NULL→platform, no-platform-season→NULL default; `NULLS NOT DISTINCT`
+enforced; per-season approve does not leak; rotate `per_season`; rollover loops
+both seasons; `team_leaderboard(NULL)` = default; `team_join` lands in the
+joiner's season; `team_create` lands a team-less creator in the platform
+season; `fn_group_member_emails` = default-season members. The harness lives
+outside the repo (`~/.cache/lo-pglite/{stub.sql,run.js}`) because PGlite is
+not a project dependency; the stub is a schema STUB, not prod — AC1/AC2 still
+need the live run. Pre-change bodies: `rollback-pre-phase-a.sql`.
+
+**Phase B** — `src/lib/seasons/resolve.ts` (new), `season-slate-server.ts`
+(`resolveSeasonSlate(seasonId)`), `supabase-puzzle-bank.js`
+(`fetchLiveRows({seasonId})` with the D6 filter + ordering,
+`getLivePuzzles({seasonId})`, `getSignalDropAnswer({publicId, seasonId})`),
+`/api/challenge/today?token=`, `/api/challenge/guess {token}`,
+`DailyChallenge.jsx` (re-fetch keyed on `sessionToken`), `generation/worker.ts`
+(per-season occupancy), `generation-write.ts` (`fn_dc_approve_season_puzzles`),
+`day-content.ts` (default season's slate, D7).
+
+**Phase C** — every §6 reader; `messaging/server.ts` `activeSeason(h, viewerId)`;
+`league-playoffs/server.ts` `fetchActiveSeason(headers, subscriberId)`; LO
+`write.ts` `membership.add` requires `seasonId` (D9) + `actions.tsx` Payload +
+team page gating; LO `data.ts` `loadDefaultSeason()`. Guard test
+`npm run test:season-resolve` (4 tests, incl. the src/ scan). CLAUDE.md
+section added.
+
+**Verified locally:** test:season-resolve 4/4 · slate-enforced 13/13 ·
+season-config 42/42 · generation 17/17 · playoffs 75/75 · messaging 28/28 ·
+member-counts 10/10 · slate-filter 18/18 · game-library 26/26 · puzzle-bank
+10/10 (run directly — the npm script's `--experimental-default-type` flag is
+rejected by Node 24, pre-existing). `next build` / `tsc` / `eslint`: see the
+PR description for the final numbers.
 
 ## 7. Acceptance criteria
 

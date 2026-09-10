@@ -1,6 +1,14 @@
-// GET /api/challenge/today
+// GET /api/challenge/today[?token=…]
 //
-// Returns today's puzzle set for the Daily Challenge lobby:
+// Returns today's puzzle set for the Daily Challenge lobby. The optional
+// session token selects WHOSE puzzles: seasons are independent and may overlap
+// (CC-LO-CONCURRENT-SEASONS-1.0), so the set is the caller's SEASON's Live rows
+// — resolved once here via lib/seasons/resolve (their confirmed in-scope team
+// membership; anonymous or team-less → the platform default season) and passed
+// down to both the bank read and the slate. An invalid/expired token is treated
+// as anonymous, never as an error: the lobby must never hard-fail.
+//
+// Returns:
 //   { puzzles: { "Rackl": {...}, "Signal Drop": {...}, ... }, tip: {...} | null }
 //
 // `puzzles` is keyed by puzzle type and contains only the types that have a
@@ -29,7 +37,8 @@ import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
 // identically on the Airtable and Supabase paths, and does not wait on the
 // DC_PUZZLE_SOURCE cutover.
 import { filterToSlate } from "@/lib/season-slate";
-import { resolveActiveSeasonSlate } from "@/lib/season-slate-server";
+import { resolveSeasonSlate } from "@/lib/season-slate-server";
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -38,6 +47,31 @@ const NO_STORE = { "Cache-Control": "no-store" };
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
+
+function svcHeaders() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) return null;
+  return { apikey: key, Authorization: `Bearer ${key}` };
+}
+
+// dc_sessions token → subscriber id, or null (missing, unknown, expired, or any
+// read failure — all of which mean "serve as anonymous").
+async function resolveSubscriberId(h, token) {
+  if (!h || !token) return null;
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/dc_sessions?token=eq.${encodeURIComponent(token)}&select=subscriber_id,expires_at&limit=1`,
+      { headers: h, cache: "no-store" }
+    );
+    if (!r.ok) return null;
+    const rows = await r.json().catch(() => null);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row || (row.expires_at && new Date(row.expires_at) < new Date())) return null;
+    return row.subscriber_id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // CT calendar date (matches the sync's puzzle_date + the AUTO-128 rotator).
 function centralDate(d) {
@@ -143,14 +177,21 @@ async function fetchSolveBands() {
   }
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
+    // Whose puzzles? Resolve the season ONCE, then fan out.
+    const token = new URL(request.url).searchParams.get("token") ?? "";
+    const h = svcHeaders();
+    const subscriberId = await resolveSubscriberId(h, token);
+    const season = await resolveSeasonFor(h, subscriberId);
+    const seasonId = season?.id ?? null;
+
     const [livePuzzles, tip, takes, solveBands, slate] = await Promise.all([
-      getLivePuzzles(),
+      getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
       fetchSolveBands(),
-      resolveActiveSeasonSlate(),
+      resolveSeasonSlate(seasonId),
     ]);
 
     // Narrow to the season's enabled games. A null slate leaves the set
@@ -172,9 +213,14 @@ export async function GET() {
     // `slate` rides along so the lobby can render the season's games rather than
     // its hardcoded GAME_CONFIGS list — without it a disabled game keeps its
     // tile and falls through to mock data when tapped. null = show everything.
-    return Response.json({ puzzles, tip, solveBands, slate }, { headers: NO_STORE });
+    // `season` names the season these puzzles belong to (null = platform rows
+    // only). Informational — the client keys nothing off it yet.
+    return Response.json(
+      { puzzles, tip, solveBands, slate, season: season ? { id: season.id, name: season.name ?? null } : null },
+      { headers: NO_STORE }
+    );
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
-    return Response.json({ puzzles: {}, tip: null, solveBands: {}, slate: null }, { headers: NO_STORE });
+    return Response.json({ puzzles: {}, tip: null, solveBands: {}, slate: null, season: null }, { headers: NO_STORE });
   }
 }

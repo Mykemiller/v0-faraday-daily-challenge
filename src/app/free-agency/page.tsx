@@ -53,7 +53,8 @@ function windowLabel(w: DateWindow, season: PlayoffSeason): string {
 
 export default async function FreeAgencyPage() {
   const h = svcHeaders();
-  const season = h ? await fetchActiveSeason(h) : null;
+  // Server page with no viewer identity → the platform default season (D4).
+  const season = h ? await fetchActiveSeason(h, null) : null;
   // The League Office knobs in force now — free agency can be switched off, and
   // the roster lock can shut everything, so the page must read them or it would
   // advertise a window the API will refuse.

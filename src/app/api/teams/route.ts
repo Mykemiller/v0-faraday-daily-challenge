@@ -13,6 +13,7 @@
 
 import { fetchSeasonRules, rosterMoveGuard } from '@/lib/league-playoffs/server';
 import { SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
+import { resolveSeasonFor } from '@/lib/seasons/resolve';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -59,13 +60,8 @@ export async function GET(request: Request) {
     const subscriberId = await resolveSubscriber(token);
     if (!subscriberId) return Response.json({ error: 'invalid_session' }, { status: 401 });
 
-    // Get active season
-    const seasonR = await fetch(
-      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=id&limit=1`,
-      { headers: h, cache: 'no-store' }
-    );
-    const seasonRows = await seasonR.json().catch(() => null);
-    const seasonId = Array.isArray(seasonRows) ? seasonRows[0]?.id : null;
+    // THIS subscriber's season (CC-LO-CONCURRENT-SEASONS-1.0).
+    const seasonId = (await resolveSeasonFor(h, subscriberId))?.id ?? null;
     if (!seasonId) return Response.json({ memberships: [] });
 
     const memR = await fetch(
@@ -109,7 +105,7 @@ export async function POST(request: Request) {
   if (!token) return Response.json({ error: 'missing_token' }, { status: 401 });
 
   // ── Join a team via a durable invite token (team page "Invite / Share") ──────
-  // Resolves the active season itself (the invite link carries no season_id) and
+  // Resolves the joiner's season itself (the invite link carries no season_id) and
   // adds an immediate, non-pending membership, honouring the 5-team cap and the
   // season lock. Idempotent: already-a-member is a success no-op.
   if (action === 'join_by_token') {
@@ -119,13 +115,10 @@ export async function POST(request: Request) {
     const subscriberId = await resolveSubscriber(token);
     if (!subscriberId) return Response.json({ error: 'invalid_session' }, { status: 401 });
 
-    // Active season
-    const seasonR = await fetch(
-      `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&limit=1`,
-      { headers: h, cache: 'no-store' }
-    );
-    const seasonRows = await seasonR.json().catch(() => null);
-    const season = Array.isArray(seasonRows) ? seasonRows[0] : null;
+    // The joiner's season (CC-LO-CONCURRENT-SEASONS-1.0). The invite link
+    // carries no season_id; the joiner's own in-scope membership (or the
+    // platform default season) decides which season the join lands in.
+    const season = await resolveSeasonFor(h, subscriberId);
     if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
     if (season.locked_at && new Date() > new Date(season.locked_at)) {
       return Response.json({ error: 'season_locked' }, { status: 403 });

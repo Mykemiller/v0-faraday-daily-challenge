@@ -109,8 +109,9 @@ export async function approvePilot(
   return { ok: true, message: "Pilot approved — the full run is now unlocked." };
 }
 
-/** Publishes the season's generated drafts via fn_dc_approve_puzzles (C½ D4 —
- *  the ONLY Unpublished→Published path; the trigger mints Public IDs). */
+/** Publishes the season's generated drafts via fn_dc_approve_season_puzzles
+ *  (the per-season form of C½ D4's ONLY Unpublished→Published path; the trigger
+ *  mints Public IDs). */
 export async function approveSeasonPuzzles(
   s: Svc,
   log: GenLogFn,
@@ -125,7 +126,11 @@ export async function approveSeasonPuzzles(
   const dates = [...new Set(drafts.map((r) => r.go_live_date))].sort();
   if (!dates.length) return { ok: false, message: "No unpublished generated puzzles for this season." };
 
-  const r = await rpc<{ approved: number; public_ids: string[] }>(s, "fn_dc_approve_puzzles", {
+  // CC-LO-CONCURRENT-SEASONS-1.0 §3.6: approve THIS season's rows only — the
+  // season-less fn_dc_approve_puzzles(dates, actor) would also publish another
+  // season's drafts on the same dates.
+  const r = await rpc<{ approved: number; public_ids: string[] }>(s, "fn_dc_approve_season_puzzles", {
+    p_season_id: input.seasonId,
     p_dates: dates,
     p_actor: staffEmail,
   });

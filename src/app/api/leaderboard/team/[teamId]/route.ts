@@ -25,9 +25,9 @@ import {
   rosterFreezeGuard,
   rosterMoveGuard,
   MOVE_WINDOW_CLOSED_CODE,
-  SEASON_PLAYOFF_COLUMNS,
   statusFor,
 } from '@/lib/league-playoffs/server';
+import { resolveSeasonFor } from '@/lib/seasons/resolve';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -77,13 +77,9 @@ async function resolveSubscriber(
   return sub ? { id: sub.id, handle: sub.handle, email: sub.email } : null;
 }
 
-async function activeSeason(h: Svc) {
-  const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/seasons?status=eq.active&select=${SEASON_PLAYOFF_COLUMNS}&limit=1`,
-    { headers: h, cache: 'no-store' }
-  );
-  const rows = await r.json().catch(() => null);
-  return Array.isArray(rows) ? rows[0] : null;
+/** The VIEWER's season (CC-LO-CONCURRENT-SEASONS-1.0); anonymous → the default. */
+async function viewerSeason(h: Svc, viewerId: string | null) {
+  return resolveSeasonFor(h, viewerId);
 }
 
 async function fetchTeam(h: Svc, teamId: string) {
@@ -129,13 +125,13 @@ export async function GET(
   const boardRpc = phase === 'full' ? 'team_leaderboard_season' : 'team_leaderboard_phase';
   const totalRpc = phase === 'full' ? 'team_total_score' : 'team_total_score_phase';
 
-  const season = await activeSeason(h);
+  const viewer = token ? await resolveSubscriber(h, token) : null;
+
+  const season = await viewerSeason(h, viewer?.id ?? null);
   if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
 
   const team = await fetchTeam(h, teamId);
   if (!team) return Response.json({ error: 'team_not_found' }, { status: 404 });
-
-  const viewer = token ? await resolveSubscriber(h, token) : null;
 
   // Full active membership list for this team + season (INCLUDING members who
   // have never scored — the team_leaderboard_season RPC inner-joins score_events
@@ -320,7 +316,7 @@ export async function POST(
   const viewer = await resolveSubscriber(h, token);
   if (!viewer) return Response.json({ error: 'invalid_session' }, { status: 401 });
 
-  const season = await activeSeason(h);
+  const season = await viewerSeason(h, viewer.id);
   if (!season) return Response.json({ error: 'no_active_season' }, { status: 404 });
   const isLocked = season.locked_at && new Date() > new Date(season.locked_at);
 

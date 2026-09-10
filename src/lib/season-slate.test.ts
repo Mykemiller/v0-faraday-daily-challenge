@@ -108,7 +108,10 @@ test("the serving route DOES now consult the season slate", async () => {
   const route = readFileSync(join(here, "../app/api/challenge/today/route.js"), "utf8");
 
   assert.match(route, /filterToSlate/, "the serve route must apply the slate filter");
-  assert.match(route, /resolveActiveSeasonSlate/, "the serve route must resolve the season slate");
+  // CC-LO-CONCURRENT-SEASONS-1.0: the route resolves the CALLER's season and
+  // hands its id to the slate resolver — it no longer looks up "the" active one.
+  assert.match(route, /resolveSeasonSlate\(seasonId\)/, "the serve route must resolve the season slate for the caller's season");
+  assert.match(route, /resolveSeasonFor\(/, "the serve route must resolve the caller's season through lib/seasons/resolve");
   assert.match(route, /slate/, "the payload must carry the slate for the client");
 });
 

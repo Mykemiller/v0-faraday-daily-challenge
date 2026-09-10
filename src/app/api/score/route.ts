@@ -12,6 +12,8 @@
 // Server-only. Never trusts the client for score math. Requires env:
 //   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL (falls back to project URL).
 
+import { resolveSeasonFor } from "@/lib/seasons/resolve";
+
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 const EDGE_FN_BASE = `${SUPABASE_URL}/functions/v1`;
@@ -142,8 +144,9 @@ export async function POST(request: Request) {
     // Non-fatal: continue to lock the attempt and update leaderboard.
   }
 
-  // Check season locked_at — reject score writes after the season locks.
-  const activeSeason = await getActiveSeason(s);
+  // Check season locked_at — reject score writes after the season locks. THE
+  // SCORER's season (CC-LO-CONCURRENT-SEASONS-1.0), not "the" active one.
+  const activeSeason = await resolveSeasonFor(s.headers, subscriberId);
   if (activeSeason?.locked_at && new Date() > new Date(activeSeason.locked_at)) {
     return Response.json({ error: "Season is locked — no more scores accepted" }, { status: 403 });
   }
@@ -276,18 +279,6 @@ async function upsertLeaderboardDaily(
       }
     ).catch(() => {});
   }
-}
-
-async function getActiveSeason(
-  s: Svc
-): Promise<{ id: string; locked_at: string | null } | null> {
-  const r = await fetch(
-    `${s.base}/seasons?status=eq.active&select=id,locked_at&limit=1`,
-    { headers: s.headers, cache: "no-store" }
-  );
-  if (!r.ok) return null;
-  const rows = await r.json().catch(() => null);
-  return Array.isArray(rows) ? rows[0] ?? null : null;
 }
 
 async function getDailyTotal(
