@@ -20,7 +20,7 @@ import {
   Provenance, Section, TextArea, TextInput,
 } from "./fields";
 import {
-  derivedFreeAgency, findOverlappingSeason, slugify, validateWindow, windowSummary,
+  derivedFreeAgency, slugify, validateWindow, windowSummary,
   FREE_AGENCY_OFFSET_DAYS, FREE_AGENCY_NOTICE_OFFSET_DAYS,
   seedTradingWindows, validateTradingWindows, mergeTradingWindows,
   seasonDayRangeLabel, TOO_SHORT_MESSAGE,
@@ -29,9 +29,11 @@ import {
 import type { ScopeOptions } from "@/lib/league-office/seasons";
 import { ScopeEditor, emptyScope, toWizardScope, type ScopeState } from "./ScopeEditor";
 
-/** `starts_on`/`ends_on` are carried so the Window step can check the
- *  `seasons_no_overlap` exclusion constraint before submit. */
-type SeasonOption = { id: string; name: string; slug: string; starts_on: string; ends_on: string };
+/** Existing seasons — the step-5 "copy config from" picker and the slug
+ *  clash check. Seasons are independent and may share calendar days
+ *  (CC-LO-SEASONS-OVERLAP-1.0), so the Window step no longer compares
+ *  against them. */
+type SeasonOption = { id: string; name: string; slug: string };
 
 const STEPS = [
   { n: 1, label: "Identity" },
@@ -111,13 +113,6 @@ export default function SeasonWizard({
   /** Shown as read-only — the DB computes these from ends_on. */
   const freeAgency = useMemo(() => derivedFreeAgency(endsOn), [endsOn]);
 
-  /** `seasons_no_overlap` rejects overlapping windows. Caught here so the
-   *  commissioner learns it at the Window step instead of at submit. */
-  const overlap = useMemo(
-    () => findOverlappingSeason(startsOn, endsOn, seasons),
-    [startsOn, endsOn, seasons]
-  );
-
   /** Re-derived on every season-date change. Untouched fields read straight
    *  through to this, which is what makes the silent re-anchor work. */
   const seeded = useMemo(
@@ -145,7 +140,7 @@ export default function SeasonWizard({
   const anyOverridden = Object.keys(twOverrides).length > 0;
 
   const step1Ok = !!name.trim() && !!effectiveSlug && !slugTaken;
-  const step2Ok = windowErrors.length === 0 && !!startsOn && !!endsOn && !overlap;
+  const step2Ok = windowErrors.length === 0 && !!startsOn && !!endsOn;
   const step3Ok = Object.keys(twErrors.fields).length === 0 && twErrors.general.length === 0;
   const step4Ok = scope.mode === "platform" || scope.refIds.length > 0;
   const step5Ok = startMode === "defaults" || !!sourceSeasonId;
@@ -318,15 +313,6 @@ export default function SeasonWizard({
                   the end date and cannot be set by hand.
                 </div>
               </div>
-
-              {overlap ? (
-                <div style={{ marginTop: 14 }}>
-                  <Callout tone="danger">
-                    These dates overlap <strong>{overlap.name}</strong> ({overlap.starts_on} →{" "}
-                    {overlap.ends_on}). Seasons cannot overlap — pick a window outside it.
-                  </Callout>
-                </div>
-              ) : null}
 
               {windowErrors.length ? (
                 <div style={{ marginTop: 14 }}>
