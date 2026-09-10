@@ -216,32 +216,11 @@ export function derivedFreeAgency(endsOn: string | null | undefined): {
   };
 }
 
-export type SeasonRange = { id?: string; name: string; starts_on: string; ends_on: string };
-
-/** `seasons_no_overlap` is an EXCLUDE constraint over
- *  `daterange(starts_on, ends_on, '[]')` — seasons may not overlap, inclusive of
- *  both endpoints. Checked here so the wizard can warn at the Window step and
- *  name the clashing season, rather than failing at submit with a raw 23P01. */
-export function findOverlappingSeason(
-  startsOn: string | null | undefined,
-  endsOn: string | null | undefined,
-  existing: SeasonRange[],
-  ignoreId?: string
-): SeasonRange | null {
-  const a = parseIsoDate(startsOn);
-  const b = parseIsoDate(endsOn);
-  if (!a || !b) return null;
-
-  for (const s of existing) {
-    if (ignoreId && s.id === ignoreId) continue;
-    const c = parseIsoDate(s.starts_on);
-    const d = parseIsoDate(s.ends_on);
-    if (!c || !d) continue;
-    // inclusive-inclusive overlap
-    if (a <= d && b >= c) return s;
-  }
-  return null;
-}
+// Seasons are independent and MAY overlap (CC-LO-SEASONS-OVERLAP-1.0). The
+// `findOverlappingSeason` pre-check that used to live here mirrored the
+// `seasons_no_overlap_per_league` exclusion constraint, dropped by migration
+// 20260910180000. Which teams a season covers is decided by season_scopes,
+// never by comparing date windows — do not re-add a clash check.
 
 export type WindowInput = {
   starts_on?: string | null;

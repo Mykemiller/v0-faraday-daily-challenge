@@ -3,13 +3,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import * as logic from "./season-config-logic.ts";
 import {
   editability, slugify, round2, sumPct, isHundred, normalizeTo100, evenSplit,
   defaultDifficultyMix, defaultThemeMix, normalizeDayMask, dayMaskLabel,
   windowSummary, validateWindow, curvePoints, canonicalJson, fingerprint,
   configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
   diffConfigs, promoteIntent, countOverCap, THEATERS,
-  derivedFreeAgency, findOverlappingSeason,
+  derivedFreeAgency,
   seedTradingWindows, validateTradingWindows, tradingWindowsFit, leagueWindowDefaults,
   mergeTradingWindows,
   seasonDayRangeLabel, dayOfSeason, isoAddDays, isoDiffDays, TOO_SHORT_MESSAGE,
@@ -145,34 +146,15 @@ test("derivedFreeAgency mirrors the GENERATED ALWAYS columns (ends_on −3 / −
   assert.deepEqual(derivedFreeAgency("nonsense"), { start: null, notice: null });
 });
 
-// ── seasons_no_overlap ───────────────────────────────────────────────────────
-const LIVE_SEASONS = [
-  { id: "s1", name: "Season 1", starts_on: "2026-06-13", ends_on: "2026-07-10" },
-  { id: "s2", name: "Season 2", starts_on: "2026-07-11", ends_on: "2027-01-06" },
-  { id: "s3", name: "Season 3", starts_on: "2027-01-07", ends_on: "2027-03-14" },
-];
-
-test("findOverlappingSeason enforces the inclusive daterange EXCLUDE rule", () => {
-  // the exact window from the failing screenshot — sits inside Season 2
-  assert.equal(findOverlappingSeason("2026-08-03", "2026-09-04", LIVE_SEASONS)?.name, "Season 2");
-
-  // touching an endpoint counts: the constraint uses '[]' (inclusive both ends)
-  assert.equal(findOverlappingSeason("2027-03-14", "2027-04-01", LIVE_SEASONS)?.name, "Season 3");
-  assert.equal(findOverlappingSeason("2026-05-01", "2026-06-13", LIVE_SEASONS)?.name, "Season 1");
-
-  // fully containing an existing season also overlaps
-  assert.equal(findOverlappingSeason("2026-01-01", "2028-01-01", LIVE_SEASONS)?.name, "Season 1");
-
-  // genuinely free windows
-  assert.equal(findOverlappingSeason("2027-03-15", "2027-05-17", LIVE_SEASONS), null);
-  assert.equal(findOverlappingSeason("2026-01-01", "2026-06-12", LIVE_SEASONS), null);
-
-  // editing a season must not collide with itself
-  assert.equal(findOverlappingSeason("2026-07-11", "2027-01-06", LIVE_SEASONS, "s2"), null);
-
-  // incomplete input is not an overlap claim
-  assert.equal(findOverlappingSeason(null, "2026-09-04", LIVE_SEASONS), null);
-  assert.equal(findOverlappingSeason("2026-08-03", "2026-09-04", []), null);
+// ── seasons may overlap (CC-LO-SEASONS-OVERLAP-1.0) ─────────────────────────
+test("no date-clash pre-check exists — seasons are independent and may overlap", () => {
+  // The wizard used to refuse any window touching an existing season. That rule
+  // is retired: scope (season_scopes) decides coverage, not dates. Guard against
+  // it quietly returning as a helper the wizard or the write path could adopt.
+  assert.equal("findOverlappingSeason" in logic, false);
+  // The exact window from the 2026-09-10 screenshot: inside TEST SEASON 1 and
+  // still a valid window on its own terms.
+  assert.deepEqual(validateWindow({ starts_on: "2026-09-10", ends_on: "2026-10-01" }), []);
 });
 
 // ── curve preview ────────────────────────────────────────────────────────────

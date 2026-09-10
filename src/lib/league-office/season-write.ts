@@ -25,9 +25,9 @@ import {
 } from "./seasons";
 import {
   buildScopeRows, configSaveMessage, countOverCap, defaultDifficultyMix,
-  defaultThemeMix, editability, findOverlappingSeason, normalizeDayMask, round2,
+  defaultThemeMix, editability, normalizeDayMask, round2,
   sanitizeConfigPatch, slugify, validateTradingWindows,
-  type SeasonRange, type TradingWindows, type WizardScope,
+  type TradingWindows, type WizardScope,
 } from "./season-config-logic";
 
 const SUPABASE_URL =
@@ -90,8 +90,11 @@ async function insertOrError(
 
 /** Turn the `seasons` schema's refusals into something actionable. */
 function seasonWriteMessage(raw: string): string {
+  // Only reachable on a database that has not applied
+  // 20260910180000_lo_seasons_allow_overlap.sql — the app no longer refuses
+  // overlapping windows itself.
   if (/seasons_no_overlap|exclusion constraint/i.test(raw))
-    return "Those dates overlap an existing season. Seasons cannot overlap — pick a different window.";
+    return "This database still enforces the retired no-overlap rule. Apply migration 20260910180000_lo_seasons_allow_overlap, then retry.";
   if (/seasons_slug_key|duplicate key/i.test(raw))
     return "That slug is already taken. Choose a different name or edit the slug.";
   if (/seasons_check/i.test(raw))
@@ -202,19 +205,13 @@ export async function createSeason(
   const clash = await getOne<{ id: string }>(s, `seasons?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`);
   if (clash) return err(409, `The slug “${slug}” is already taken. Choose a different name or edit the slug.`);
 
-  // `seasons_no_overlap_per_league` EXCLUDEs overlapping daterange(starts_on,
-  // ends_on, '[]') within one league (Part A). This pre-check stays GLOBAL
-  // because the wizard only creates INDEPENDENT-league seasons today; it must
-  // become league-scoped when a league picker exists. Pre-checked so the
-  // message can NAME the clashing season; the constraint mapping below still
-  // covers the race where one is created concurrently.
-  const existing = await fetchJson<SeasonRange[]>(s, `seasons?select=id,name,starts_on,ends_on`);
-  const overlap = findOverlappingSeason(input.starts_on, input.ends_on, existing ?? []);
-  if (overlap)
-    return err(
-      409,
-      `Those dates overlap “${overlap.name}” (${overlap.starts_on} → ${overlap.ends_on}). Seasons cannot overlap — pick a window outside it.`
-    );
+  // Seasons are independent and MAY share calendar days
+  // (CC-LO-SEASONS-OVERLAP-1.0). The old `seasons_no_overlap_per_league`
+  // exclusion constraint and its pre-check are gone: which teams a season
+  // covers is decided by season_scopes, not by its dates, so two seasons on
+  // the same window (a conference beta inside the platform season, a test
+  // season beside a live one) is the intended model. Do not re-add a date
+  // clash check here.
 
   // Part A (league model): seasons.league_id is NOT NULL. The wizard has no
   // league picker yet, so every LO-created season lands in INDEPENDENT —

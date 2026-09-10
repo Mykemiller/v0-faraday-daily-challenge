@@ -46,6 +46,35 @@ Two things that look like duplicates and are not:
 - `public_id_prefix` (RACK-style, mints Public IDs) is **not** `short_code`.
   Two live systems; never derive one from the other.
 
+## Seasons are independent and MAY overlap (CC-LO-SEASONS-OVERLAP-1.0, claude/lo-seasons-overlap, 2026-09-10)
+
+**Two seasons may cover the same calendar days.** The Leaderboard-V2-era rule
+"no two seasons may cover the same calendar day" (the `seasons_no_overlap` →
+`seasons_no_overlap_per_league` EXCLUDE constraint) is retired by migration
+`20260910180000_lo_seasons_allow_overlap.sql`. Which teams a season covers is
+decided by `season_scopes` (see "Season scoping" below), never by its dates — a
+conference beta inside the platform season, or a test season beside a live one,
+is the intended model.
+
+- **Removed, do not re-add:** the DB exclusion constraint, `findOverlappingSeason`
+  in `season-config-logic.ts`, the wizard's Window-step "These dates overlap …"
+  callout + `step2Ok` gate, and the `createSeason` 409 pre-check. A guard test in
+  `npm run test:season-config` fails if a `findOverlappingSeason` export returns.
+- **Order of operations:** the app change is safe to deploy first — until the
+  migration is applied, the DB still refuses, and `seasonWriteMessage` maps that
+  refusal to "apply migration 20260910180000" rather than the old advice.
+- **⚠️ Step 2 is NOT done — the "single active season" assumption.**
+  `fn_leaderboard_rollover` flips every season containing today to `active`, and
+  ~15 readers resolve THE active season as `status='active' ORDER BY starts_on DESC
+  LIMIT 1` (roster-freeze + FA gates, `/api/teams`, `/api/score` lock check,
+  `/api/leaderboard/*`, `/api/messages`, `/api/season/active`,
+  `season-slate-server.ts`, LO `write.ts`). With overlapping seasons each silently
+  picks the most recently started one. **Safe while overlapping seasons cover
+  disjoint teams; not safe for two seasons over the same teams.** Making those
+  readers scope-aware (season for THIS subscriber / team) is the next ticket.
+- `seasons.league_id` lost its last constraint role; it is still read by
+  `fn_season_roster_carry_forward` and the generation `no_league` gate.
+
 ## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
 
 **Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`
@@ -235,8 +264,9 @@ conference between seasons. It is gone.
 
 **Never use it to decide which teams a season covers.** It is *not* dead, though, and must
 not be dropped casually — it is still read by `fn_season_roster_carry_forward` (default
-source-season selection), the generation `no_league` gate, and the
-`seasons_no_overlap_per_league` exclusion constraint. See the column comment.
+source-season selection) and the generation `no_league` gate. (The
+`seasons_no_overlap_per_league` exclusion constraint that also read it was dropped by
+CC-LO-SEASONS-OVERLAP-1.0, 2026-09-10.) See the column comment.
 
 ### RLS
 
@@ -473,17 +503,16 @@ BEGIN..ROLLBACK): `docs/league-model/part-a-down.sql`.
   (`season_scopes.scope_ref_id`, `loadScopeOptions`). Decision (Option 1,
   Myke 2026-08-01): **adopt & extend, never recreate** — `code` plays the
   spec's `slug` role. The earlier "conferences is empty" note below is stale.
-- **`seasons.league_id` is NOT NULL → INDEPENDENT** (D1) and that NOT NULL is
-  **load-bearing**: the overlap guard is now the exclusion constraint
-  `seasons_no_overlap_per_league` (`league_id with =` + daterange `&&`) — a
-  nullable league_id would silently permit overlapping seasons (NULL never
-  conflicts with NULL). Same date range in TWO leagues is legal (verified).
+- **`seasons.league_id` is NOT NULL → INDEPENDENT** (D1). It was load-bearing
+  for the exclusion constraint `seasons_no_overlap_per_league` (`league_id with
+  =` + daterange `&&`) — **that constraint was dropped 2026-09-10
+  (CC-LO-SEASONS-OVERLAP-1.0); seasons may now overlap freely.**
   Also new: `playoff_starts_on`, `roster_freeze_on` + 3 CHECKs (playoff inside
   season; freeze ≤ playoff; freeze ≥ starts_on + quarter-length).
 - **`createSeason` now writes `league_id`** (resolved by `code='INDEPENDENT'`
   per request, never a hardcoded uuid) — without it every LO season creation
-  500s on the NOT NULL. The wizard's overlap pre-check stays GLOBAL until a
-  league picker exists (commented in season-write.ts).
+  500s on the NOT NULL. (The wizard's overlap pre-check is gone as of
+  CC-LO-SEASONS-OVERLAP-1.0.)
 - **`team_conference_memberships` (team, conference, season)** created — RLS
   on, zero policies (deny-all, service-role only). Empty until Part B.
 - **The spec's `season_games` was deliberately NOT created** — that name is
