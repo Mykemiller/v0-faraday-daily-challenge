@@ -276,22 +276,75 @@ export function isStalled(run: GenRun, nowIso: string): boolean {
   return Date.parse(nowIso) - t > STALL_MINUTES * 60_000;
 }
 
+/** Does the bank-minimum alarm apply to this season at all?
+ *
+ *  The alarm is a POST-generation operations alarm (AUTO-031's role): once a
+ *  season's puzzles exist, the bank must never run dry under live players. A
+ *  season that has not been generated has, by definition, nothing in the bank
+ *  yet — "0 days of coverage" is not an alarm there, it is the starting state,
+ *  and the GENERATABLE checklist is the surface that says what to do about it.
+ *  Firing four amber banners on a freshly configured season (demo 2,
+ *  2026-09-10) told the operator nothing and read as an error condition.
+ *
+ *  Deliberately keyed on `generated_at`, not `seasons.status`: an active but
+ *  un-generated season would otherwise alarm for the same non-reason the day
+ *  the nightly rollover flips it, and picking by status is what the
+ *  season-resolve guard exists to stop. Trade-off: a season served only by
+ *  platform (season_id NULL) rows and never generated is not watched from this
+ *  panel — the platform bank has its own health surface. */
+export function bankAlarmApplies(season: Pick<GenSeason, "generated_at">): boolean {
+  return !!season.generated_at;
+}
+
+/** The serve dates the bank must cover: the next BANK_MINIMUM_DAYS days after
+ *  `today`, clipped to the season window. Empty when the season has ended or
+ *  starts more than BANK_MINIMUM_DAYS days out — there is nothing to cover yet.
+ *  `required` is what "full coverage" means for this season right now: a
+ *  season with 5 days left needs 5, not 14. */
+export function bankCoverageWindow(
+  today: string,
+  startsOn: string | null,
+  endsOn: string | null
+): { from: string | null; to: string | null; required: number } {
+  if (!startsOn || !endsOn) return { from: null, to: null, required: 0 };
+  const horizonFrom = addDays(today, 1);
+  const horizonTo = addDays(today, BANK_MINIMUM_DAYS);
+  const from = horizonFrom > startsOn ? horizonFrom : startsOn;
+  const to = horizonTo < endsOn ? horizonTo : endsOn;
+  const required = seasonDayCount(from, to) ?? 0;
+  return required > 0 ? { from, to, required } : { from: null, to: null, required: 0 };
+}
+
+function addDays(iso: string, n: number): string {
+  const t = new Date(iso + "T12:00:00Z");
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}
+
 /** Bank-minimum alarm (AUTO-031 role, from the Puzzle Bank's own field docs):
- *  every configured game needs ≥14 days of Published-or-Live coverage ahead of
- *  today. `coverage` = per runtime_key count of DISTINCT future serve dates in
- *  (today, today+14] that are Published or Live (today's Live row counts too). */
+ *  every configured game needs Published-or-Live coverage on every serve date
+ *  in the window from bankCoverageWindow(). `coverage` = per runtime_key count
+ *  of DISTINCT serve dates in that window that are Published or Live for THIS
+ *  season (its own rows, or platform rows — season_id NULL — which serve as
+ *  the fallback per CC-LO-CONCURRENT-SEASONS D6). `requiredDays` is the
+ *  window's length (default: the full 14-day minimum). */
 export function bankMinimumFindings(
   configuredRuntimeKeys: string[],
-  coverage: Record<string, number>
+  coverage: Record<string, number>,
+  requiredDays: number = BANK_MINIMUM_DAYS
 ): Finding[] {
   const out: Finding[] = [];
+  if (requiredDays <= 0) return out;
   for (const key of configuredRuntimeKeys) {
     const days = coverage[key] ?? 0;
-    if (days < BANK_MINIMUM_DAYS)
+    if (days < requiredDays)
       out.push({
         severity: "warning",
         code: "bank_minimum",
-        message: `${key} has ${days} day${days === 1 ? "" : "s"} of Published/Live coverage ahead — below the ${BANK_MINIMUM_DAYS}-day bank minimum.`,
+        message:
+          requiredDays === BANK_MINIMUM_DAYS
+            ? `${key} has ${days} day${days === 1 ? "" : "s"} of Published/Live coverage ahead — below the ${BANK_MINIMUM_DAYS}-day bank minimum.`
+            : `${key} has ${days} of the ${requiredDays} remaining serve day${requiredDays === 1 ? "" : "s"} covered (Published/Live) — the bank runs dry before the season ends.`,
       });
   }
   return out;

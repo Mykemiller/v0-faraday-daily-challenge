@@ -12,7 +12,9 @@
 //   Approve Puzzles  — publishes the season's drafts via fn_dc_approve_puzzles
 //   Lock Season      — the final gate, blocked until generated_at is set
 // Alarms: the stall banner (heartbeat silent >30 min) and the bank-minimum
-// alert (a configured game under 14 days of Published/Live coverage ahead).
+// alert (a configured game under 14 days of Published/Live coverage ahead —
+// only once the season has been generated; an un-generated season has
+// nothing to protect and the checklist is its guide).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";

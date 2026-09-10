@@ -515,7 +515,9 @@ export function TotalBar({
         {round2(total)}%
       </span>
       <span style={{ fontSize: 12, color: tone.fg }}>
-        {good ? "Allocation totals 100%" : "Allocation must total 100%"}
+        {good
+          ? "Allocation totals 100%"
+          : "Scaled proportionally to 100% when saved — press Normalize to preview."}
       </span>
       <span style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
         {extra}

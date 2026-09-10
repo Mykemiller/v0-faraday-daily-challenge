@@ -9,7 +9,7 @@ import { ctToday } from "./data";
 import { loadConfigs, pickFocusConfig } from "./seasons";
 import {
   generationFindings, generationWarnings, computeTargets, isStalled,
-  bankMinimumFindings, seasonDayCount, BANK_MINIMUM_DAYS,
+  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, seasonDayCount,
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
@@ -35,12 +35,6 @@ export type GenerationStatus = {
   draftCount: number;
   unapprovedDates: string[];
 };
-
-function addDaysISO(iso: string, n: number): string {
-  const t = new Date(iso + "T12:00:00Z");
-  t.setUTCDate(t.getUTCDate() + n);
-  return t.toISOString().slice(0, 10);
-}
 
 export async function getGenerationStatus(s: Svc, seasonId: string): Promise<GenerationStatus> {
   const empty: GenerationStatus = {
@@ -95,22 +89,31 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const now = new Date().toISOString();
   const stalled = inflightRuns.find((r) => isStalled(r, now)) ?? null;
 
-  // bank-minimum alarm: coverage of the next 14 serve days per configured game
-  const today = ctToday();
-  const horizon = addDaysISO(today, BANK_MINIMUM_DAYS);
-  const coverageRows = await q<{ puzzle_type: string; go_live_date: string }>(
-    s,
-    `dc_puzzle_bank_staging?go_live_date=gt.${today}&go_live_date=lte.${horizon}&published=in.(Published,Live)&select=puzzle_type,go_live_date`
-  );
-  const coverage: Record<string, number> = {};
-  const seen = new Set<string>();
-  for (const r of coverageRows) {
-    const key = `${r.puzzle_type}|${r.go_live_date}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    coverage[r.puzzle_type] = (coverage[r.puzzle_type] ?? 0) + 1;
-  }
+  // bank-minimum alarm (CC-LO-MIX-NORMALIZE-1.0 rescoped it):
+  //   • only for a season that has been generated — bankAlarmApplies(); an
+  //     un-generated season has nothing in the bank by definition and the
+  //     checklist above is what says so.
+  //   • THIS season's rows plus platform rows (season_id NULL, the D6 fallback)
+  //     — never another season's puzzles, which cannot serve here.
+  //   • only the serve dates inside the season window — a season ending in 5
+  //     days needs 5 days covered, not 14.
   const configuredKeys = targets.perGame.map((g) => g.game.runtime_key).filter((k): k is string => !!k);
+  const coverage: Record<string, number> = {};
+  const window = bankCoverageWindow(ctToday(), season.starts_on, season.ends_on);
+  if (bankAlarmApplies(season) && window.from && window.to && configuredKeys.length) {
+    const coverageRows = await q<{ puzzle_type: string; go_live_date: string }>(
+      s,
+      `dc_puzzle_bank_staging?go_live_date=gte.${window.from}&go_live_date=lte.${window.to}` +
+        `&published=in.(Published,Live)&or=(season_id.eq.${seasonId},season_id.is.null)&select=puzzle_type,go_live_date`
+    );
+    const seen = new Set<string>();
+    for (const r of coverageRows) {
+      const key = `${r.puzzle_type}|${r.go_live_date}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      coverage[r.puzzle_type] = (coverage[r.puzzle_type] ?? 0) + 1;
+    }
+  }
 
   // pilot review table + approve state
   const latestPilot = runs.find((r) => r.run_kind === "pilot" && !r.superseded_at) ?? null;
@@ -138,7 +141,7 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     warnings: generationWarnings(input),
     runs,
     stalledRunId: stalled?.id ?? null,
-    bankAlarms: bankMinimumFindings(configuredKeys, coverage),
+    bankAlarms: bankAlarmApplies(season) ? bankMinimumFindings(configuredKeys, coverage, window.required) : [],
     pilotPreview,
     latestPilotRunStatus: latestPilot?.status ?? null,
     draftCount: drafts.length,
