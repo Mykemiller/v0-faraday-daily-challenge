@@ -63,6 +63,7 @@ is the intended model.
 - **Order of operations:** the app change is safe to deploy first — until the
   migration is applied, the DB still refuses, and `seasonWriteMessage` maps that
   refusal to "apply migration 20260910180000" rather than the old advice.
+- Migration `20260910180000` **APPLIED to prod 2026-09-10** (Myke's order).
 - **⚠️ Step 2 is NOT done — the "single active season" assumption.**
   `fn_leaderboard_rollover` flips every season containing today to `active`, and
   ~15 readers resolve THE active season as `status='active' ORDER BY starts_on DESC
@@ -85,10 +86,13 @@ Step 2 of "seasons may overlap". Design: `docs/lo-concurrent-seasons/README.md`
 `supabase/migrations/20260911000000_lo_concurrent_seasons.sql` — **NOT applied
 to prod** (verified against a PGlite stub of the schema, fixture checks in
 `~/.cache/lo-pglite/run.js` pattern; rollback bodies in
-`docs/lo-concurrent-seasons/rollback-pre-phase-a.sql`). ⚠️ Prerequisites, both
-Myke gates: apply `20260910180000` (the overlap EXCLUDE was still on prod on
-2026-09-10) and set `DC_PUZZLE_SOURCE=supabase` (the Airtable serve path has
-no season concept).
+`docs/lo-concurrent-seasons/rollback-pre-phase-a.sql`). Step 1's migration
+`20260910180000` **was applied to prod 2026-09-10** (history row
+`20260910212237 lo_seasons_allow_overlap` — the MCP stamps its own version).
+⚠️ Remaining prerequisite, Myke's gate: set `DC_PUZZLE_SOURCE=supabase` on
+Vercel project `v0-faraday-daily-challenge-n2u5` + redeploy (the Airtable
+serve path has no season concept; the staging bank has no Live rows today, so
+the lobby serves mocks until a season is generated + approved + rotated).
 
 - **There is no "the active season" any more. Never pick one by
   `status=eq.active … limit 1`.** `fn_season_for_subscriber(subscriber)` is THE

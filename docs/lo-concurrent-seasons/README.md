@@ -31,9 +31,9 @@ repo at the merge of PR #176.
    this CC is what makes overlap safe before the first overlapping season is
    created.
 4. **⚠️ Two prerequisites are Myke gates, not code:**
-   - Migration `20260910180000_lo_seasons_allow_overlap.sql` is **still
-     un-applied** — `seasons_no_overlap_per_league` is present on prod as of this
-     investigation. Nothing in this CC can be exercised until it lands.
+   - Migration `20260910180000_lo_seasons_allow_overlap.sql` — **APPLIED to
+     prod 2026-09-10** (history row `20260910212237 lo_seasons_allow_overlap`).
+     Gate cleared.
    - **`DC_PUZZLE_SOURCE=supabase` is not set in Vercel** (CLAUDE.md, Part C½).
      The Airtable serve path has no season concept and never will. Per-season
      puzzles (§4) are unreachable until the cutover flag is flipped. §4 is
@@ -284,9 +284,9 @@ PR description for the final numbers.
 
 ## 8. Order of operations
 
-1. Myke applies `20260910180000` (Step 1) and confirms `DC_PUZZLE_SOURCE=supabase`
-   in Vercel. **Both are gates for §4 verification; §3/§5 can be built and
-   unit-tested without them.**
+1. ~~Myke applies `20260910180000`~~ (done 2026-09-10) and sets
+   `DC_PUZZLE_SOURCE=supabase` on Vercel project `v0-faraday-daily-challenge-n2u5`
+   (team Project Foundry) + redeploy. **The flag gates §4 verification only.**
 2. Phase A migration applied to prod (behaviour-preserving on one season —
    verified by AC1 before the app deploys).
 3. App deploy (Phases B + C together — the today route and the bank reader
