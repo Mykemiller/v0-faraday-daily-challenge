@@ -71,7 +71,10 @@ is the intended model.
   `season-slate-server.ts`, LO `write.ts`). With overlapping seasons each silently
   picks the most recently started one. **Safe while overlapping seasons cover
   disjoint teams; not safe for two seasons over the same teams.** Making those
-  readers scope-aware (season for THIS subscriber / team) is the next ticket.
+  readers scope-aware (season for THIS subscriber / team) is the next ticket —
+  designed as **CC-LO-CONCURRENT-SEASONS-1.0** (`docs/lo-concurrent-seasons/README.md`,
+  D1 + D2 locked by Myke 2026-09-10; build not started). Its two prerequisites are
+  Myke gates: apply migration 20260910180000 and set `DC_PUZZLE_SOURCE=supabase`.
 - `seasons.league_id` lost its last constraint role; it is still read by
   `fn_season_roster_carry_forward` and the generation `no_league` gate.
 
