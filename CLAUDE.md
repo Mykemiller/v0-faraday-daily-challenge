@@ -83,16 +83,20 @@ is the intended model.
 
 Step 2 of "seasons may overlap". Design: `docs/lo-concurrent-seasons/README.md`
 (D1–D9 locked by Myke 2026-09-10). Migration
-`supabase/migrations/20260911000000_lo_concurrent_seasons.sql` — **NOT applied
-to prod** (verified against a PGlite stub of the schema, fixture checks in
-`~/.cache/lo-pglite/run.js` pattern; rollback bodies in
-`docs/lo-concurrent-seasons/rollback-pre-phase-a.sql`). Step 1's migration
+`supabase/migrations/20260911000000_lo_concurrent_seasons.sql` — **APPLIED to
+prod 2026-09-10** (Myke's order; history row name `lo_concurrent_seasons`, the
+MCP stamps its own version; first attempt dropped the connector without
+landing, second succeeded). Pre-verified on a PGlite stub of the schema
+(`~/.cache/lo-pglite/run.js` pattern); rollback bodies in
+`docs/lo-concurrent-seasons/rollback-pre-phase-a.sql`. Step 1's migration
 `20260910180000` **was applied to prod 2026-09-10** (history row
 `20260910212237 lo_seasons_allow_overlap` — the MCP stamps its own version).
-⚠️ Remaining prerequisite, Myke's gate: set `DC_PUZZLE_SOURCE=supabase` on
-Vercel project `v0-faraday-daily-challenge-n2u5` + redeploy (the Airtable
-serve path has no season concept; the staging bank has no Live rows today, so
-the lobby serves mocks until a season is generated + approved + rotated).
+`DC_PUZZLE_SOURCE=supabase` was set on Vercel project
+`v0-faraday-daily-challenge-n2u5` by Myke 2026-09-10. **The app (PR #177) is
+the remaining deploy** — until it ships, the old readers still run against the
+new functions (nothing they used was dropped). The staging bank has no Live
+rows today, so the lobby serves mocks until a season is generated + approved +
+rotated.
 
 - **There is no "the active season" any more. Never pick one by
   `status=eq.active … limit 1`.** `fn_season_for_subscriber(subscriber)` is THE

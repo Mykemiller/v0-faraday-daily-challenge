@@ -1,9 +1,9 @@
 # CC-LO-CONCURRENT-SEASONS-1.0 — Step 2 of "seasons are independent"
 
 **Status: D1–D9 LOCKED (Myke, 2026-09-10). Phases A + B + C BUILT on branch
-`claude/lo-concurrent-seasons` (PR #177). Migration NOT applied to prod, app
-NOT deployed; Phase D (live verification, §7 AC2–AC5) is blocked on the two
-prerequisites in §0.4.** Follows CC-LO-SEASONS-OVERLAP-1.0
+`claude/lo-concurrent-seasons` (PR #177). Migration `20260911000000` APPLIED to
+prod 2026-09-10; `DC_PUZZLE_SOURCE=supabase` set; app NOT yet deployed (merge
+PR #177). Phase D (live verification, §7 AC2–AC5) runs after the deploy.** Follows CC-LO-SEASONS-OVERLAP-1.0
 (PR #176, merged 2026-09-10), which removed the overlap refusal but left every
 runtime reader assuming ONE active season.
 
@@ -284,11 +284,14 @@ PR description for the final numbers.
 
 ## 8. Order of operations
 
-1. ~~Myke applies `20260910180000`~~ (done 2026-09-10) and sets
-   `DC_PUZZLE_SOURCE=supabase` on Vercel project `v0-faraday-daily-challenge-n2u5`
-   (team Project Foundry) + redeploy. **The flag gates §4 verification only.**
-2. Phase A migration applied to prod (behaviour-preserving on one season —
-   verified by AC1 before the app deploys).
+1. ~~Myke applies `20260910180000`~~ (done 2026-09-10) and ~~sets
+   `DC_PUZZLE_SOURCE=supabase`~~ (done 2026-09-10) on Vercel project
+   `v0-faraday-daily-challenge-n2u5` (team Project Foundry).
+2. ~~Phase A migration applied to prod~~ (done 2026-09-10, history name
+   `lo_concurrent_seasons`). AC1's record→replay was NOT run first — Myke
+   ordered the apply directly; the behaviour-preservation argument rests on the
+   PGlite fixture run and on the fact that with one platform-scoped active
+   season every new function reduces to the old predicate.
 3. App deploy (Phases B + C together — the today route and the bank reader
    must move in one deploy, or the lobby could see two Live rows per type and
    pick arbitrarily).
