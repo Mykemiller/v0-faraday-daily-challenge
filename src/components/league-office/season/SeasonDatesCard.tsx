@@ -3,10 +3,11 @@
 // League Office — Playoff & roster-freeze date editor (Section-style card on the
 // season detail page).
 //
-// These two dates live on `seasons` and are REQUIRED by the generation checklist
-// (condition 2) before a season can generate puzzles — but nothing in the app
-// wrote them until now, so a commissioner had no way to satisfy the checklist.
-// This card is the missing editor. It PATCHes /api/lo/seasons/[id] (patch =
+// These two dates live on `seasons`. Playoffs are OPTIONAL
+// (CC-LO-PLAYOFF-OPTIONAL-1.0): a season with no playoff start runs as a regular
+// season for its whole window and the generation checklist (condition 2) only
+// notes that as a warning. Once a playoff start IS set, the roster freeze becomes
+// required and both dates must obey the ordering rules. This card is the editor. It PATCHes /api/lo/seasons/[id] (patch =
 // { playoff_starts_on, roster_freeze_on }), which validates the ordering rules
 // server-side (inside the window · freeze ≤ playoff · freeze ≥ a quarter in) and
 // writes one audited row. A locked season is read-only here, same as every other
@@ -107,9 +108,10 @@ export function SeasonDatesCard({
       </div>
 
       <p style={{ fontSize: 12, color: MUTED, margin: "12px 0 0", lineHeight: 1.5 }}>
-        Both are required before this season can generate puzzles. Playoff start must fall inside the
-        season window; roster freeze must be on or before the playoff start and at least a quarter of
-        the way into the season.
+        Optional — leave both blank for a season with no playoffs (it runs as a regular season for its
+        whole window). If a playoff start is set, a roster freeze is required: playoff start must fall
+        inside the season window; roster freeze must be on or before the playoff start and at least a
+        quarter of the way into the season.
       </p>
 
       <ReasonDialog

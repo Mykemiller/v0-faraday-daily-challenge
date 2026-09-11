@@ -91,15 +91,54 @@ test("condition 10 — a full run is refused until the pilot is approved", () =>
   assert.deepEqual(generationFindings(input, true), []);
 });
 
-test("conditions 1–2 — missing league/window/playoff/freeze each surface by name", () => {
+test("condition 1 — missing league/window each surface by name", () => {
   const input = okInput();
   input.season.league_id = null;
   input.season.ends_on = null;
+  const codes = generationFindings(input, false).map((f) => f.code);
+  for (const c of ["no_league", "no_window"]) assert.ok(codes.includes(c), `missing ${c}`);
+});
+
+test("condition 2 — playoffs are optional: no playoff date + no freeze is GENERATABLE and warns once", () => {
+  const input = okInput();
   input.season.playoff_starts_on = null;
   input.season.roster_freeze_on = null;
+  assert.deepEqual(generationFindings(input, false), []);
+  const warnings = generationWarnings(input).filter((w) => w.code === "no_playoffs");
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].severity, "warning");
+  // A season WITH a playoff date does not get the warning.
+  assert.ok(!generationWarnings(okInput()).some((w) => w.code === "no_playoffs"));
+});
+
+test("condition 2 — a playoff date without a roster freeze is refused", () => {
+  const input = okInput();
+  input.season.roster_freeze_on = null;
   const codes = generationFindings(input, false).map((f) => f.code);
-  for (const c of ["no_league", "no_window", "no_playoff_date", "no_freeze_date"])
-    assert.ok(codes.includes(c), `missing ${c}`);
+  assert.ok(codes.includes("no_freeze_date"));
+  assert.ok(!codes.includes("no_playoff_date"), "no_playoff_date is retired");
+});
+
+test("condition 2 — playoff ordering rules still apply when a playoff date is set", () => {
+  const outside = okInput();
+  outside.season.playoff_starts_on = "2026-09-05"; // day after ends_on
+  assert.ok(generationFindings(outside, false).some((f) => f.code === "playoff_outside_window"));
+  const after = okInput();
+  after.season.roster_freeze_on = "2026-09-01"; // after playoff_starts_on
+  assert.ok(generationFindings(after, false).some((f) => f.code === "freeze_after_playoff"));
+});
+
+test("condition 2 — a freeze without playoffs is allowed but still obeys the quarter rule", () => {
+  const ok = okInput();
+  ok.season.playoff_starts_on = null;
+  ok.season.roster_freeze_on = "2026-08-28";
+  assert.deepEqual(generationFindings(ok, false), []);
+  const early = okInput();
+  early.season.playoff_starts_on = null;
+  early.season.roster_freeze_on = "2026-08-05";
+  const codes = generationFindings(early, false).map((f) => f.code);
+  assert.ok(codes.includes("freeze_too_early"));
+  assert.ok(!codes.includes("no_freeze_date"));
 });
 
 test("condition 2 — freeze earlier than a quarter of the season is refused", () => {
