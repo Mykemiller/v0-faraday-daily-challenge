@@ -919,9 +919,10 @@ export async function cancelConfigVersion(
 // them here would make every season PATCH that touched them fail outright.
 const SEASON_FIELDS = [
   "name", "starts_on", "ends_on", "status", "tz",
-  // Playoff + roster-freeze dates. The generation checklist (condition 2)
-  // REQUIRES these before a season can generate, but nothing wrote them — they
-  // had no editor. They live on `seasons`, not season_config.
+  // Playoff + roster-freeze dates. Optional (CC-LO-PLAYOFF-OPTIONAL-1.0): a
+  // season with no playoff start has no playoff phase; the generation checklist
+  // (condition 2) requires the freeze only once a playoff start is set. They
+  // live on `seasons`, not season_config.
   "playoff_starts_on", "roster_freeze_on",
   // Trading windows (migration 20260907203000). Patchable so that shrinking a
   // season is recoverable: the `seasons_trading_within_window` CHECK would
@@ -974,7 +975,7 @@ export async function updateSeason(
 
   // A locked season is frozen — EXCEPT the two scheduling dates (playoff start /
   // roster freeze). Those are scheduling metadata the generation checklist
-  // requires, not roster/scoring config, so they stay editable while locked.
+  // validates, not roster/scoring config, so they stay editable while locked.
   // Any OTHER field edit still requires an unlock; lock/unlock itself (input.op)
   // is always allowed.
   const LOCK_EXEMPT_FIELDS = new Set(["playoff_starts_on", "roster_freeze_on"]);

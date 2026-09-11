@@ -144,7 +144,8 @@ export function PlayoffPanel({ seasonId }: { seasonId: string }) {
       {/* ── state banner ───────────────────────────────────────────────── */}
       {noPlayoffDate ? (
         <Callout tone="warn">
-          This season has no playoff start date. Set one in “Playoff &amp; roster dates”
+          This season has no playoffs — it runs as a regular season for its whole window. To add
+          a playoff phase, set a playoff start (and roster freeze) in “Playoff &amp; roster dates”
           above before configuring or seeding a bracket.
         </Callout>
       ) : (

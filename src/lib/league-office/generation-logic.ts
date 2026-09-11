@@ -152,15 +152,21 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
   const dayCount = seasonDayCount(s.starts_on, s.ends_on);
   if (dayCount == null) err("no_window", "Season start and end dates are not set (or invalid).");
 
-  // 2 — playoff + freeze dates present and ordered (Part A CHECKs re-stated as copy)
-  if (!s.playoff_starts_on) err("no_playoff_date", "Playoff start date is not set.");
-  if (!s.roster_freeze_on) err("no_freeze_date", "Roster freeze date is not set.");
-  if (s.playoff_starts_on && s.starts_on && s.ends_on) {
-    if (s.playoff_starts_on <= s.starts_on || s.playoff_starts_on > s.ends_on)
+  // 2 — playoff + freeze dates ordered (Part A CHECKs re-stated as copy).
+  // Playoffs are OPTIONAL (CC-LO-PLAYOFF-OPTIONAL-1.0): a season with no
+  // playoff_starts_on runs as a regular season for its whole window — that is
+  // already how league-playoffs/phase.ts reads a NULL date — and needs no
+  // roster freeze. Its absence is surfaced as the `no_playoffs` WARNING in
+  // generationWarnings(), never as a blocker. A playoff date that IS set still
+  // requires the freeze, and both dates keep their ordering rules.
+  if (s.playoff_starts_on) {
+    if (!s.roster_freeze_on)
+      err("no_freeze_date", "Roster freeze date is not set — it is required when the season has playoffs.");
+    if (s.starts_on && s.ends_on && (s.playoff_starts_on <= s.starts_on || s.playoff_starts_on > s.ends_on))
       err("playoff_outside_window", "Playoff start must fall inside the season window.");
+    if (s.roster_freeze_on && s.roster_freeze_on > s.playoff_starts_on)
+      err("freeze_after_playoff", "Roster freeze must be on or before the playoff start.");
   }
-  if (s.roster_freeze_on && s.playoff_starts_on && s.roster_freeze_on > s.playoff_starts_on)
-    err("freeze_after_playoff", "Roster freeze must be on or before the playoff start.");
   if (s.roster_freeze_on && s.starts_on && s.ends_on && dayCount != null) {
     const quarter = Math.floor((dayCount - 1) / 4);
     const t = new Date(s.starts_on + "T12:00:00Z");
@@ -243,6 +249,13 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
 export function generationWarnings(input: GenerationInput): Finding[] {
   const out: Finding[] = [];
   const warn = (code: string, message: string) => out.push({ severity: "warning", code, message });
+
+  // No playoff date = no playoff phase. Visible, never blocking (condition 2).
+  if (!input.season.playoff_starts_on)
+    warn(
+      "no_playoffs",
+      "No playoff start date is set — this season runs as a regular season for its whole window, with no playoff phase."
+    );
 
   for (const t of input.themeMix) {
     if (!t.is_excluded && t.sector_code && THIN_CORPUS_SECTORS.includes(t.sector_code) && t.target_pct > THIN_CORPUS_WARN_PCT)

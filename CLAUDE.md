@@ -201,6 +201,42 @@ Both read as error conditions to the operator; neither was actionable.
   its own decision), and `season_config_clone` (copies verbatim — its source is
   normalized by construction once this ships).
 
+## Playoffs are OPTIONAL — a season with no playoff date is GENERATABLE (CC-LO-PLAYOFF-OPTIONAL-1.0, claude/lo-playoff-gates-optional, 2026-09-10)
+
+Follow-on to CC-LO-MIX-NORMALIZE-1.0. demo 2 (`69e42099…`) had every mix fixed and
+still could not generate: the GENERATABLE checklist (condition 2 in
+`generation-logic.ts`) hard-required `seasons.playoff_starts_on` AND
+`seasons.roster_freeze_on`, so a demo/regular-only season was un-generatable
+until it invented a playoff. Myke's decision: the two gates are optional for a
+season with no playoffs.
+
+- **"No playoffs" = `playoff_starts_on IS NULL`. There is no flag.** The DB
+  already models it that way — every Part A CHECK (`seasons_playoff_window`,
+  `seasons_freeze_order`, `seasons_freeze_not_too_early`) is `IS NULL OR …` —
+  and `league-playoffs/phase.ts` already reads a NULL date as "regular for the
+  whole run" (`seasonPhase`, `phaseWindow`). The gate was the only surface that
+  disagreed. Do NOT add a `has_playoffs` column; that would be a second source
+  of truth for a fact the date already carries.
+- **Condition 2 now:** `playoff_starts_on` set → `roster_freeze_on` REQUIRED
+  (`no_freeze_date`) + `playoff_outside_window` + `freeze_after_playoff` as
+  before. `playoff_starts_on` NULL → no error; `generationWarnings()` emits
+  `no_playoffs` ("runs as a regular season for its whole window") so the confirm
+  modal shows it and a forgotten date is visible, never silent. A freeze WITHOUT
+  a playoff is allowed and still obeys `freeze_too_early` (quarter rule).
+  `no_playoff_date` is retired — nothing else consumed it (checked: UI renders
+  findings by message only).
+- `season-write.ts` `updateSeason` never required the dates (ordering rules only,
+  all `playoff && …` guarded) — unchanged except comments. `SeasonDatesCard`
+  copy now says both are optional and when the freeze becomes required;
+  `PlayoffPanel`'s no-date callout says the season simply has no playoffs.
+- Verified: `test:generation` 24 (was 20; 5 new condition-2 cases) ·
+  `test:playoffs` · `test:season-config` · `next build` · tsc/eslint == main.
+- **Prod state at ship time:** migration `20260911010000` (mix totals → error)
+  APPLIED to prod 2026-09-10 in this session (deployed body diffed first — it
+  matched the migration verbatim except the two severities). demo 2 has
+  `playoff_starts_on = roster_freeze_on = NULL` and stays that way; Myke
+  re-saves its config himself.
+
 ## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
 
 **Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`
