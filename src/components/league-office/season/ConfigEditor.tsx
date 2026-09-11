@@ -32,7 +32,7 @@ import type {
 import {
   curvePoints, DIFFICULTY_BANDS, DIFFICULTY_CURVES, diffConfigs, editability,
   evenSplit, fieldLabel, formatValue, isHundred, LEADERBOARD_VISIBILITIES,
-  localFindings, normalizeTo100, promoteIntent, round2, summarizeFindings,
+  localFindings, normalizeDifficultyMix, normalizeThemeMix, promoteIntent, round2, summarizeFindings,
   sumPct, TEAM_SCORE_METHODS,
   scopeFromRows,
 } from "@/lib/league-office/season-config-logic";
@@ -177,14 +177,27 @@ export default function ConfigEditor({
   const intent = promoteIntent(String(config.effective_from ?? ""));
 
   // ── save ───────────────────────────────────────────────────────────────────
+  // CC-LO-MIX-NORMALIZE-1.0: the writer rescales every mix group to exactly
+  // 100% (normalizeThemeMix / normalizeDifficultyMix). Applying the same pure
+  // functions to the local state BEFORE the request means the screen shows the
+  // values that were actually saved, rather than the pre-scale draft.
+  const settledMixes = () => {
+    const theme = normalizeThemeRows(themeMix);
+    const diff = normalizeBands(difficultyMix);
+    if (theme !== themeMix) setThemeMix(theme);
+    if (diff !== difficultyMix) setDifficultyMix(diff);
+    return { theme, diff };
+  };
+
   const save = async (reason: string, acknowledgeCapWarning = false) => {
     setBusy(true);
     try {
+      const { theme, diff } = settledMixes();
       const res = await fetch(`/api/lo/configs/${bundle.config.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          config, games, themeMix, difficultyMix,
+          config, games, themeMix: theme, difficultyMix: diff,
           fingerprint, reason, acknowledgeCapWarning,
         }),
       });
@@ -260,11 +273,12 @@ export default function ConfigEditor({
     try {
       // Save any pending edits first so what is promoted is what is on screen.
       if (dirty) {
+        const { theme, diff } = settledMixes();
         const res = await fetch(`/api/lo/configs/${bundle.config.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            config, games, themeMix, difficultyMix,
+            config, games, themeMix: theme, difficultyMix: diff,
             fingerprint, reason, acknowledgeCapWarning: true,
           }),
         });
@@ -630,8 +644,13 @@ export default function ConfigEditor({
                         disabled={readOnly}
                         tone={row?.is_excluded ? "danger" : "neutral"}
                         onClick={() => {
+                          // Excluding a Theater hands its share to the others;
+                          // re-including one takes its share back. Either way
+                          // the total stays at 100 without a manual fix-up.
                           setThemeMix(
-                            upsertTheater(themeMix, t.theater_id, { is_excluded: !row?.is_excluded })
+                            normalizeThemeRows(
+                              upsertTheater(themeMix, t.theater_id, { is_excluded: !row?.is_excluded })
+                            )
                           );
                           touch();
                         }}
@@ -1576,14 +1595,10 @@ function upsertSector(mix: ThemeRow[], theaterId: string, sectorCode: string, pc
 }
 
 /** Normalize only the Theater-level, non-excluded rows — those are the ones the
- *  100% total is computed over. */
+ *  100% total is computed over. Delegates to the shared normalizer so the
+ *  editor previews EXACTLY what saveConfigDraft will write. */
 function normalizeThemeRows(mix: ThemeRow[]): ThemeRow[] {
-  const targets = mix.filter((r) => !r.sector_code && !r.thread_code && !r.is_excluded);
-  const scaled = normalizeTo100(targets.map((r) => r.target_pct));
-  let i = 0;
-  return mix.map((r) =>
-    !r.sector_code && !r.thread_code && !r.is_excluded ? { ...r, target_pct: scaled[i++] } : r
-  );
+  return normalizeThemeMix(mix);
 }
 
 function evenThemeRows(mix: ThemeRow[], taxonomy: ThemeTheater[]): ThemeRow[] {
@@ -1606,11 +1621,10 @@ function upsertBand(mix: DiffRow[], band: string, gameId: string | null, pct: nu
   return mix.map((d, i) => (i === idx ? { ...d, target_pct: pct } : d));
 }
 
+/** Season-wide bands AND every per-game override group, each to 100 — the
+ *  same rule the writer applies. */
 function normalizeBands(mix: DiffRow[]): DiffRow[] {
-  const base = mix.filter((d) => !d.applies_to_game_id);
-  const scaled = normalizeTo100(base.map((d) => d.target_pct));
-  let i = 0;
-  return mix.map((d) => (!d.applies_to_game_id ? { ...d, target_pct: scaled[i++] } : d));
+  return normalizeDifficultyMix(mix);
 }
 
 function evenBands(mix: DiffRow[]): DiffRow[] {

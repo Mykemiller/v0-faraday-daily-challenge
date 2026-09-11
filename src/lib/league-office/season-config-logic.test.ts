@@ -15,6 +15,7 @@ import {
   mergeTradingWindows,
   seasonDayRangeLabel, dayOfSeason, isoAddDays, isoDiffDays, TOO_SHORT_MESSAGE,
   TRADING_OPEN_DEFAULT_DAYS, TRADING_CLOSE_DEFAULT_DAYS,
+  normalizeThemeMix, normalizeDifficultyMix, isThemeTotalRow,
 } from "./season-config-logic.ts";
 
 // ── editability ──────────────────────────────────────────────────────────────
@@ -276,11 +277,90 @@ test("localFindings mirrors the DB validator's rules", () => {
   const topN = localFindings({ ...okInput, teamScoreMethod: "top_n", teamScoreTopN: null });
   assert.ok(topN.some((f) => f.code === "top_n_missing" && f.severity === "error"));
 
-  // mixes off 100 are WARNINGS — they must never block promotion
+  // CC-LO-MIX-NORMALIZE-1.0: an off-100 mix is not a finding here — the save
+  // path rescales it to 100, so there is nothing for the footer to report.
   const offMix = localFindings({ ...okInput, themeMix: [{ target_pct: 90 }], difficultyMix: [{ target_pct: 80 }] });
-  assert.equal(offMix.filter((f) => f.severity === "error").length, 0);
-  assert.ok(offMix.some((f) => f.code === "theme_mix_not_100"));
-  assert.ok(offMix.some((f) => f.code === "difficulty_mix_not_100"));
+  assert.equal(offMix.length, 0);
+});
+
+// ── mix normalization (CC-LO-MIX-NORMALIZE-1.0) ──────────────────────────────
+
+test("normalizeThemeMix: the demo-2 140.2% theme mix lands on exactly 100, excluded + sector rows untouched", () => {
+  // The live rows that were saved AND promoted on 2026-09-10 (season "demo 2").
+  const rows = [
+    { theater_id: "T-001", sector_code: null, thread_code: null, target_pct: 11, is_excluded: false },
+    { theater_id: "T-002", sector_code: null, thread_code: null, target_pct: 15.85, is_excluded: false },
+    { theater_id: "T-003", sector_code: null, thread_code: null, target_pct: 42, is_excluded: false },
+    { theater_id: "T-004", sector_code: null, thread_code: null, target_pct: 15.85, is_excluded: false },
+    { theater_id: "T-005", sector_code: null, thread_code: null, target_pct: 55.5, is_excluded: false },
+    { theater_id: "T-006", sector_code: null, thread_code: null, target_pct: 14.29, is_excluded: true },
+    { theater_id: "T-007", sector_code: null, thread_code: null, target_pct: 14.29, is_excluded: true },
+    { theater_id: "T-003", sector_code: "D5", thread_code: null, target_pct: 60, is_excluded: false },
+  ];
+  assert.equal(sumPct(rows.filter(isThemeTotalRow).map((r) => r.target_pct)), 140.2);
+  const out = normalizeThemeMix(rows);
+  assert.equal(sumPct(out.filter(isThemeTotalRow).map((r) => r.target_pct)), 100);
+  // proportions kept: T-005 was the largest and stays the largest, T-001 the smallest
+  const pct = (id: string) => out.find((r) => r.theater_id === id && !r.sector_code)!.target_pct;
+  assert.ok(pct("T-005") > pct("T-003") && pct("T-003") > pct("T-002") && pct("T-002") > pct("T-001"));
+  assert.equal(pct("T-002"), pct("T-004"));
+  // excluded rows and sector rows pass through verbatim
+  assert.equal(pct("T-006"), 14.29);
+  assert.equal(pct("T-007"), 14.29);
+  assert.equal(out.find((r) => r.sector_code === "D5")!.target_pct, 60);
+  // row order and count are preserved (the writer replaces the set as-is)
+  assert.equal(out.length, rows.length);
+  assert.deepEqual(out.map((r) => r.theater_id), rows.map((r) => r.theater_id));
+});
+
+test("normalizeThemeMix: already-100 input is returned untouched (same reference)", () => {
+  const rows = [
+    { theater_id: "T-001", target_pct: 60 },
+    { theater_id: "T-002", target_pct: 40 },
+    { theater_id: "T-003", target_pct: 99, is_excluded: true },
+  ];
+  assert.equal(normalizeThemeMix(rows), rows);
+});
+
+test("normalizeThemeMix: excluding a theater hands its share to the rest", () => {
+  const rows = [
+    { theater_id: "T-001", target_pct: 50 },
+    { theater_id: "T-002", target_pct: 25 },
+    { theater_id: "T-003", target_pct: 25, is_excluded: true },
+  ];
+  const out = normalizeThemeMix(rows);
+  assert.deepEqual(out.map((r) => r.target_pct), [66.67, 33.33, 25]);
+});
+
+test("normalizeDifficultyMix: the demo-2 111% band mix lands on 100; per-game overrides scale independently", () => {
+  const rows = [
+    { difficulty_band: "foundational", target_pct: 23.5, applies_to_game_id: null },
+    { difficulty_band: "practitioner", target_pct: 50, applies_to_game_id: null },
+    { difficulty_band: "expert", target_pct: 37.5, applies_to_game_id: null },
+    { difficulty_band: "foundational", target_pct: 30, applies_to_game_id: "g1" },
+    { difficulty_band: "practitioner", target_pct: 50, applies_to_game_id: "g1" },
+    { difficulty_band: "expert", target_pct: 20, applies_to_game_id: "g1" },
+    { difficulty_band: "foundational", target_pct: 1, applies_to_game_id: "g2" },
+    { difficulty_band: "practitioner", target_pct: 1, applies_to_game_id: "g2" },
+    { difficulty_band: "expert", target_pct: 2, applies_to_game_id: "g2" },
+  ];
+  const out = normalizeDifficultyMix(rows);
+  const group = (g: string | null) => out.filter((r) => r.applies_to_game_id === g).map((r) => r.target_pct);
+  assert.equal(sumPct(group(null)), 100);
+  assert.ok(group(null)[1] > group(null)[2] && group(null)[2] > group(null)[0]); // 50 > 37.5 > 23.5 order kept
+  assert.deepEqual(group("g1"), [30, 50, 20]); // already 100 → verbatim
+  assert.deepEqual(group("g2"), [25, 25, 50]);
+  assert.equal(out.length, rows.length);
+});
+
+test("normalizeDifficultyMix: an all-zero group becomes an even split, never NaN", () => {
+  const out = normalizeDifficultyMix([
+    { difficulty_band: "foundational", target_pct: 0 },
+    { difficulty_band: "practitioner", target_pct: 0 },
+    { difficulty_band: "expert", target_pct: 0 },
+  ]);
+  assert.equal(sumPct(out.map((r) => r.target_pct)), 100);
+  assert.ok(out.every((r) => Number.isFinite(r.target_pct) && r.target_pct > 0));
 });
 
 test("excluded theme rows and per-game difficulty rows are outside the 100% total", () => {

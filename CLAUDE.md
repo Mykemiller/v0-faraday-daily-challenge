@@ -141,6 +141,66 @@ no season concept).
   `lo_reset_season_scoring` exists only as a never-applied repo migration
   (Part C renamed its column); it does not exist on prod.
 
+## Season mixes always total 100% · bank alarm is post-generation (CC-LO-MIX-NORMALIZE-1.0, claude/lo-mix-normalize, 2026-09-10)
+
+Two Season Configurator defects found on demo season "demo 2" (season
+`69e42099…`, config `188fc0a3…`, 2026-09-10): the editor saved AND promoted a
+**111% difficulty mix and a 140.2% theme mix** (the DB validator only warned),
+and the season page then showed four amber **"0 days of Published/Live
+coverage ahead"** banners for a season that had not generated anything yet.
+Both read as error conditions to the operator; neither was actionable.
+
+- **A mix is relative, so the WRITER owns the 100% total.**
+  `normalizeThemeMix()` / `normalizeDifficultyMix()` in `season-config-logic.ts`
+  are THE definition of a 100%-group (included Theater-level rows; the
+  season-wide bands; each per-game override, independently) and rescale it
+  proportionally to exactly 100 (all-zero → even split, via `normalizeTo100`).
+  `saveConfigDraft` and the copy-from-season path both call them AFTER
+  clamping, so an off-100 mix can no longer reach `season_theme_mix` /
+  `season_difficulty_mix` through the app. `ConfigEditor` calls the same two
+  functions on its local state before the PATCH (so the screen shows what was
+  saved), **re-normalizes on every Exclude/Include toggle** (an excluded
+  Theater's share goes to the rest — before, excluding one dropped the total
+  below 100 and the operator hand-bumped the others past it), and the TotalBar
+  says "scaled proportionally to 100% when saved". `localFindings` no longer
+  reports `*_mix_not_100` — it would describe a state that cannot persist.
+- **Migration `20260911010000_lo_mix_totals_are_errors.sql` — NOT applied to
+  prod** (Myke's convention: ship in the PR). Flips `theme_mix_not_100` /
+  `difficulty_mix_not_100` in `season_config_validate` from `warning` to
+  `error`, so `season_config_promote` refuses an un-normalized mix that arrives
+  by SQL or a future writer. Verified on a PGlite stub of the schema (gate
+  passes, idempotent, a normalized config yields no findings). The app is safe
+  to deploy first — it never writes an off-100 mix, so the flip cannot block it.
+  ⚠️ Once applied, any EXISTING off-100 config can only be promoted after a
+  re-save through the editor (which normalizes). demo 2's active v1 is the only
+  such config today; re-saving it lands at 21.17/45.05/33.78 and
+  7.85/11.31/29.96/11.31/39.57 (T-006/T-007 stay excluded at their stored 14.29).
+- **The bank-minimum alarm keys on `seasons.generated_at`, not `status`.**
+  `bankAlarmApplies()` — it is AUTO-031's post-generation role ("the bank is
+  running dry under live players"); before generation the GENERATABLE
+  checklist is the guide and "0 days" is the starting state, not an alarm.
+  Deliberately NOT keyed on `status = 'active'`: an active-but-un-generated
+  season would alarm for the same non-reason the day the nightly rollover
+  flips it, and `npm run test:season-resolve` rightly refuses a status pick.
+  Trade-off: a season served only by platform (season_id NULL) rows and never
+  generated is not watched from this panel.
+- **Coverage is per season and clipped to its window.** `bankCoverageWindow()`
+  = the next 14 serve days ∩ `[starts_on, ends_on]`; a season with 5 days left
+  needs 5, not 14 (`bankMinimumFindings(keys, coverage, required)`), and a
+  season >14 days out or already ended has nothing to cover. The staging read is
+  `or=(season_id.eq.<id>,season_id.is.null)` — this season's rows plus the
+  platform fallback (CC-LO-CONCURRENT-SEASONS D6) — never another season's
+  puzzles, which cannot serve here. The old read was global and today-anchored.
+- Verified: `test:season-config` 47 · `test:generation` 20 · `test:season-resolve`
+  4 · `test:game-library` 26 · `test:slate-filter` 18 · `next build` green ·
+  tsc error count identical to main (17, all pre-existing Deno test files) ·
+  eslint identical (1 pre-existing PlayoffPanel warning). The Supabase MCP is
+  **read-only** from a session container — nothing was written to prod.
+- Not touched, deliberately: the `no_playoff_date` / `no_freeze_date` checklist
+  gates (Part A CHECKs; a demo season still has to set them or the gate needs
+  its own decision), and `season_config_clone` (copies verbatim — its source is
+  normalized by construction once this ships).
+
 ## ⚠️ Puzzle content is NEVER truncated by character count (CC-DC-FIBR-LAYOUT-1.0, claude/fibr-definition-wrap-we04u2, 2026-08-05)
 
 **Dark Fiber's Definition column was clipping 60.6% of the live bank** — `GameDarkFiber`

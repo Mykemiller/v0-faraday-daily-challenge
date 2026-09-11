@@ -122,6 +122,61 @@ function absorbDrift(values: number[]): number[] {
   return out;
 }
 
+// ── mix normalization (CC-LO-MIX-NORMALIZE-1.0) ──────────────────────────────
+//
+// A mix is RELATIVE by definition, so an off-100 total is never a legitimate
+// configuration — it is an operator mid-edit. Rather than letting 140% reach
+// the database and flagging it later in the generation checklist, every save
+// rescales each 100%-group proportionally. These are the ONLY two functions
+// that decide which rows form a group; the editor and the writer both call
+// them so the two can never disagree.
+
+type ThemeLike = { sector_code?: string | null; thread_code?: string | null; is_excluded?: boolean; target_pct: number };
+type DiffLike = { applies_to_game_id?: string | null; target_pct: number };
+
+/** Is this row one of the Theater-level rows the 100% total is computed over?
+ *  Sector/Thread rows are a sub-allocation inside their Theater; excluded
+ *  Theaters carry no share. */
+export function isThemeTotalRow(r: { sector_code?: string | null; thread_code?: string | null; is_excluded?: boolean }): boolean {
+  return !r.sector_code && !r.thread_code && !r.is_excluded;
+}
+
+/** Rescale the included Theater-level rows to exactly 100. Excluded rows and
+ *  Sector/Thread rows pass through untouched. An all-zero group becomes an even
+ *  split (normalizeTo100's rule). Already-100 input is returned as-is. */
+export function normalizeThemeMix<T extends ThemeLike>(rows: T[]): T[] {
+  const targets = rows.filter(isThemeTotalRow);
+  if (!targets.length || isHundred(sumPct(targets.map((r) => r.target_pct)))) return rows;
+  const scaled = normalizeTo100(targets.map((r) => Number(r.target_pct) || 0));
+  let i = 0;
+  return rows.map((r) => (isThemeTotalRow(r) ? { ...r, target_pct: scaled[i++] } : r));
+}
+
+/** Rescale every difficulty group — the season-wide bands (applies_to_game_id
+ *  null) and each per-game override — to exactly 100, independently. */
+export function normalizeDifficultyMix<T extends DiffLike>(rows: T[]): T[] {
+  const groups = new Map<string | null, T[]>();
+  for (const r of rows) {
+    const key = r.applies_to_game_id ?? null;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const scaledFor = new Map<string | null, number[]>();
+  for (const [key, group] of groups) {
+    if (isHundred(sumPct(group.map((r) => r.target_pct)))) continue;
+    scaledFor.set(key, normalizeTo100(group.map((r) => Number(r.target_pct) || 0)));
+  }
+  if (scaledFor.size === 0) return rows;
+  const cursor = new Map<string | null, number>();
+  return rows.map((r) => {
+    const key = r.applies_to_game_id ?? null;
+    const scaled = scaledFor.get(key);
+    if (!scaled) return r;
+    const i = cursor.get(key) ?? 0;
+    cursor.set(key, i + 1);
+    return { ...r, target_pct: scaled[i] };
+  });
+}
+
 /** The 30/50/20 house default for the difficulty bands. */
 export function defaultDifficultyMix(): { difficulty_band: DifficultyBand; target_pct: number }[] {
   return [
@@ -678,13 +733,12 @@ export function localFindings(input: {
   if (input.teamScoreMethod === "top_n" && !input.teamScoreTopN)
     out.push({ severity: "error", code: "top_n_missing", message: "Team scoring is top-N but no N is set." });
 
-  const theme = sumPct(input.themeMix.filter((r) => !r.is_excluded).map((r) => r.target_pct));
-  if (input.themeMix.length && !isHundred(theme))
-    out.push({ severity: "warning", code: "theme_mix_not_100", message: `Theme mix totals ${theme}% (expected 100%).` });
-
-  const diff = sumPct(input.difficultyMix.filter((r) => !r.applies_to_game_id).map((r) => r.target_pct));
-  if (input.difficultyMix.length && !isHundred(diff))
-    out.push({ severity: "warning", code: "difficulty_mix_not_100", message: `Difficulty mix totals ${diff}% (expected 100%).` });
+  // CC-LO-MIX-NORMALIZE-1.0: an off-100 theme/difficulty total is no longer a
+  // finding here. The TotalBar states it inline and every save rescales the
+  // mix to exactly 100 (normalizeThemeMix / normalizeDifficultyMix), so a
+  // "warning" in the footer would describe a state that cannot be persisted.
+  // The DB validator keeps `*_mix_not_100` as a blocking ERROR for any row
+  // that reaches it by a path other than saveConfigDraft.
 
   return out;
 }

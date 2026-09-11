@@ -25,7 +25,8 @@ import {
 } from "./seasons";
 import {
   buildScopeRows, configSaveMessage, countOverCap, defaultDifficultyMix,
-  defaultThemeMix, editability, normalizeDayMask, round2,
+  defaultThemeMix, editability, normalizeDayMask, normalizeDifficultyMix,
+  normalizeThemeMix, round2,
   sanitizeConfigPatch, slugify, validateTradingWindows,
   type TradingWindows, type WizardScope,
 } from "./season-config-logic";
@@ -492,11 +493,13 @@ async function copyConfigAcrossSeasons(
       }))
     );
 
+  // CC-LO-MIX-NORMALIZE-1.0: the copy lands at exactly 100% even if the
+  // source predates normalization (or was edited by hand in SQL).
   if (theme?.length)
     await insert(
       s,
       "season_theme_mix",
-      theme.map((t) => ({
+      normalizeThemeMix(theme.map((t) => ({ ...t, target_pct: Number(t.target_pct) }))).map((t) => ({
         season_config_id: configId,
         theater_id: t.theater_id, sector_code: t.sector_code, thread_code: t.thread_code,
         target_pct: t.target_pct, min_pct: t.min_pct, max_pct: t.max_pct,
@@ -508,7 +511,7 @@ async function copyConfigAcrossSeasons(
     await insert(
       s,
       "season_difficulty_mix",
-      difficulty.map((d) => ({
+      normalizeDifficultyMix(difficulty.map((d) => ({ ...d, target_pct: Number(d.target_pct) }))).map((d) => ({
         season_config_id: configId,
         difficulty_band: d.difficulty_band, target_pct: d.target_pct,
         min_pct: d.min_pct, max_pct: d.max_pct, applies_to_game_id: d.applies_to_game_id,
@@ -603,15 +606,24 @@ export async function saveConfigDraft(
           .map((g) => normalizeGameRow(configId, g))
           .filter((g): g is Record<string, unknown> => g !== null)
       : null,
+    // CC-LO-MIX-NORMALIZE-1.0: a mix is relative, so the writer — not the
+    // operator — is responsible for the 100% total. Each group (included
+    // Theaters; season-wide bands; every per-game override) is rescaled
+    // proportionally here, AFTER clamping, so the database never holds a
+    // 140% mix for the generation checklist to trip over later.
     p_theme: payload.themeMix
-      ? payload.themeMix
-          .map((t) => normalizeThemeRow(configId, t))
-          .filter((t): t is Record<string, unknown> => t !== null)
+      ? normalizeThemeMix(
+          payload.themeMix
+            .map((t) => normalizeThemeRow(configId, t))
+            .filter((t): t is ThemeWriteRow => t !== null)
+        )
       : null,
     p_difficulty: payload.difficultyMix
-      ? payload.difficultyMix
-          .map((d) => normalizeDifficultyRow(configId, d))
-          .filter((d): d is Record<string, unknown> => d !== null)
+      ? normalizeDifficultyMix(
+          payload.difficultyMix
+            .map((d) => normalizeDifficultyRow(configId, d))
+            .filter((d): d is DifficultyWriteRow => d !== null)
+        )
       : null,
     // CC-LO-SEASON-SCOPE-1.0 (D9): ALWAYS null. The RPC raises on a non-null
     // p_scopes and points at lo_set_season_scope. This used to send whatever
@@ -706,7 +718,16 @@ function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<
   };
 }
 
-function normalizeThemeRow(configId: string, t: Record<string, unknown>): Record<string, unknown> | null {
+type ThemeWriteRow = {
+  season_config_id: string; theater_id: string; sector_code: string | null; thread_code: string | null;
+  target_pct: number; min_pct: number | null; max_pct: number | null; is_excluded: boolean; notes: string | null;
+};
+type DifficultyWriteRow = {
+  season_config_id: string; difficulty_band: string; target_pct: number;
+  min_pct: number | null; max_pct: number | null; applies_to_game_id: string | null;
+};
+
+function normalizeThemeRow(configId: string, t: Record<string, unknown>): ThemeWriteRow | null {
   const theater = String(t.theater_id ?? "");
   if (!theater) return null;
   return {
@@ -722,7 +743,7 @@ function normalizeThemeRow(configId: string, t: Record<string, unknown>): Record
   };
 }
 
-function normalizeDifficultyRow(configId: string, d: Record<string, unknown>): Record<string, unknown> | null {
+function normalizeDifficultyRow(configId: string, d: Record<string, unknown>): DifficultyWriteRow | null {
   const band = String(d.difficulty_band ?? "").trim();
   if (!band) return null;
   return {

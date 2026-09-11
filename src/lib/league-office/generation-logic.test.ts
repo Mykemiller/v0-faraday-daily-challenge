@@ -15,7 +15,7 @@ import {
   generationFindings,
   generationWarnings,
   isStalled,
-  bankMinimumFindings,
+  bankMinimumFindings, bankAlarmApplies, bankCoverageWindow,
   type GenerationInput,
   type GenRun,
 } from "./generation-logic.ts";
@@ -234,4 +234,34 @@ test("bank minimum: every configured game below 14 days ahead raises an alert", 
   assert.equal(findings.length, 1);
   assert.match(findings[0].message, /Signal Drop has 3 days/);
   assert.deepEqual(bankMinimumFindings(keys, { Rackl: 20, "Signal Drop": 14 }), []);
+});
+
+test("bank minimum: a shorter remaining window lowers the bar; a zero window never alarms", () => {
+  const keys = ["Rackl", "Circuit"];
+  // 5 serve days left in the season: 5 covered is full coverage
+  assert.deepEqual(bankMinimumFindings(keys, { Rackl: 5, Circuit: 5 }, 5), []);
+  const f = bankMinimumFindings(keys, { Rackl: 5, Circuit: 2 }, 5);
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /Circuit has 2 of the 5 remaining serve days covered/);
+  // nothing to cover (season over / >14 days out) → silent regardless of coverage
+  assert.deepEqual(bankMinimumFindings(keys, {}, 0), []);
+});
+
+test("bank alarm applies only to a season whose puzzles have been generated", () => {
+  assert.equal(bankAlarmApplies({ generated_at: null }), false);
+  assert.equal(bankAlarmApplies({ generated_at: "2026-09-10T00:00:00Z" }), true);
+});
+
+test("bank coverage window is the next 14 serve days clipped to the season", () => {
+  // mid-season: the full 14-day horizon fits
+  assert.deepEqual(bankCoverageWindow("2026-09-15", "2026-09-10", "2026-10-31"), { from: "2026-09-16", to: "2026-09-29", required: 14 });
+  // season ends in 5 days: only those 5
+  assert.deepEqual(bankCoverageWindow("2026-09-26", "2026-09-10", "2026-10-01"), { from: "2026-09-27", to: "2026-10-01", required: 5 });
+  // season starts in 10 days: the window begins on starts_on
+  assert.deepEqual(bankCoverageWindow("2026-09-01", "2026-09-11", "2026-10-01"), { from: "2026-09-11", to: "2026-09-15", required: 5 });
+  // season starts >14 days out, or has ended: nothing to cover
+  assert.deepEqual(bankCoverageWindow("2026-08-01", "2026-09-10", "2026-10-01"), { from: null, to: null, required: 0 });
+  assert.deepEqual(bankCoverageWindow("2026-10-05", "2026-09-10", "2026-10-01"), { from: null, to: null, required: 0 });
+  // no window → nothing to cover
+  assert.deepEqual(bankCoverageWindow("2026-09-15", null, null), { from: null, to: null, required: 0 });
 });
