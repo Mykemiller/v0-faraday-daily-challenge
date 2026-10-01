@@ -13,6 +13,17 @@ import { locateLesson, parsePosition } from "@/lib/academy/nav";
 // Keep in step with ACADEMY_REVALIDATE_SECONDS in src/lib/academy/api.ts.
 export const revalidate = 300;
 
+/**
+ * A failed read is not always a missing course. Titling an unreachable page
+ * "not found" contradicts the body, which correctly says we cannot reach the
+ * library — and tells a crawler the course is gone when it is not.
+ */
+function failureMetadata(reason: "missing" | "offline", subject: string): Metadata {
+  return reason === "missing"
+    ? { title: `${subject} not found`, robots: { index: false } }
+    : { title: `${subject} unavailable`, robots: { index: false } };
+}
+
 type Params = { params: Promise<{ slug: string; module: string; lesson: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -20,9 +31,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const mp = parsePosition(module);
   const lp = parsePosition(lesson);
   const result = await getCourse(slug);
-  if (!result.ok || mp === null || lp === null) {
-    return { title: "Lesson not found", robots: { index: false } };
-  }
+  if (!result.ok) return failureMetadata(result.reason, "Lesson");
+  if (mp === null || lp === null) return failureMetadata("missing", "Lesson");
   const located = locateLesson(result.data, mp, lp);
   if (!located) return { title: "Lesson not found", robots: { index: false } };
 

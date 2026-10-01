@@ -12,12 +12,23 @@ import { DoubleRule } from "@/components/academy/primitives";
 // Keep in step with ACADEMY_REVALIDATE_SECONDS in src/lib/academy/api.ts.
 export const revalidate = 300;
 
+/**
+ * A failed read is not always a missing course. Titling an unreachable page
+ * "not found" contradicts the body, which correctly says we cannot reach the
+ * library — and tells a crawler the course is gone when it is not.
+ */
+function failureMetadata(reason: "missing" | "offline", subject: string): Metadata {
+  return reason === "missing"
+    ? { title: `${subject} not found`, robots: { index: false } }
+    : { title: `${subject} unavailable`, robots: { index: false } };
+}
+
 type Params = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const result = await getCourse(slug);
-  if (!result.ok) return { title: "Glossary", robots: { index: false } };
+  if (!result.ok) return failureMetadata(result.reason, "Glossary");
   const title = `${result.data.title} — glossary`;
   const url = `/academy/${slug}/glossary`;
   return {
