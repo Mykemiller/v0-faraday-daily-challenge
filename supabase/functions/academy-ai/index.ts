@@ -439,7 +439,11 @@ async function handleDeeper(req: Request, db: SupabaseClient, mode: "deeper" | "
     console.error("academy-ai: missing ANTHROPIC_API_KEY or ACADEMY_COOKIE_SECRET");
     return json({ kind: "error", message: "The panel isn't configured yet." }, 503);
   }
-  const model = env("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
+  // Namespaced deliberately: Supabase function secrets are PROJECT-wide, so a
+  // generic ANTHROPIC_MODEL would be shared with faraday-crawl and any future
+  // function. The API key is shared on purpose (one account, one bill); the model
+  // choice is not.
+  const model = env("ACADEMY_AI_MODEL") ?? DEFAULT_MODEL;
 
   let body: Body;
   try {
