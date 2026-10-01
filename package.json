@@ -34,12 +34,20 @@
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",
     "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts",
     "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",
-    "test:pricing": "node --test src/config/pricing.test.ts"
+    "test:pricing": "node --test src/config/pricing.test.ts",
+    "test:academy": "node --test src/lib/academy/academy.test.ts",
+    "test:academy-contrast": "node --test scripts/academy-contrast.mjs",
+    "test:academy-public": "deno test --allow-net supabase/functions/academy-public/shape.test.ts",
+    "test:academy-ai": "deno test --allow-net supabase/functions/academy-ai/guards.test.ts"
   },
   "dependencies": {
+    "mermaid": "^12.0.0",
     "next": "16.2.3",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "vega": "^6.4.0",
+    "vega-embed": "^7.3.0",
+    "vega-lite": "^6.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
