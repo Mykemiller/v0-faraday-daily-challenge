@@ -333,3 +333,30 @@ test("everything else maps into the academy tree", () => {
   // The guard: an engine route becomes a course lookup that misses, not the console.
   assert.deepEqual(routeForPlayerHost("/league-office"), { kind: "rewrite", to: "/academy/league-office" });
 });
+
+// ── origin hardening ─────────────────────────────────────────────────────────
+
+test("a schemeless NEXT_PUBLIC_SITE_ORIGIN does not break the site", async () => {
+  // Set by hand in a dashboard as "www.faraday-player.com" — no scheme. Before
+  // hardening, canonicalUrl() threw Invalid URL and every academy page 500'd.
+  const original = process.env.NEXT_PUBLIC_SITE_ORIGIN;
+  try {
+    for (const [input, expected] of [
+      ["www.faraday-player.com", "https://www.faraday-player.com"],
+      ["https://www.faraday-player.com", "https://www.faraday-player.com"],
+      ["https://www.faraday-player.com/", "https://www.faraday-player.com"],
+      ["  www.faraday-player.com  ", "https://www.faraday-player.com"],
+      ["http://localhost:3000", "http://localhost:3000"],
+    ] as const) {
+      process.env.NEXT_PUBLIC_SITE_ORIGIN = input;
+      const { siteOrigin: fresh, canonicalUrl: freshUrl } =
+        await import(`./origin.ts?case=${encodeURIComponent(input)}`);
+      assert.equal(fresh(), expected, `origin for ${JSON.stringify(input)}`);
+      // The real failure mode: this call is what threw.
+      assert.doesNotThrow(() => freshUrl("/academy/x/1/2"));
+    }
+  } finally {
+    if (original === undefined) delete process.env.NEXT_PUBLIC_SITE_ORIGIN;
+    else process.env.NEXT_PUBLIC_SITE_ORIGIN = original;
+  }
+});
