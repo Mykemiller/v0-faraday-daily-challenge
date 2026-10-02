@@ -22,6 +22,7 @@ import {
 } from "./prompt.ts";
 import {
   applyGuards,
+  type GuardedAnswer,
   type ModelAnswer,
   rewriteInstruction,
   scanCopy,
@@ -546,7 +547,7 @@ async function handleDeeper(req: Request, db: SupabaseClient, mode: "deeper" | "
   };
 
   const totals = { input: 0, output: 0, searches: 0 };
-  let finalAnswer: ModelAnswer | null = null;
+  let finalAnswer: GuardedAnswer | null = null;
   let notes: string[] = [];
   let refusalReason: string | null = null;
 
