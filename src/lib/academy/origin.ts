@@ -1,26 +1,44 @@
-// Faraday Academy — the absolute origin used for canonical and Open Graph URLs.
+// Faraday Academy — the player's public origin and path shape.
 //
-// Next emits RELATIVE canonical/og:url unless metadataBase is set, and a relative
-// canonical is invalid — crawlers ignore it and social unfurlers get nothing.
-// Open lessons are the whole reason the SEO work exists, so this matters.
+// The player's home is faraday-player.com (Myke, 2026-10-02) and it is served at
+// that domain's ROOT: faraday-player.com/<slug>/1/2, not /academy/<slug>/1/2.
+// src/proxy.ts does the host-conditioned mapping; this module is the single place
+// that knows what the resulting public URL looks like.
 //
-// ⚠️ Deliberately does NOT fall back to VERCEL_PROJECT_PRODUCTION_URL or
-// VERCEL_URL. This Vercel project serves TWO production domains — the Daily
-// Challenge on faradaydailychallenge.com and the brand surface on
-// faraday-intelligence.ai — and Vercel reports the former as the project's
-// production URL. Canonicalising the Academy onto the game domain would tell
-// search engines the courses live somewhere they do not. The player's home is
-// faraday-player.com (Myke, 2026-10-02), so that is the default, and
-// NEXT_PUBLIC_SITE_ORIGIN is the explicit override.
+// ⚠️ One deployment serves several hosts, so the canonical must NOT be derived
+// from the incoming Host header: reading headers() in generateMetadata would opt
+// every course route out of ISR. A canonical names the PREFERRED url regardless
+// of which host answered, so a page served from faraday-intelligence.ai/academy/x
+// correctly canonicalises to faraday-player.com/x. That is both correct and
+// static.
 //
-// ⚠️ faraday-player.com is NOT yet attached to this Vercel project, and the path
-// shape under it is undecided (/academy/... vs the domain root). Until both are
-// settled these canonicals name a host that does not serve them yet.
+// Deliberately does NOT fall back to VERCEL_PROJECT_PRODUCTION_URL: this Vercel
+// project serves two other production domains, and Vercel reports the Daily
+// Challenge game domain as "the" production URL. Canonicalising the courses onto
+// the game domain would be worse than the relative URLs this replaced.
 
-const ACADEMY_HOME = "https://faraday-player.com";
+const PLAYER_HOME = "https://faraday-player.com";
+
+/** The player is mounted at its own domain's root, not under /academy. */
+const PLAYER_AT_ROOT = true;
 
 export function siteOrigin(): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_ORIGIN;
   if (explicit) return explicit.replace(/\/$/, "");
-  return ACADEMY_HOME;
+  return PLAYER_HOME;
+}
+
+/**
+ * Internal app path -> the path the reader sees on the player's own domain.
+ * "/academy" -> "/", "/academy/cooling/1/2" -> "/cooling/1/2".
+ */
+export function publicPath(internal: string): string {
+  if (!PLAYER_AT_ROOT) return internal;
+  if (internal === "/academy") return "/";
+  return internal.startsWith("/academy/") ? internal.slice("/academy".length) : internal;
+}
+
+/** Absolute canonical URL for an internal app path. */
+export function canonicalUrl(internal: string): string {
+  return new URL(publicPath(internal), siteOrigin()).toString();
 }

@@ -14,6 +14,7 @@ import {
 } from "@/components/academy/primitives";
 import ResumeLink from "@/components/academy/ResumeLink";
 import { lessonHref, reviewHref } from "@/lib/academy/nav";
+import { canonicalUrl } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -53,8 +54,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title: c.title,
     description,
-    alternates: { canonical: `/academy/${c.slug}` },
-    openGraph: { title: c.title, description, url: `/academy/${c.slug}`, type: "article" },
+    alternates: { canonical: canonicalUrl(`/academy/${c.slug}`) },
+    openGraph: { title: c.title, description, url: canonicalUrl(`/academy/${c.slug}`), type: "article" },
   };
 }
 
@@ -75,7 +76,7 @@ export default async function CourseHomePage({ params }: Params) {
     "@type": "Course",
     name: course.title,
     description: course.welcome_message ?? `${course.title} — Faraday Academy.`,
-    url: `/academy/${course.slug}`,
+    url: canonicalUrl(`/academy/${course.slug}`),
     inLanguage: "en",
     isAccessibleForFree: true,
     provider: { "@type": "Organization", name: "Faraday" },

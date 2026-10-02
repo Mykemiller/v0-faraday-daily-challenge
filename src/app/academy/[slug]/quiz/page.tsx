@@ -6,6 +6,7 @@ import { getCourse } from "@/lib/academy/api";
 import { CourseNotFound, Offline } from "@/components/academy/states";
 import { DoubleRule } from "@/components/academy/primitives";
 import Quiz from "@/components/academy/Quiz";
+import { canonicalUrl } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -39,7 +40,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const result = await getCourse(slug);
   if (!result.ok) return failureMetadata(result.reason, "Quiz");
   const title = `${result.data.title} — quiz`;
-  const url = `/academy/${slug}/quiz`;
+  const url = canonicalUrl(`/academy/${slug}/quiz`);
   return {
     title,
     description: `Check what stuck from ${result.data.title}.`,

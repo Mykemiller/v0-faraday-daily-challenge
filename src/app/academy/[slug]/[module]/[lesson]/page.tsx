@@ -7,6 +7,7 @@ import Outline from "@/components/academy/Outline";
 import ReaderShell from "@/components/academy/ReaderShell";
 import LessonBody from "@/components/academy/LessonBody";
 import { locateLesson, parsePosition } from "@/lib/academy/nav";
+import { canonicalUrl } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -48,7 +49,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const title = located.lesson.title ?? `Lesson ${lp}`;
   const description =
     located.lesson.paragraphs[0]?.slice(0, 155) ?? `${title} — ${result.data.title}.`;
-  const url = `/academy/${slug}/${mp}/${lp}`;
+  const url = canonicalUrl(`/academy/${slug}/${mp}/${lp}`);
   return {
     title,
     description,
@@ -81,12 +82,12 @@ export default async function LessonPage({ params }: Params) {
     "@context": "https://schema.org",
     "@type": "LearningResource",
     name: located.lesson.title,
-    url: `/academy/${slug}/${mp}/${lp}`,
+    url: canonicalUrl(`/academy/${slug}/${mp}/${lp}`),
     inLanguage: "en",
     isAccessibleForFree: true,
     learningResourceType: "Lesson",
     timeRequired: `PT${Math.max(located.lesson.reading_minutes, 1)}M`,
-    isPartOf: { "@type": "Course", name: course.title, url: `/academy/${slug}` },
+    isPartOf: { "@type": "Course", name: course.title, url: canonicalUrl(`/academy/${slug}`) },
     ...(course.author ? { author: { "@type": "Person", name: course.author.name } } : {}),
   };
 

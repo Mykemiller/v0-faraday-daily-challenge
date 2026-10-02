@@ -9,6 +9,7 @@ import { getCatalog } from "@/lib/academy/api";
 import CatalogBrowser from "@/components/academy/CatalogBrowser";
 import { DoubleRule, FreeDuringBeta } from "@/components/academy/primitives";
 import { Offline } from "@/components/academy/states";
+import { canonicalUrl } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -19,12 +20,12 @@ export const metadata: Metadata = {
   title: "Faraday Academy — courses on the AI data center market",
   description:
     "Free during beta. Read how power, cooling, water, land, capital and policy actually decide where AI infrastructure gets built.",
-  alternates: { canonical: "/academy" },
+  alternates: { canonical: canonicalUrl("/academy") },
   openGraph: {
     title: "Faraday Academy",
     description:
       "Read how the AI data center market actually works — taught from primary sources.",
-    url: "/academy",
+    url: canonicalUrl("/academy"),
     type: "website",
   },
 };

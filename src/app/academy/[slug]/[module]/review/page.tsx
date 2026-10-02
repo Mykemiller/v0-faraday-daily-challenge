@@ -8,6 +8,7 @@ import { CourseNotFound, LessonNotFound, Offline } from "@/components/academy/st
 import Outline from "@/components/academy/Outline";
 import { DoubleRule } from "@/components/academy/primitives";
 import { lessonHref, parsePosition } from "@/lib/academy/nav";
+import { canonicalUrl } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -45,7 +46,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const m = result.data.modules.find((x) => x.position === mp);
   if (!m) return { title: "Module review", robots: { index: false } };
   const title = `${m.title} — review`;
-  const url = `/academy/${slug}/${mp}/review`;
+  const url = canonicalUrl(`/academy/${slug}/${mp}/review`);
   return {
     title,
     description: `Faraday's take on ${m.title}, plus the knowledge check.`,

@@ -27,6 +27,7 @@ import {
   levelOptions,
 } from "./catalog.ts";
 import { lessonHref, locateLesson, parsePosition, readingOrder } from "./nav.ts";
+import { canonicalUrl, publicPath, siteOrigin } from "./origin.ts";
 import type { CatalogCourse, Course, GlossaryEntry } from "./types.ts";
 
 // ── glossary linking ─────────────────────────────────────────────────────────
@@ -257,4 +258,33 @@ test("no catalog string states how many courses exist", () => {
   for (const n of [0, 1, 7, 99, 126]) {
     assert.equal(COUNTED.test(announce(n)), false, `announcement leaked a count at n=${n}`);
   }
+});
+
+// ── public URL shape on the player's own domain ──────────────────────────────
+
+test("the player is root-mounted: /academy drops out of the public path", () => {
+  assert.equal(publicPath("/academy"), "/");
+  assert.equal(publicPath("/academy/cooling-and-water"), "/cooling-and-water");
+  assert.equal(publicPath("/academy/cooling-and-water/1/2"), "/cooling-and-water/1/2");
+  assert.equal(publicPath("/academy/cooling-and-water/glossary"), "/cooling-and-water/glossary");
+});
+
+test("paths outside the academy tree are left alone", () => {
+  assert.equal(publicPath("/api/academy/deeper"), "/api/academy/deeper");
+  assert.equal(publicPath("/challenge"), "/challenge");
+});
+
+test("canonicals are absolute and name the player's home", () => {
+  const url = canonicalUrl("/academy/cooling-and-water/1/2");
+  assert.ok(url.startsWith("https://"), `canonical must be absolute, got ${url}`);
+  assert.equal(url, `${siteOrigin()}/cooling-and-water/1/2`);
+  // Never the Daily Challenge game domain, which is what Vercel reports as the
+  // project's production URL.
+  assert.equal(url.includes("faradaydailychallenge"), false);
+  // Never carries the internal /academy prefix.
+  assert.equal(url.includes("/academy/"), false);
+});
+
+test("the catalog canonical is the domain root", () => {
+  assert.equal(canonicalUrl("/academy"), `${siteOrigin()}/`);
 });
