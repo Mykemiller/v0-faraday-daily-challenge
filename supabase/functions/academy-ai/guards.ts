@@ -19,6 +19,14 @@ export type Paragraph = { text: string; cites: number[] };
 
 export type Diagram = { mermaid: string; caption?: string; cites: number[] };
 
+/** What the model returns: the spec is JSON TEXT (see RESPONSE_SCHEMA). */
+export type ModelChart = {
+  spec: string;
+  caption?: string;
+  data_cites: number[];
+};
+
+/** What the reader receives: the spec parsed into an object. */
 export type Chart = {
   spec: Record<string, unknown>;
   caption?: string;
@@ -31,13 +39,16 @@ export type ModelAnswer = {
   paragraphs?: Paragraph[];
   sources?: Source[];
   diagram?: Diagram;
-  chart?: Chart;
+  chart?: ModelChart;
 };
 
 export type GuardNote = string;
 
+/** The answer as a reader receives it: chart spec parsed. */
+export type GuardedAnswer = Omit<ModelAnswer, "chart"> & { chart?: Chart };
+
 export type GuardResult = {
-  answer: ModelAnswer;
+  answer: GuardedAnswer;
   notes: GuardNote[];
   /** True when the copy guard found something a rewrite must fix. */
   needsRewrite: boolean;
@@ -233,6 +244,18 @@ export function mermaidLooksValid(src: string): boolean {
   return true;
 }
 
+/** Parses the model's JSON-text spec. Null when it is not valid JSON. */
+export function parseChartSpec(spec: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(spec);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Collects the data rows a Vega-Lite spec carries inline. */
 export function inlineChartData(spec: Record<string, unknown>): unknown[] | null {
   const data = spec?.["data"] as Record<string, unknown> | undefined;
@@ -300,19 +323,17 @@ export function applyGuards(
     }
   }
 
-  // 4 · chart: every datum must carry a cite, or the chart goes with a note.
-  let chart = raw.chart;
-  if (chart) {
-    const mapped = (chart.data_cites ?? []).map((c) => remap.get(c)).filter((c): c is number => typeof c === "number");
-    const values = inlineChartData(chart.spec ?? {});
-    if (mapped.length === 0) {
+  // 4 · chart: the spec must parse, and every datum must carry a cite.
+  let chart: Chart | undefined;
+  if (raw.chart) {
+    const mapped = (raw.chart.data_cites ?? []).map((c) => remap.get(c)).filter((c): c is number => typeof c === "number");
+    const parsed = parseChartSpec(raw.chart.spec ?? "");
+    if (parsed === null) {
+      notes.push("A chart was dropped because its specification did not parse. The text above is unaffected.");
+    } else if (mapped.length === 0) {
       notes.push("A chart was dropped because its data carried no verified source.");
-      chart = undefined;
-    } else if (values !== null && values.length > 0 && mapped.length < 1) {
-      notes.push("A chart was dropped because its data carried no verified source.");
-      chart = undefined;
     } else {
-      chart = { ...chart, data_cites: mapped };
+      chart = { spec: parsed, caption: raw.chart.caption, data_cites: mapped };
     }
   }
 
@@ -336,7 +357,7 @@ export function applyGuards(
     }
   }
 
-  const answer: ModelAnswer = { kind: "answer", paragraphs, sources: kept };
+  const answer: GuardedAnswer = { kind: "answer", paragraphs, sources: kept };
   if (diagram) answer.diagram = diagram;
   if (chart) answer.chart = chart;
 

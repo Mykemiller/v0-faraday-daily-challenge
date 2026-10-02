@@ -614,7 +614,15 @@ async function handleDeeper(req: Request, db: SupabaseClient, mode: "deeper" | "
       }
     }
   } catch (err) {
-    console.error("academy-ai call failed:", err instanceof Error ? err.message : err);
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("academy-ai call failed:", detail);
+    // An operator presenting the validate secret gets the upstream error verbatim.
+    // Readers never do. Supabase log queries are not always available, and a
+    // generic "try again" with no way to see the cause is how a 400 from a schema
+    // change stays invisible.
+    const diag = env("ACADEMY_VALIDATE_SECRET");
+    const given = req.headers.get("x-academy-validate-secret");
+    const showDetail = Boolean(diag && given && given === diag);
     // A failed call still costs whatever it burned; record it, then report plainly.
     await recordUsage(db, keys.primary, day, caller.userId, {
       requests: 1,
@@ -623,7 +631,13 @@ async function handleDeeper(req: Request, db: SupabaseClient, mode: "deeper" | "
       searches: totals.searches,
       cost: estimateCostUsd({ input_tokens: totals.input, output_tokens: totals.output, searches: totals.searches }, rates),
     });
-    return json({ kind: "error", message: "That didn't come back. Try again in a moment." }, 502, cookieHeaders);
+    return json(
+      showDetail
+        ? { kind: "error", message: "That didn't come back. Try again in a moment.", detail }
+        : { kind: "error", message: "That didn't come back. Try again in a moment." },
+      502,
+      cookieHeaders,
+    );
   }
 
   const cost = estimateCostUsd(

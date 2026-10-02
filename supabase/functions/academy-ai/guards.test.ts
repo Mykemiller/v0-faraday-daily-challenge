@@ -1,6 +1,7 @@
 // Tests for the academy-ai output guards and meter.
 //   run: deno test --allow-net supabase/functions/academy-ai/guards.test.ts
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { RESPONSE_SCHEMA } from "./prompt.ts";
 import {
   applyGuards,
   mermaidLooksValid,
@@ -204,12 +205,45 @@ Deno.test("a valid diagram survives", () => {
 
 Deno.test("a chart with no verified source is dropped with a note", () => {
   const r = applyGuards(
-    answer({ chart: { spec: { data: { values: [{ a: 1 }] } }, data_cites: [] } }),
+    answer({ chart: { spec: JSON.stringify({ data: { values: [{ a: 1 }] } }), data_cites: [] } }),
     SEARCH,
     { allowPrices: false },
   );
   assertEquals(r.answer.chart, undefined);
   assert(r.notes.some((n) => n.includes("no verified source")));
+});
+
+Deno.test("a chart whose spec is not valid JSON is dropped, text kept", () => {
+  const r = applyGuards(answer({ chart: { spec: "{not json", data_cites: [1] } }), SEARCH, { allowPrices: false });
+  assertEquals(r.answer.chart, undefined);
+  assertEquals(r.answer.paragraphs?.length, 1);
+  assert(r.notes.some((n) => n.includes("did not parse")));
+});
+
+Deno.test("a valid chart spec is parsed into an object for the client", () => {
+  const spec = { $schema: "https://vega.github.io/schema/vega-lite/v5.json", data: { values: [{ a: 1 }] } };
+  const r = applyGuards(
+    answer({ chart: { spec: JSON.stringify(spec), data_cites: [1] } }),
+    SEARCH,
+    { allowPrices: false },
+  );
+  // The model sends JSON text; the reader receives an object.
+  assertEquals(typeof r.answer.chart?.spec, "object");
+  assertEquals((r.answer.chart?.spec as Record<string, unknown>)["$schema"], spec.$schema);
+  assertEquals(r.answer.chart?.data_cites, [1]);
+});
+
+Deno.test("the response schema contains no unsupported additionalProperties", () => {
+  // Structured outputs reject `additionalProperties` set to anything but false.
+  // chart.spec used to be `{type:"object", additionalProperties:true}`, which 400'd
+  // every request — the whole panel was dead on arrival.
+  const walk = (node: unknown, path: string): string[] => {
+    if (!node || typeof node !== "object") return [];
+    const o = node as Record<string, unknown>;
+    const bad = "additionalProperties" in o && o["additionalProperties"] !== false ? [path] : [];
+    return bad.concat(Object.entries(o).flatMap(([k, v]) => walk(v, `${path}.${k}`)));
+  };
+  assertEquals(walk(RESPONSE_SCHEMA, "schema"), []);
 });
 
 Deno.test("banned copy marks the answer for its one rewrite", () => {

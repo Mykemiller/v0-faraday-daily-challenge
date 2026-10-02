@@ -141,7 +141,15 @@ export const RESPONSE_SCHEMA = {
       required: ["spec", "data_cites"],
       description: "A Vega-Lite spec. Every datum carries a source, or omit the chart.",
       properties: {
-        spec: { type: "object", additionalProperties: true },
+        // A JSON STRING, not an object. Structured outputs reject
+        // `additionalProperties: true`, and a Vega-Lite spec is arbitrary JSON
+        // that cannot be described with `false`. The server parses it; an
+        // unparseable spec drops the chart, exactly as unparseable Mermaid drops
+        // the diagram.
+        spec: {
+          type: "string",
+          description: "A complete Vega-Lite specification, serialised as JSON text.",
+        },
         caption: { type: "string" },
         data_cites: { type: "array", items: { type: "integer" } },
       },
