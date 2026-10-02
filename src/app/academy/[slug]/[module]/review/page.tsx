@@ -3,8 +3,9 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getCourse } from "@/lib/academy/api";
-import { CourseNotFound, LessonNotFound, Offline } from "@/components/academy/states";
+import { Offline } from "@/components/academy/states";
 import Outline from "@/components/academy/Outline";
 import { DoubleRule } from "@/components/academy/primitives";
 import { lessonHref, parsePosition } from "@/lib/academy/nav";
@@ -61,12 +62,13 @@ export default async function ModuleReviewPage({ params }: Params) {
 
   const result = await getCourse(slug);
   if (!result.ok) {
-    return result.reason === "missing" ? <CourseNotFound /> : <Offline retryHref={`/academy/${slug}`} />;
+    if (result.reason === "missing") notFound();
+    return <Offline retryHref={`/academy/${slug}`} />;
   }
   const course = result.data;
-  if (mp === null) return <LessonNotFound slug={slug} />;
+  if (mp === null) notFound();
   const m = course.modules.find((x) => x.position === mp);
-  if (!m) return <LessonNotFound slug={slug} />;
+  if (!m) notFound();
 
   const nextModule = course.modules.find((x) => x.position === mp + 1);
   const lastLesson = [...m.lessons].sort((a, b) => b.position - a.position)[0];

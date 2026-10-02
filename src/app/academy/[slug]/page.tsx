@@ -2,8 +2,9 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getCourse } from "@/lib/academy/api";
-import { CourseNotFound, Offline } from "@/components/academy/states";
+import { Offline } from "@/components/academy/states";
 import {
   DoubleRule,
   FreeDuringBeta,
@@ -63,7 +64,8 @@ export default async function CourseHomePage({ params }: Params) {
   const { slug } = await params;
   const result = await getCourse(slug);
   if (!result.ok) {
-    return result.reason === "missing" ? <CourseNotFound /> : <Offline retryHref={`/academy/${slug}`} />;
+    if (result.reason === "missing") notFound();
+    return <Offline retryHref={`/academy/${slug}`} />;
   }
   const course = result.data;
   const modules = [...course.modules].sort((a, b) => a.position - b.position);

@@ -17,7 +17,9 @@
 // Challenge game domain as "the" production URL. Canonicalising the courses onto
 // the game domain would be worse than the relative URLs this replaced.
 
-const PLAYER_HOME = "https://faraday-player.com";
+// www, not the apex: faraday-player.com 308s to www.faraday-player.com, and a
+// canonical must name the URL that actually answers, not one that redirects.
+const PLAYER_HOME = "https://www.faraday-player.com";
 
 /** The player is mounted at its own domain's root, not under /academy. */
 const PLAYER_AT_ROOT = true;

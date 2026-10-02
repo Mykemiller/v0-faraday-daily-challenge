@@ -67,17 +67,6 @@ export function Offline({ retryHref }: { retryHref?: string }) {
   );
 }
 
-/** A lesson position that does not exist inside a course that does. */
-export function LessonNotFound({ slug }: { slug: string }) {
-  return (
-    <Frame>
-      <Heading>That lesson isn&rsquo;t here</Heading>
-      <Body>The course exists, but not this lesson. The outline has every one of them.</Body>
-      <Action href={`/academy/${slug}`}>Back to the course</Action>
-    </Frame>
-  );
-}
-
 /** Search or filters eliminated every course. */
 export function EmptySearch({ onReset }: { onReset?: () => void }) {
   return (
