@@ -3,7 +3,7 @@
 // that are servable. No course codes, no domain codes.
 
 import { getSitemap } from "@/lib/academy/api";
-import { siteOrigin } from "@/lib/academy/origin";
+import { publicPath, siteOrigin } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
@@ -21,10 +21,11 @@ export async function GET(): Promise<Response> {
   const result = await getSitemap();
   const courses = result.ok ? result.data.courses : [];
 
-  const urls: string[] = [`  <url><loc>${origin}/academy</loc></url>`];
+  // Public paths: on the player's own domain the catalog is the root.
+  const urls: string[] = [`  <url><loc>${origin}${publicPath("/academy")}</loc></url>`];
   for (const c of courses) {
     if (!c.slug) continue;
-    const base = `${origin}/academy/${encodeURIComponent(c.slug)}`;
+    const base = `${origin}${publicPath(`/academy/${encodeURIComponent(c.slug)}`)}`;
     const lastmod = c.updated_at ? `<lastmod>${xmlEscape(c.updated_at)}</lastmod>` : "";
     urls.push(`  <url><loc>${base}</loc>${lastmod}</url>`);
     urls.push(`  <url><loc>${base}/glossary</loc>${lastmod}</url>`);
