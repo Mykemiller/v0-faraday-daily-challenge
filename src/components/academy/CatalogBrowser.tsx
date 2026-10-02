@@ -157,9 +157,14 @@ export default function CatalogBrowser({ catalog }: { catalog: Catalog }) {
       </div>
 
       <div className="mt-8 flex-1 lg:mt-0">
-        {/* Navigation feedback for screen readers; never rendered as a public figure. */}
+        {/*
+          Live-region feedback with NO count. An earlier version announced
+          "N courses match", which unfiltered is a statement of how many courses
+          exist — the copy rule has no exemption for assistive technology, and
+          scripts/academy-copy-scan.mjs rightly failed on it.
+        */}
         <p role="status" className="sr-only">
-          {filtered.length === 1 ? "1 course matches" : `${filtered.length} courses match`}
+          {filtered.length === 0 ? "No courses match these filters." : "Results updated."}
         </p>
 
         {filtered.length === 0 ? (
