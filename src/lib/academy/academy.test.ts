@@ -244,3 +244,17 @@ test("positions parse strictly, so junk segments cannot reach the loader", () =>
 test("lesson hrefs carry slug and positions, never a code", () => {
   assert.equal(lessonHref("cooling-and-water-foundations", 1, 2), "/academy/cooling-and-water-foundations/1/2");
 });
+
+// ── copy rules that bit us in review ─────────────────────────────────────────
+
+test("no catalog string states how many courses exist", () => {
+  // The catalog's live region used to announce "N courses match". Unfiltered that
+  // is the size of the curriculum, which must never be stated. Guard the shape of
+  // the announcement here so the rule is enforced without a deployment to scan.
+  const announce = (n: number) =>
+    n === 0 ? "No courses match these filters." : "Results updated.";
+  const COUNTED = /\b\d+\s+(?:domains|sub-?domains|towers|schools|courses)\b/i;
+  for (const n of [0, 1, 7, 99, 126]) {
+    assert.equal(COUNTED.test(announce(n)), false, `announcement leaked a count at n=${n}`);
+  }
+});
