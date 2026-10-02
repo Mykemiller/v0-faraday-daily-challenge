@@ -23,6 +23,15 @@ function failureMetadata(reason: "missing" | "offline", subject: string): Metada
     : { title: `${subject} unavailable`, robots: { index: false } };
 }
 
+/**
+ * Empty on purpose: nothing is prerendered at build, but declaring the function
+ * opts the route into ISR instead of per-request dynamic rendering. Without it
+ * the `revalidate` above is inert — the route renders fresh on every view.
+ */
+export async function generateStaticParams() {
+  return [];
+}
+
 type Params = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {

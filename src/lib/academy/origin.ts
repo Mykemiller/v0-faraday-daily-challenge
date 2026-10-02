@@ -9,11 +9,15 @@
 // Challenge on faradaydailychallenge.com and the brand surface on
 // faraday-intelligence.ai — and Vercel reports the former as the project's
 // production URL. Canonicalising the Academy onto the game domain would tell
-// search engines the courses live somewhere they do not. The Academy's home is
-// the brand surface, so that is the default, and NEXT_PUBLIC_SITE_ORIGIN is the
-// explicit override (set it per environment if the surface ever moves).
+// search engines the courses live somewhere they do not. The player's home is
+// faraday-player.com (Myke, 2026-10-02), so that is the default, and
+// NEXT_PUBLIC_SITE_ORIGIN is the explicit override.
+//
+// ⚠️ faraday-player.com is NOT yet attached to this Vercel project, and the path
+// shape under it is undecided (/academy/... vs the domain root). Until both are
+// settled these canonicals name a host that does not serve them yet.
 
-const ACADEMY_HOME = "https://faraday-intelligence.ai";
+const ACADEMY_HOME = "https://faraday-player.com";
 
 export function siteOrigin(): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_ORIGIN;
