@@ -3,18 +3,12 @@
 // that are servable. No course codes, no domain codes.
 
 import { getSitemap } from "@/lib/academy/api";
+import { siteOrigin } from "@/lib/academy/origin";
 
 // 300s ISR. Must be a static literal — Next analyses segment config without
 // evaluating the module, so an imported constant is rejected at build time.
 // Keep in step with ACADEMY_REVALIDATE_SECONDS in src/lib/academy/api.ts.
 export const revalidate = 300;
-
-function siteOrigin(): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_ORIGIN;
-  if (explicit) return explicit.replace(/\/$/, "");
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
-  return vercel ? `https://${vercel}` : "https://faraday-intelligence.ai";
-}
 
 function xmlEscape(s: string): string {
   return s.replace(/[<>&'"]/g, (c) =>

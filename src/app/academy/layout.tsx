@@ -12,8 +12,13 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import "./academy.css";
 import { SkipToLesson } from "@/components/academy/primitives";
+import { siteOrigin } from "@/lib/academy/origin";
 
 export const metadata: Metadata = {
+  // Without this, `alternates.canonical` and `openGraph.url` on every child page
+  // render as relative paths, which are invalid as canonicals and useless to
+  // social unfurlers.
+  metadataBase: new URL(siteOrigin()),
   title: { default: "Faraday Academy", template: "%s · Faraday Academy" },
   description:
     "Read how the AI data center market actually works — power, cooling, water, land, capital and policy, taught from primary sources.",
