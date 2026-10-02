@@ -28,6 +28,7 @@ import {
 } from "./catalog.ts";
 import { lessonHref, locateLesson, parsePosition, readingOrder } from "./nav.ts";
 import { canonicalUrl, publicPath, siteOrigin } from "./origin.ts";
+import { isPlayerHost, routeForPlayerHost } from "./player-host.ts";
 import type { CatalogCourse, Course, GlossaryEntry } from "./types.ts";
 
 // ── glossary linking ─────────────────────────────────────────────────────────
@@ -287,4 +288,48 @@ test("canonicals are absolute and name the player's home", () => {
 
 test("the catalog canonical is the domain root", () => {
   assert.equal(canonicalUrl("/academy"), `${siteOrigin()}/`);
+});
+
+// ── player-domain routing ────────────────────────────────────────────────────
+
+test("the player host is matched with and without www, ignoring the port", () => {
+  assert.equal(isPlayerHost("faraday-player.com"), true);
+  assert.equal(isPlayerHost("www.faraday-player.com"), true);
+  assert.equal(isPlayerHost("www.faraday-player.com:443"), true);
+  assert.equal(isPlayerHost("faraday-intelligence.ai"), false);
+  assert.equal(isPlayerHost("evil-faraday-player.com"), false);
+  assert.equal(isPlayerHost(null), false);
+});
+
+test("the player's own endpoints pass through untouched", () => {
+  // /api/revalidate was missing from this list, so the revalidation hook 404'd on
+  // the player domain — the rewrite swallowed it into /academy/api/revalidate.
+  for (const p of [
+    "/_next/static/chunk.js",
+    "/api/academy/deeper",
+    "/api/academy/progress",
+    "/api/revalidate",
+    "/favicon.ico",
+    "/manifest.webmanifest",
+  ]) {
+    assert.equal(routeForPlayerHost(p).kind, "pass", `${p} should pass through`);
+  }
+});
+
+test("engine endpoints do NOT pass through", () => {
+  for (const p of ["/api/score", "/api/teams", "/api/lo/seasons", "/api/cron/rotate"]) {
+    assert.notEqual(routeForPlayerHost(p).kind, "pass", `${p} must not be exposed`);
+  }
+});
+
+test("the /academy prefix is redirected away", () => {
+  assert.deepEqual(routeForPlayerHost("/academy"), { kind: "redirect", to: "/" });
+  assert.deepEqual(routeForPlayerHost("/academy/cooling/1/2"), { kind: "redirect", to: "/cooling/1/2" });
+});
+
+test("everything else maps into the academy tree", () => {
+  assert.deepEqual(routeForPlayerHost("/"), { kind: "rewrite", to: "/academy" });
+  assert.deepEqual(routeForPlayerHost("/cooling"), { kind: "rewrite", to: "/academy/cooling" });
+  // The guard: an engine route becomes a course lookup that misses, not the console.
+  assert.deepEqual(routeForPlayerHost("/league-office"), { kind: "rewrite", to: "/academy/league-office" });
 });
