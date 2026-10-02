@@ -2,8 +2,9 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getCourse } from "@/lib/academy/api";
-import { CourseNotFound, Offline } from "@/components/academy/states";
+import { Offline } from "@/components/academy/states";
 import { DoubleRule } from "@/components/academy/primitives";
 import Quiz from "@/components/academy/Quiz";
 import { canonicalUrl } from "@/lib/academy/origin";
@@ -53,7 +54,8 @@ export default async function QuizPage({ params }: Params) {
   const { slug } = await params;
   const result = await getCourse(slug);
   if (!result.ok) {
-    return result.reason === "missing" ? <CourseNotFound /> : <Offline retryHref={`/academy/${slug}/quiz`} />;
+    if (result.reason === "missing") notFound();
+    return <Offline retryHref={`/academy/${slug}/quiz`} />;
   }
   const course = result.data;
 

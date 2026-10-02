@@ -1,8 +1,9 @@
 // Faraday Academy — the lesson reader. Fully open: no gate, no locked state.
 
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { getCourse } from "@/lib/academy/api";
-import { CourseNotFound, LessonNotFound, Offline } from "@/components/academy/states";
+import { Offline } from "@/components/academy/states";
 import Outline from "@/components/academy/Outline";
 import ReaderShell from "@/components/academy/ReaderShell";
 import LessonBody from "@/components/academy/LessonBody";
@@ -65,13 +66,14 @@ export default async function LessonPage({ params }: Params) {
 
   const result = await getCourse(slug);
   if (!result.ok) {
-    return result.reason === "missing" ? <CourseNotFound /> : <Offline retryHref={`/academy/${slug}`} />;
+    if (result.reason === "missing") notFound();
+    return <Offline retryHref={`/academy/${slug}`} />;
   }
   const course = result.data;
 
-  if (mp === null || lp === null) return <LessonNotFound slug={slug} />;
+  if (mp === null || lp === null) notFound();
   const located = locateLesson(course, mp, lp);
-  if (!located) return <LessonNotFound slug={slug} />;
+  if (!located) notFound();
 
   // Drives the "narration not recorded yet" note: only shown when this course has
   // audio elsewhere, so a wholly un-narrated course says nothing about audio.
