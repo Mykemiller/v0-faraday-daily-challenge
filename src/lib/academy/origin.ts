@@ -25,9 +25,24 @@ const PLAYER_HOME = "https://www.faraday-player.com";
 const PLAYER_AT_ROOT = true;
 
 export function siteOrigin(): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_ORIGIN;
-  if (explicit) return explicit.replace(/\/$/, "");
-  return PLAYER_HOME;
+  const explicit = process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim();
+  if (!explicit) return PLAYER_HOME;
+
+  // Tolerate a schemeless value. canonicalUrl() builds `new URL(path, origin)`,
+  // and a base without a scheme ("www.faraday-player.com") THROWS — which would
+  // take down every academy page at render time. An env var set by hand in a
+  // dashboard is exactly where that typo happens, so normalise rather than trust:
+  // a config slip should not be able to break the site.
+  const withScheme = /^https?:\/\//i.test(explicit) ? explicit : `https://${explicit}`;
+  const trimmed = withScheme.replace(/\/+$/, "");
+
+  // If it still will not parse, fall back rather than throw.
+  try {
+    new URL(trimmed);
+    return trimmed;
+  } catch {
+    return PLAYER_HOME;
+  }
 }
 
 /**
