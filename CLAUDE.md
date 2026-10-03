@@ -46,6 +46,93 @@ Two things that look like duplicates and are not:
 - `public_id_prefix` (RACK-style, mints Public IDs) is **not** `short_code`.
   Two live systems; never derive one from the other.
 
+## ⚠️ The Daily Challenge lives on ONE host (CC-DC-CANONICAL-DOMAIN-1.0, claude/dc-canonical-domain-v2, 2026-10-03)
+
+**DC pages render on `www.faradaydailychallenge.com` and nowhere else.** Every other
+host that can reach a DC page **308s** to the canonical one, query string intact.
+This makes structural what PR #112 only made true of the *links* — before this, every
+DC page also answered **200 on `www.faraday-intelligence.ai`** (verified live
+2026-10-02: `/challenge`, `/challenge/{hints,answers,about,signals}`, `/leaderboard`,
+`/free-agency`, `/auth`, `/account`, `/messages`, `/share`, `/help/*` — all of them).
+
+### The host map — `src/lib/hosts.ts`
+
+**One pure function owns the whole decision:** `resolveHostRoute(host, pathname, search)`
+→ `{kind:"rewrite"|"redirect"|"next"}`. `src/proxy.ts` is only edge wiring (Next 16
+renamed `middleware` → `proxy`). The decision is pure so it can be unit-tested —
+`npm run test:hosts`, 81 cases — instead of discovered in production.
+
+| Host | Behaviour |
+|---|---|
+| `www.faradaydailychallenge.com` | `/` rewrites to `/challenge` (lobby at the bare root, **200, never a redirect**); every other path serves itself |
+| `faradaydailychallenge.com` | Vercel 308s to www at the edge. Treated as a DC host in code **so it can never redirect to itself** |
+| `www.faraday-intelligence.ai` + apex | DC page path → **308** to the canonical origin. Storefront pages, `/terms*`, `/privacy`, `/academy`, `/internal/*` stay put |
+| `www.faraday-player.com` + apex | DC page path → **308**. Everything else falls through to the Academy (see below) |
+| `*.vercel.app`, `localhost` | **Never redirected** — preview QA must work, including the Academy branch's |
+
+### Three rules that are load-bearing
+
+1. **Only `src/lib/hosts.ts` may build a URL on the DC domain.** Everything else
+   imports `DC_CANONICAL_ORIGIN` / `DC_CANONICAL_HOST` — including
+   `src/lib/share/manifest.js`, whose `CANONICAL_ORIGIN` (PR #112) is now a
+   re-export. **Never** derive a DC URL from `VERCEL_PROJECT_PRODUCTION_URL`,
+   `VERCEL_URL` or `NEXT_PUBLIC_SITE_ORIGIN`: the first follows Vercel's
+   "primary domain" setting (and Vercel reports the DC domain as *this* project's
+   production URL, so it looks right until someone changes it), and the last
+   belongs to the Academy's player domain. Enforced by the D14 guard in
+   `src/lib/hosts.test.ts`.
+2. **`/api/*`, `/_next/*`, `/manifest.webmanifest` and anything with a file
+   extension are NEVER redirected cross-host.** A 308 on a POST re-sends the body
+   to another origin; a 308 on `/api/cron/rotate` or `/api/cron/sync-day-content`
+   breaks the cron, which fires against the project's production URL. The
+   extension rule is not belt-and-braces: `/public/share/icons/*.png` and
+   `/public/share/fonts/*` are real assets sitting **underneath** the `/share` DC
+   page prefix, so without it, consolidating `/share` would 404 every share-card icon.
+3. **The lobby must answer 200 at the bare DC root.** `next.config.ts` keeps its
+   host-conditioned `/` → `/challenge` rewrite as deliberate defence in depth; it
+   agrees with `resolveHostRoute` by construction. Do not "clean up" one of them.
+
+### What is NOT a DC page (deliberately)
+
+`/terms`, `/terms/*` and `/privacy` are **shared** — the master Terms is the canonical
+legal body for every Faraday storefront and `/privacy` covers both surfaces by name,
+so they answer on whichever host the reader arrived on. `/about`, `/who-is-faraday`,
+`/merch`, `/library`, `/briefing-library`, `/signal-room`, `/jurisdiction-watch`,
+`/intelligent-alert`, `/live-agent`, `/thought-forge`, `/legal` are brand pages — the
+DC masthead (`SiteHeaderNav`) links to them under "More Faraday" by design, so they
+still render on the DC host. Closing *that* direction would be a product change.
+
+### Canonical tags
+
+Every DC page declares `alternates.canonical` on the DC origin via
+`dcPageMetadata()` (`src/lib/dc-metadata.ts`). `metadataBase` is **pinned to
+`DC_CANONICAL_ORIGIN`, never derived from the Host header** — one deployment answers
+for three brands, and reading `headers()` in `generateMetadata` would both opt the
+route out of static rendering and make the canonical depend on who answered. Most DC
+pages are client components and cannot export metadata, so they carry a three-line
+segment `layout.tsx`. Token-bearing URLs (`/auth`, `/leaderboard/join/[token]`) get
+`robots: noindex` and **no** canonical instead — the token is the payload.
+
+### ⚠️ Instruction to `cc-academy-player`
+
+**Rebase onto main and plug into `resolveHostRoute` — do not add a second host
+router.** This branch landed first (main was at the production SHA with zero
+unshipped commits, so there was nothing to race). Your `src/proxy.ts` is superseded
+by the one here; chain `routeForPlayerHost` **after** `resolveHostRoute` in the
+existing `proxy()`, so a DC page path on `faraday-player.com` 308s home and
+everything else keeps your behaviour byte-for-byte. Note this **intentionally
+overrides** your catch-all rewrite-into-`/academy` for DC paths only: a stale DC link
+on the player domain should go home, not hit an Academy 404.
+
+### One-time consequence
+
+The DC session is a `dc_session` token in **localStorage, which is per-origin**, and
+DC auth is entirely custom (`register-with-magic-link` / `send-otp` / `verify-otp` +
+`dc_magic_links`) — **Supabase Auth/GoTrue is not used anywhere**, so its Site URL and
+redirect allow-list are irrelevant to sign-in. Players who signed in on
+`faraday-intelligence.ai` arrive at the canonical domain **signed out** and re-auth by
+magic link. Same one-time cost PR #112 noted for the first cutover.
+
 ## Seasons are independent and MAY overlap (CC-LO-SEASONS-OVERLAP-1.0, claude/lo-seasons-overlap, 2026-09-10)
 
 **Two seasons may cover the same calendar days.** The Leaderboard-V2-era rule
@@ -1425,8 +1512,10 @@ The **storefront / brand site + the other 7 products stay on `faraday-intelligen
   2. **Supabase:** redeploy `register-with-magic-link` so the new `MAGIC_LINK_BASE`
      takes effect (merging the code alone does nothing — edge fns deploy separately).
      One-time: subscribers who authed on the old origin will re-auth on the new one.
-- `vercel.json` rewrite (`/` on `(www.)?faradaydailychallenge.com` → `/daily-challenge`)
-  is retained — the branded apex opens the lobby.
+- The branded root opens the lobby. As of **CC-DC-CANONICAL-DOMAIN-1.0** that is
+  `resolveHostRoute` (`src/lib/hosts.ts`) plus the host-conditioned `/` → `/challenge`
+  rewrite in `next.config.ts`. The stale `vercel.json` rewrite pointing at
+  `/daily-challenge` is not what serves it — see that section before touching either.
 
 ## ⚠️ League Office auth kill-switch (owner-requested, 2026-07-28)
 
@@ -1722,9 +1811,11 @@ Routes:
 
 Invariants:
 - **No `basePath`** (the domain root is served here). Don't re-add it.
-- `faradaydailychallenge.com` (+ `www`) **301** → `faraday-intelligence.ai/daily-challenge`
-  via the host-conditioned edge redirect in `vercel.json` (a real 301 — Next
-  `redirects()` only emit 307/308).
+- ~~`faradaydailychallenge.com` (+ `www`) **301** → `faraday-intelligence.ai/daily-challenge`~~
+  **SUPERSEDED** — first by PR #112 (DC links moved to the DC domain) and now
+  structurally by **CC-DC-CANONICAL-DOMAIN-1.0**: the redirect runs the other way.
+  DC pages are canonical on `www.faradaydailychallenge.com` and 308 off every other
+  host. The host decision lives in `src/lib/hosts.ts`, not `vercel.json`.
 - Production deployment URL must stay public (Deployment Protection = *Only Preview
   Deployments*) so the custom domains serve.
 - Env required: `ANTHROPIC_API_KEY`, `BEEHIIV_API_KEY`, `BEEHIIV_PUB_ID`, `AIRTABLE_API_KEY`.

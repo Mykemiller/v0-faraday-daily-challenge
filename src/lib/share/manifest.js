@@ -18,12 +18,19 @@
 // short_code. Two live systems — never derive one from the other.
 
 import { accentOf, keyOf, shareIconPath } from "../game-registry-core.js";
+import { DC_CANONICAL_ORIGIN, DC_CANONICAL_HOST } from "../hosts.ts";
 
 // Canonical subscriber origin (PR #112). Share payloads must never emit any
 // other host — asserted in buildShare.test.js (AC 4).
-export const CANONICAL_ORIGIN = "https://www.faradaydailychallenge.com";
+//
+// CC-DC-CANONICAL-DOMAIN-1.0: the literal itself now lives in src/lib/hosts.ts,
+// the single place in src/ allowed to name the domain. These re-exports keep the
+// established share-module API — buildShare.js, og.js and the team invite page
+// all import CANONICAL_ORIGIN from here — while leaving exactly one value to
+// change if the canonical host ever moves again.
+export const CANONICAL_ORIGIN = DC_CANONICAL_ORIGIN;
 // The bare host, as it appears as the text block's footer line.
-export const CANONICAL_HOST = "faradaydailychallenge.com";
+export const CANONICAL_HOST = DC_CANONICAL_HOST;
 
 export const GENERIC_SLUG = "daily-challenge";
 

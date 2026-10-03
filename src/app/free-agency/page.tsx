@@ -2,6 +2,7 @@ import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import DcStubPage from "@/components/DcStubPage";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import {
   fetchActiveSeason,
   fetchSeasonRules,
@@ -15,7 +16,9 @@ import {
   type DateWindow,
 } from "@/lib/league-playoffs/phase";
 
-export const metadata = { title: "Free Agency · Faraday Daily Challenge" };
+export const metadata = dcPageMetadata("/free-agency", {
+  title: "Free Agency · Faraday Daily Challenge",
+});
 export const dynamic = "force-dynamic";
 
 // Compete → Free Agency. Season-scoped: teams lock during the season and players

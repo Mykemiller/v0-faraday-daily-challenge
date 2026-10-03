@@ -3,6 +3,7 @@ import DailyChallenge from '@/components/DailyChallenge';
 import { dayCardMeta } from "@/lib/share/og";
 import { buildShareRegistry } from "@/lib/share/manifest";
 import { loadLiveGames } from "@/lib/game-registry-server";
+import { DC_CANONICAL_ORIGIN, dcCanonicalUrl } from "@/lib/hosts";
 
 // CC-DC-SHARE-1.0 Phase 4 (D9): link unfurls render through the same
 // /api/share/card renderer as shares. ?g=<slug> (or the legacy ?game=<type>)
@@ -22,6 +23,11 @@ export async function generateMetadata({
   const share = buildShareRegistry(await loadLiveGames());
   const meta = dayCardMeta({ g: one(sp.g), game: one(sp.game), d: one(sp.d) }, share);
   return {
+    metadataBase: new URL(DC_CANONICAL_ORIGIN),
+    // The lobby's canonical is the DC domain root — the URL og:url has
+    // advertised since PR #112 — regardless of which alias or host was asked.
+    // Deep-link params (?g=/?game=) are view state, not separate documents.
+    alternates: { canonical: dcCanonicalUrl("/challenge") },
     title: meta.title,
     description: meta.description,
     openGraph: {

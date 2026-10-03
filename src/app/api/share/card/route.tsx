@@ -16,6 +16,7 @@ import { NextRequest } from "next/server";
 import { parseCardParams, finePrint } from "@/lib/share/card-params";
 import { GENERIC_SLUG, buildShareRegistry } from "@/lib/share/manifest";
 import { loadLiveGames } from "@/lib/game-registry-server";
+import { DC_CANONICAL_HOST } from "@/lib/hosts";
 
 export const dynamic = "force-dynamic";
 
@@ -182,7 +183,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex", fontFamily: "monobold", fontSize: 30, color: CYAN }}>
-            faradaydailychallenge.com
+            {DC_CANONICAL_HOST}
           </div>
           {fine ? (
             <div style={{ display: "flex", fontFamily: "mono", fontSize: 22, color: MUTED }}>{fine}</div>

@@ -1,13 +1,15 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/hints", {
   title: "Hints · Faraday Daily Challenge",
-  description: "How hints work across the daily games — and how to use them without giving the answer away.",
-};
+  description:
+    "How hints work across the daily games — and how to use them without giving the answer away.",
+});
 
 // Help & Feedback → Hints (evergreen how-to). Distinct from /challenge/hints,
 // which is the day-scoped list of today's actual hints (FAR-287).
