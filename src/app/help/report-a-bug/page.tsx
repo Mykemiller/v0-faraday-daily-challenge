@@ -1,12 +1,14 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import FeedbackForm from "@/components/FeedbackForm";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/report-a-bug", {
   title: "Report a Bug · Faraday Daily Challenge",
-  description: "Found something broken in the Daily Challenge? Tell us what happened.",
-};
+  description:
+    "Found something broken in the Daily Challenge? Tell us what happened.",
+});
 
 // Help & Feedback (gear menu) → Report a Bug. Form → /api/feedback (Resend).
 

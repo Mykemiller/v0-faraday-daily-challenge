@@ -10,6 +10,7 @@ import {
 } from "@/config/token-packs";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
+import { dcCanonicalUrl } from "@/lib/hosts";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -58,9 +59,11 @@ export default async function Home() {
           <nav className="ml-auto flex items-center gap-4 font-mono text-[11px] text-warm-cream">
             <a href="#storefronts" className="hidden hover:text-gold-light sm:inline">Surfaces</a>
             <a href="#academy" className="hidden hover:text-gold-light sm:inline">Academy</a>
-            <Link href="/leaderboard" className="rounded-md border border-gold/50 px-3 py-1.5 text-gold-light hover:bg-gold/10">
+            {/* CC-DC-CANONICAL-DOMAIN-1.0 (D4): DC pages live on the DC domain, so
+                the brand site links straight there rather than through a 308. */}
+            <a href={dcCanonicalUrl("/leaderboard")} className="rounded-md border border-gold/50 px-3 py-1.5 text-gold-light hover:bg-gold/10">
               Your Leaderboard →
-            </Link>
+            </a>
           </nav>
         </div>
       </header>
@@ -224,9 +227,9 @@ export default async function Home() {
         <div className="rounded-xl border border-gold/40 bg-forest p-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="font-display text-[22px] font-bold text-warm-white">Sharpen up free, every day</span>
-            <Link href="/daily-challenge" className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
+            <a href={dcCanonicalUrl("/daily-challenge")} className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
               Free · all {dcGames.length} games →
-            </Link>
+            </a>
           </div>
           <p className="mt-2 max-w-2xl font-sans text-[13px] leading-relaxed text-warm-cream/80">
             {dcGames.length} two-minute intelligence games for people who work in and around the AI data
@@ -239,14 +242,14 @@ export default async function Home() {
               const label = keyOf(g);
               return (
                 <li key={g.id}>
-                  <Link
-                    href={`/daily-challenge?game=${encodeURIComponent(label)}`}
+                  <a
+                    href={dcCanonicalUrl("/daily-challenge", `?game=${encodeURIComponent(label)}`)}
                     aria-label={`Play ${label}`}
                     className="flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
                   >
                     <GameIcon slug={g.route_slug ?? undefined} size={56} />
                     <span className="font-mono text-[11px] leading-tight text-warm-cream/85">{label}</span>
-                  </Link>
+                  </a>
                 </li>
               );
             })}

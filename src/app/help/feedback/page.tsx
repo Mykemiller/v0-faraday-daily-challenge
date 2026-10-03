@@ -1,12 +1,14 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import FeedbackForm from "@/components/FeedbackForm";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/feedback", {
   title: "Feedback · Faraday Daily Challenge",
-  description: "Tell us what you'd change about the Daily Challenge — game ideas, difficulty, anything.",
-};
+  description:
+    "Tell us what you'd change about the Daily Challenge — game ideas, difficulty, anything.",
+});
 
 // Help & Feedback (gear menu) → Feedback. Form → /api/feedback (Resend).
 

@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLegalDoc, type LegalDoc } from "./markdown.ts";
+import { DC_CANONICAL_ORIGIN } from "../hosts.ts";
 
 /** Canonical URL of the master Terms. Every Schedule, in every repo, points here. */
 export const MASTER_TERMS_URL = "https://faraday-intelligence.ai/terms";
@@ -59,7 +60,9 @@ export const SCHEDULES: LegalEntry[] = [
     designation: "Schedule DC",
     kind: "local",
     file: "content/legal/schedules/daily-challenge.md",
-    url: "https://faradaydailychallenge.com/terms/daily-challenge",
+    // CC-DC-CANONICAL-DOMAIN-1.0: www, not the apex — the apex 308s, and a
+    // canonical must name the URL that answers.
+    url: `${DC_CANONICAL_ORIGIN}/terms/daily-challenge`,
     blurb:
       "Game rules, leaderboards and seasons, minimum age, and no-purchase-necessary reward terms.",
   },

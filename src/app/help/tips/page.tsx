@@ -1,13 +1,15 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/tips", {
   title: "Tips and Tricks · Faraday Daily Challenge",
-  description: "Strategy notes for each of the daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
-};
+  description:
+    "Strategy notes for each of the daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
+});
 
 // Help & Feedback → Tips and Tricks. One strategy card per game format.
 // Editorial copy stays in code (CC-DC-GAME-REGISTRY-1.0 Q5); the LIST and its

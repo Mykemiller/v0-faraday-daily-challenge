@@ -24,6 +24,7 @@ import {
   sanitizeHtml,
 } from "@/lib/league-office/sanitize-html";
 import { toast } from "./actions";
+import { DC_CANONICAL_ORIGIN } from "@/lib/hosts";
 
 const SEVERITY_OPTIONS: { value: BroadcastSeverity; label: string; hint: string }[] = [
   { value: "info", label: "Info", hint: "Neutral — schedule notes, feature news." },
@@ -224,7 +225,7 @@ export default function BroadcastComposer({ recipientCount }: { recipientCount: 
           <input
             value={ctaUrl}
             onChange={(e) => setCtaUrl(e.target.value)}
-            placeholder="https://faradaydailychallenge.com/challenge"
+            placeholder={`${DC_CANONICAL_ORIGIN}/challenge`}
             style={field}
           />
         </div>
