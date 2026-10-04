@@ -221,6 +221,21 @@ export const DEFAULT_RATES: Rates = {
   perSearch: 10 / 1000,
 };
 
+/**
+ * A request counts against the reader's allowance only if it actually consumed
+ * something. A call that failed before the model produced any tokens cost us
+ * nothing, so charging a reader one of their five for our own outage is wrong —
+ * and it opens no abuse vector, because a failure that is free for us is equally
+ * free for an attacker.
+ */
+export function shouldChargeRequest(totals: {
+  input: number;
+  output: number;
+  searches: number;
+}): boolean {
+  return totals.input > 0 || totals.output > 0 || totals.searches > 0;
+}
+
 export function estimateCostUsd(
   usage: { input_tokens?: number; output_tokens?: number; searches?: number },
   rates: Rates = DEFAULT_RATES,
