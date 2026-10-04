@@ -19,6 +19,7 @@ import {
   ipPrefix,
   mintAnonId,
   nextChicagoMidnight,
+  shouldChargeRequest,
   verifyAnonCookie,
 } from "./meter.ts";
 
@@ -359,4 +360,18 @@ Deno.test("cost metering prices tokens and searches", () => {
     30.1,
   );
   assertEquals(estimateCostUsd({}), 0);
+});
+
+// ── charging policy ──────────────────────────────────────────────────────────
+
+Deno.test("a failure that consumed nothing does not cost the reader a request", () => {
+  // The schema-rejection outage: the API refused the request, so zero tokens and
+  // zero searches were spent — yet a reader lost 1 of their 5.
+  assertEquals(shouldChargeRequest({ input: 0, output: 0, searches: 0 }), false);
+
+  // Anything actually consumed is charged, including a call that burned input
+  // tokens and then failed partway.
+  assertEquals(shouldChargeRequest({ input: 1200, output: 0, searches: 0 }), true);
+  assertEquals(shouldChargeRequest({ input: 0, output: 50, searches: 0 }), true);
+  assertEquals(shouldChargeRequest({ input: 0, output: 0, searches: 1 }), true);
 });

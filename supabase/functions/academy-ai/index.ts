@@ -40,13 +40,16 @@ import {
   nextChicagoMidnight,
   type Rates,
   resolveKeys,
+  shouldChargeRequest,
 } from "./meter.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MODEL = "claude-opus-5";
 const MAX_TOKENS = 16000;
-const MAX_SEARCHES = 6;
+// Myke, 2026-10-03. Raises depth AND cost: search RESULTS dominate input tokens,
+// measured at ~9.3k input tokens per search. At 10 this is ~$0.70/call.
+const MAX_SEARCHES = 10;
 // The server-tool loop can pause; resume a bounded number of times.
 const MAX_CONTINUATIONS = 4;
 
@@ -624,14 +627,17 @@ async function handleDeeper(req: Request, db: SupabaseClient, mode: "deeper" | "
     const diag = env("ACADEMY_VALIDATE_SECRET");
     const given = req.headers.get("x-academy-validate-secret");
     const showDetail = Boolean(diag && given && given === diag);
-    // A failed call still costs whatever it burned; record it, then report plainly.
-    await recordUsage(db, keys.primary, day, caller.userId, {
-      requests: 1,
-      input: totals.input,
-      output: totals.output,
-      searches: totals.searches,
-      cost: estimateCostUsd({ input_tokens: totals.input, output_tokens: totals.output, searches: totals.searches }, rates),
-    });
+    // Record what a failed call actually burned — but only charge the reader a
+    // request if it burned anything. A hard failure with zero tokens is free.
+    if (shouldChargeRequest(totals)) {
+      await recordUsage(db, keys.primary, day, caller.userId, {
+        requests: 1,
+        input: totals.input,
+        output: totals.output,
+        searches: totals.searches,
+        cost: estimateCostUsd({ input_tokens: totals.input, output_tokens: totals.output, searches: totals.searches }, rates),
+      });
+    }
     return json(
       showDetail
         ? { kind: "error", message: "That didn't come back. Try again in a moment.", detail }
