@@ -32,6 +32,7 @@
     "test:staging-live": "node --test scripts/far287/staging-live-invariant.test.mjs",
     "test:far287": "node --test scripts/far287/lib/run-bookkeeping.test.mjs scripts/far287/lib/puzzle-schema.test.mjs",
     "test:generation": "node --test src/lib/league-office/generation-logic.test.ts",
+    "test:generation-batching": "node --test src/lib/generation/batching.test.mjs",
     "test:generation-difficulty": "node --test src/lib/generation/difficulty.test.mjs",
     "test:generation-failures": "node --test src/lib/generation/failure-reasons.test.mjs",
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",

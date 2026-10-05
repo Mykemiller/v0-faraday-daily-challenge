@@ -12,7 +12,10 @@
 //                 unique(season_id, puzzle_type, go_live_date) — CC-LO-CONCURRENT-
 //                 SEASONS-1.0 — so a re-run never duplicates.
 //   HEARTBEAT   — last_heartbeat_at is written with every checkpoint.
-//   BOUNDED     — batch size 8–12, hard time budget per slice.
+//   BOUNDED     — per-type starting batch size (≤8–12), halved on a truncated
+//                 response, and no model call is STARTED unless
+//                 elapsed + the moving-average batch duration still fits the
+//                 slice budget (CC-DC-GEN-BATCH-HARDENING-1.0).
 //   HONEST      — written_count = rows actually in staging for this run;
 //                 a zero-progress sweep with failures ends the run as
 //                 'failed_short' and reports, never silently finishes short.
@@ -29,6 +32,9 @@ import { difficultyFor, resolveRowDifficulty } from "./difficulty";
 import {
   parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry,
 } from "./failure-reasons";
+import {
+  createBudget, genMaxTokens, runBatchWithSplit, startingBatchSize,
+} from "./batching";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
@@ -102,18 +108,35 @@ const sbInsert = (s: Svc, path: string, rows: unknown, prefer = "return=minimal"
   sb(s, path, { method: "POST", body: JSON.stringify(rows), headers: { Prefer: prefer } });
 
 // ── Anthropic (same call shape + model as the proven FAR-287 client) ─────────
-async function callModel(system: string, user: string): Promise<string> {
+
+/**
+ * CC-DC-GEN-BATCH-HARDENING-1.0 D1 — the call's result, not just its text.
+ * `stopReason` is the ONLY signal that output was cut off; dropping it (the old
+ * `Promise<string>`) is what made truncation look like a model that answered
+ * fewer items. `ms` feeds the budget guard's moving average.
+ */
+export type ModelResult = { text: string; stopReason: string | null; ms: number };
+
+async function callModel(system: string, user: string): Promise<ModelResult> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is required to generate puzzles");
-  const attempt = async () => {
+  // 4096 could not hold the OLD minimum batch of 8 for The Brief (~5.3k est.
+  // output tokens) — see the sizing table in batching.js.
+  const maxTokens = genMaxTokens();
+  const attempt = async (): Promise<ModelResult> => {
+    const startedAt = Date.now();
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: GEN_MODEL, max_tokens: 4096, system, messages: [{ role: "user", content: user }] }),
+      body: JSON.stringify({ model: GEN_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
     });
     if (!res.ok) throw new ModelCallError(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
-    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-    return (data.content || []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+    const data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string | null };
+    return {
+      text: (data.content || []).filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
+      stopReason: typeof data.stop_reason === "string" ? data.stop_reason : null,
+      ms: Date.now() - startedAt,
+    };
   };
   try {
     return await attempt();
@@ -184,7 +207,11 @@ export async function runGenerationSlice(
   const budgetMs = opts.budgetMs ?? 240_000;
   const batchSize = Math.max(8, Math.min(12, opts.batchSize ?? 10));
   const t0 = Date.now();
-  const overBudget = () => Date.now() - t0 > budgetMs;
+  // CC-DC-GEN-BATCH-HARDENING-1.0 D4/B3 — the guard is "can one more
+  // average-length batch finish", not "is the clock already past the budget".
+  // The old `Date.now() - t0 > budgetMs` let a batch START at 249s on a 250s
+  // budget and run into Vercel's 300s wall, losing it uncheckpointed.
+  const budget = createBudget({ budgetMs, startedAt: t0 });
   const nowIso = () => new Date().toISOString();
 
   const runs = await sbGet<RunRow>(
@@ -399,9 +426,14 @@ export async function runGenerationSlice(
     if (!typePending.length) continue;
     const fpSet = fpByType.get(type) ?? fpByType.set(type, new Set()).get(type)!;
 
-    for (let i = 0; i < typePending.length; i += batchSize) {
-      if (overBudget()) { sweptAll = false; break outer; }
-      const slice = typePending.slice(i, i + batchSize);
+    // CC-DC-GEN-BATCH-HARDENING-1.0 D3 — the first call's size is a property of
+    // the GAME, not a single number for all seven. `batchSize` stays the upper
+    // bound; a verbose type (The Brief) starts below it.
+    const startSize = startingBatchSize(type, batchSize);
+
+    for (let i = 0; i < typePending.length; i += startSize) {
+      if (!budget.canAfford()) { sweptAll = false; break outer; }
+      const slice = typePending.slice(i, i + startSize);
       const items = slice.map((p, k) => {
         const theme = themeByDate.get(p.date);
         const day: ThemedDay = theme ?? {
@@ -439,23 +471,39 @@ export async function runGenerationSlice(
         continue;
       }
 
-      let arr: Record<string, unknown>[] = [];
-      try {
-        const raw = await callModel(systemPrompt(type), user);
-        arr = parseArray(raw);
-      } catch (err) {
-        failed += slice.length;
-        const msg = err instanceof Error ? err.message : String(err);
-        const key = failureKey("model", { status: err instanceof ModelCallError ? err.status : null });
-        noteFailure(key, msg, slice.length);
-        console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "model", key, error: msg }));
-        await checkpoint({ failed_count: baseFailed + failed, phase_cursor: { ...cursor, phase: "puzzles", type, at: slice[0]?.date } });
-        continue;
-      }
+      // CC-DC-GEN-BATCH-HARDENING-1.0 D2 — one model call per sub-slice, split
+      // in half whenever `stop_reason` says the output was cut off and fewer
+      // complete objects came back than were asked for. The split logic itself
+      // is pure and lives in batching.js; the closure below is the only part
+      // that touches the network.
+      const batch = await runBatchWithSplit(items, {
+        budget,
+        call: async (sub) => {
+          const subUser = userPrompt(type, sub);
+          if (!subUser) throw new Error(`no prompt spec for ${type}`);
+          const res = await callModel(systemPrompt(type), subUser);
+          return { objects: parseArray(res.text), stopReason: res.stopReason, ms: res.ms };
+        },
+        log: (event) =>
+          console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, ...event })),
+      });
 
-      for (let k = 0; k < items.length; k++) {
-        const it = items[k];
-        const el = arr[k] as { puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string } | undefined;
+      for (const outcome of batch.outcomes) {
+        const it = outcome.item;
+        if (outcome.failure) {
+          // A `truncated` or `model` failure already describes a whole
+          // sub-slice; it arrives here once per ITEM so failed_count keeps its
+          // meaning (slots that did not produce a row).
+          failed++;
+          const err = outcome.failure.error;
+          const key = failureKey(outcome.failure.reason, {
+            status: err instanceof ModelCallError ? err.status : null,
+          });
+          noteFailure(key, outcome.failure.message);
+          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, key, error: outcome.failure.message }));
+          continue;
+        }
+        const el = outcome.object as { puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string } | undefined;
         const content = el?.puzzle;
         const hints = el?.hints || [];
         // D4: the structured log line keeps its shape and gains `key`. The
@@ -531,6 +579,12 @@ export async function runGenerationSlice(
         failed_count: baseFailed + failed,
         phase_cursor: { ...cursor, phase: "puzzles", type, at: slice[slice.length - 1]?.date },
       });
+
+      // B3 — the guard stopped mid-batch. Whatever was written is checkpointed
+      // above; the unattempted slots stay pending and the next invocation (cron
+      // or staff trigger) resumes from the DB. This is NOT a zero-progress
+      // sweep, so `sweptAll` must say so.
+      if (batch.stopped) { sweptAll = false; break outer; }
     }
   }
 
