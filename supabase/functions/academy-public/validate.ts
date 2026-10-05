@@ -23,6 +23,35 @@ export const BYLINE_VOICES: readonly string[] = ["Gil", "Mach"];
 const DOMAIN_CODE = /\bD\d{1,2}(?:\.\d+)?\b/;
 const TOWER_CODE = /\bT-?\d{3}\b/;
 
+// House style, enforced wherever this function writes copy of its own. These
+// are not servability criteria — a course is not held back for containing one —
+// but a derived summary that hits one is dropped rather than published.
+const BANNED_PHRASES: readonly string[] = [
+  "empowering",
+  "leveraging",
+  "unlocking potential",
+  "cutting-edge",
+  "best-in-class",
+  "revolutionary",
+  "in today's fast-paced world",
+  "great question!",
+  "i hope that helps!",
+  "we're excited to announce",
+  "faraday's methodology",
+  "our approach",
+  "the faraday framework",
+  "learnworlds",
+];
+
+export function findBannedPhrase(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const haystack = text.toLowerCase().replace(/[\u2018\u2019]/g, "'");
+  for (const phrase of BANNED_PHRASES) {
+    if (haystack.includes(phrase)) return phrase;
+  }
+  return null;
+}
+
 export function findCode(text: string | null | undefined): string | null {
   if (!text) return null;
   const d = text.match(DOMAIN_CODE);
@@ -42,6 +71,7 @@ export type CourseRow = {
   public_slug: string | null;
   primary_domain_id: string | null;
   welcome_message: string | null;
+  audience_personas: string[] | null;
   updated_at: string | null;
 };
 
