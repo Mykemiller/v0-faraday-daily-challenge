@@ -17,25 +17,13 @@
 // (fn_dc_rotate_live_set), so the partial-failure mode this route's structured
 // logging was built for can no longer occur there.
 import { rotateLiveSet } from "@/lib/puzzle-bank";
+// THE CT serve-day boundary (CC-DC-SEASON-GOLIVE-1.0 D2): this function
+// used to live here, and /api/cron/sync-day-content kept a second copy. It
+// now lives in the go-live module so the rotator, the sync and the on-demand
+// go-live path can never disagree about which day it is.
+import { chicagoNow } from "@/lib/seasons/golive";
 
 export const dynamic = "force-dynamic";
-
-// Current date (YYYY-MM-DD) and hour in America/Chicago, DST-aware.
-function chicagoNow() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const get = (type) => parts.find((p) => p.type === type)?.value;
-  return {
-    date: `${get("year")}-${get("month")}-${get("day")}`,
-    hour: Number(get("hour")),
-  };
-}
 
 export async function GET(request) {
   // Vercel sends `Authorization: Bearer ${CRON_SECRET}` on cron invocations.

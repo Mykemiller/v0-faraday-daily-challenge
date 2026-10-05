@@ -10,6 +10,9 @@ import { q, type Svc } from "./service";
 import { rpc } from "./seasons";
 import { getGenerationStatus } from "./generation-status";
 import { GEN_MODEL } from "@/lib/generation/worker";
+// CC-DC-SEASON-GOLIVE-1.0 (D5/B2): approving puzzles dated TODAY has to put
+// them in front of players today, not at the next midnight rotation.
+import { approvalGoLivePlan, goLiveToday, todayCT } from "@/lib/seasons/golive";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 
@@ -141,8 +144,31 @@ export async function approveSeasonPuzzles(
     dates,
     approved,
   }, false);
+
+  // CC-DC-SEASON-GOLIVE-1.0 (D5/B2). fn_dc_approve_season_puzzles leaves rows
+  // at 'Published'; the ONLY Published→Live writer used to be /api/cron/rotate
+  // behind a CT-midnight guard, so an approval at 21:43 for today's date served
+  // nothing all day. If today is one of the approved dates, go live now —
+  // goLiveToday rotates through the puzzle-bank facade and re-syncs
+  // dc_daily_page_content, and never throws, so a failure here downgrades to a
+  // sentence instead of losing the approval that already succeeded.
+  const today = todayCT();
+  const plan = approvalGoLivePlan(dates, today);
+  let suffix: string;
+  if (plan.goLive) {
+    const g = await goLiveToday(s, { reason: "season.approve_puzzles", actor: staffEmail });
+    const failures = g.skipped.filter((reason) => reason.includes("-failed:"));
+    suffix = failures.length
+      ? ` — but today's puzzles could not be put live automatically (${failures.join("; ")}); the nightly rotation will pick them up.`
+      : g.promoted > 0
+        ? ` — today's ${g.promoted} puzzle${g.promoted === 1 ? "" : "s"} ${g.promoted === 1 ? "is" : "are"} now live.`
+        : " — today's puzzles were already live.";
+  } else {
+    suffix = ` — first serve day is ${plan.firstServeDay}.`;
+  }
+
   return {
     ok: true,
-    message: `${approved} puzzle${approved === 1 ? "" : "s"} approved and published across ${dates.length} day${dates.length === 1 ? "" : "s"} — Public IDs assigned.`,
+    message: `${approved} puzzle${approved === 1 ? "" : "s"} approved and published across ${dates.length} day${dates.length === 1 ? "" : "s"} — Public IDs assigned.${suffix}`,
   };
 }

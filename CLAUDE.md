@@ -1,5 +1,28 @@
 @AGENTS.md
 
+## A season that starts today serves today (CC-DC-SEASON-GOLIVE-1.0, claude/season-golive, 2026-10-05)
+
+**One module owns "make today correct": `src/lib/seasons/golive.ts`.** Before it,
+`upcoming → active` was written only by the nightly `fn_leaderboard_rollover()`
+and `Published → Live` only by `/api/cron/rotate` behind a CT-midnight guard, so
+the Football Season created at 12:43 UTC on its own start date served nothing all
+day and the 595 rows approved at 21:43 for that date never went Live.
+`goLiveToday()` now runs activate → rotate (through the `@/lib/puzzle-bank`
+facade, never `fn_dc_rotate_live_set` directly) → re-sync `dc_daily_page_content`
+on demand, and is called from `createSeason`, `updateSeason` (window moved, no
+explicit status, not a close), `approveSeasonPuzzles` (dates include today), and
+the hourly backstop `/api/cron/season-golive` at `:15`.
+
+**It is promote-only and never throws.** `activateDueSeasons` filters
+`status=eq.upcoming` within the window and writes only `status: active` —
+closing stays with `fn_leaderboard_rollover()`, which also archives the
+leaderboard. Every failure comes back in `GoLiveResult.skipped` under the
+`[season-golive]` log prefix, because each caller is a side effect of some other
+write that already succeeded; it is idempotent, so a second run activates
+nothing, promotes nothing and leaves today's day-content row alone. Put any new
+"is this season serving today?" rule in that module, not at a call site, and
+keep the 05:00/06:00 UTC rotate + sync crons as they are.
+
 ## One slice per run; a taken slot is a skip (CC-DC-GEN-LEASE-AUTOADVANCE-1.0, claude/gen-lease-autoadvance, 2026-10-05)
 
 **The generator was competing with itself.** Every entry point —

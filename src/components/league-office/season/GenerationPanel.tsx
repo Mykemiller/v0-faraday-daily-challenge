@@ -252,7 +252,9 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
     },
     approve_puzzles: {
       title: "Approve puzzles",
-      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned and the nightly rotation will serve them on their dates.`,
+      // CC-DC-SEASON-GOLIVE-1.0 (D5): approving no longer means "wait for the
+      // nightly rotation" for today. Rows dated today go live on approval.
+      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned. Any puzzle dated today goes live immediately; later dates go live at midnight CT on their own date.`,
       confirm: "Approve & publish",
       destructive: true,
     },
