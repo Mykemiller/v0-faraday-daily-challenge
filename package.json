@@ -35,6 +35,7 @@
     "test:generation-batching": "node --test src/lib/generation/batching.test.mjs",
     "test:generation-difficulty": "node --test src/lib/generation/difficulty.test.mjs",
     "test:generation-failures": "node --test src/lib/generation/failure-reasons.test.mjs",
+    "test:generation-lease": "node --test src/lib/generation/lease-autoadvance.test.mjs",
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",
     "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts",
     "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",

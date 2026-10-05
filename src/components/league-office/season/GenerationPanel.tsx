@@ -15,6 +15,14 @@
 // alert (a configured game under 14 days of Published/Live coverage ahead —
 // only once the season has been generated; an un-generated season has
 // nothing to protect and the checklist is its guide).
+//
+// CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D3: the in-flight run's primary control is
+// "Continue until done", which drives worker slices SEQUENTIALLY until the run
+// finishes. The loop's rules — and all five of its stop conditions — live in
+// src/lib/generation/advance.js so they are unit-tested; this component only
+// supplies the effects. The loop is a convenience, never the mechanism: closing
+// the tab reverts the run to the ten-minute cron, and "Advance one slice" keeps
+// the old single-slice behaviour reachable.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -22,6 +30,7 @@ import { toast } from "@/components/league-office/actions";
 import { ReasonDialog } from "./ReasonDialog";
 import { MiniButton, PrimaryButton } from "./fields";
 import { topFailure } from "@/lib/generation/failure-reasons";
+import { advanceUntilDone, MAX_ADVANCE_SLICES } from "@/lib/generation/advance";
 
 type Finding = { severity: "error" | "warning"; code: string; message: string };
 type Run = {
@@ -72,17 +81,32 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
   const [action, setAction] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
   const [advancing, setAdvancing] = useState(false);
+  // D3 — the loop's visible state: which slice is in flight and how it ended.
+  const [loop, setLoop] = useState<{ slice: number } | null>(null);
+  const [loopEnd, setLoopEnd] = useState<string | null>(null);
   const alive = useRef(true);
+  const stopRef = useRef(false);
+  // A1 — one loop, one slice at a time. A ref (not state) because the guard has
+  // to be true the instant the handler runs, not after the next render.
+  const loopingRef = useRef(false);
 
-  const refresh = useCallback(async () => {
+  // Fetch AND return the status, so the loop can read the run it just advanced
+  // instead of racing React state.
+  const fetchStatus = useCallback(async (): Promise<Status | null> => {
     try {
       const r = await fetch(`/api/lo/seasons/${seasonId}/generation`, { cache: "no-store" });
       const j = await r.json().catch(() => null);
-      if (alive.current && j?.ok) setStatus(j.status as Status);
+      if (!j?.ok) return null;
+      const next = j.status as Status;
+      if (alive.current) setStatus(next);
+      return next;
     } catch {
       /* transient — next poll retries */
+      return null;
     }
   }, [seasonId]);
+
+  const refresh = useCallback(() => { void fetchStatus(); }, [fetchStatus]);
 
   const inflight = status?.runs.find((r) => !r.completed_at && !r.superseded_at) ?? null;
 
@@ -99,7 +123,9 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
     return () => clearInterval(t);
   }, [inflight, refresh]);
 
+  /** One slice, the old behaviour — kept reachable (D3). */
   const advance = useCallback(async () => {
+    if (loopingRef.current) return;
     setAdvancing(true);
     try {
       await fetch(`/api/lo/generation/worker`, { method: "POST" });
@@ -108,6 +134,60 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       refresh();
     }
   }, [refresh]);
+
+  /**
+   * D3 — slice after slice until the run finishes. Every effect handed to
+   * advanceUntilDone() is a thin closure; the stop conditions themselves are
+   * advance.js's, and they are what the tests assert.
+   */
+  const continueUntilDone = useCallback(async (runId: string | null, seed: { status: string; written: number }) => {
+    if (loopingRef.current) return;
+    loopingRef.current = true;
+    stopRef.current = false;
+    setLoopEnd(null);
+    setLoop({ slice: 1 });
+    let trackedId = runId;
+    try {
+      const result = await advanceUntilDone({
+        start: seed,
+        shouldStop: () => stopRef.current || !alive.current,
+        onTick: (t) => { if (alive.current) setLoop({ slice: t.slice }); },
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        slice: async () => {
+          const res = await fetch(`/api/lo/generation/worker`, { method: "POST" });
+          const j = await res.json().catch(() => null);
+          // A lease held by the cron answers ok:true with report.idle — normal,
+          // not an error (lease.js L3).
+          return { ok: res.ok && j?.ok !== false, idle: j?.report?.idle === true };
+        },
+        readRun: async () => {
+          const next = await fetchStatus();
+          if (!next) return null;
+          const r =
+            (trackedId ? next.runs.find((x) => x.id === trackedId) : null) ??
+            next.runs.find((x) => !x.completed_at && !x.superseded_at) ??
+            null;
+          if (!r) return null;
+          trackedId = r.id;
+          return { status: r.completed_at ? "complete" : r.status, written: r.written_count };
+        },
+      });
+      if (alive.current) {
+        setLoopEnd(
+          result.reason === "finished" ? `Run ${result.status}.`
+            : result.reason === "stopped" ? `Stopped after ${result.slices} slice${result.slices === 1 ? "" : "s"} — the cron carries on every 10 minutes.`
+            : result.reason === "no-progress" ? "Stopped: 3 slices in a row wrote nothing. Check the failure note below."
+            : result.reason === "slice-cap" ? `Stopped at the ${MAX_ADVANCE_SLICES}-slice ceiling — press Continue until done again.`
+            : "Stopped: a worker slice did not answer. The cron will retry."
+        );
+      }
+    } finally {
+      loopingRef.current = false;
+      stopRef.current = false;
+      if (alive.current) setLoop(null);
+      refresh();
+    }
+  }, [fetchStatus, refresh]);
 
   const run = async (reason: string) => {
     if (!action) return;
@@ -129,7 +209,12 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       toast(j?.message ?? (res.ok ? "Done." : "That did not work."));
       if (res.ok) {
         setAction(null);
-        if (action === "pilot" || action === "full") advance(); // kick the first slice now
+        // D3 — a run the commissioner just asked for should finish, not wait for
+        // the next cron tick. The run row exists but this payload predates it,
+        // so the loop starts with no id and adopts the in-flight run on its
+        // first re-read.
+        if (action === "pilot" || action === "full")
+          void continueUntilDone(null, { status: "queued", written: 0 });
         if (action === "lock") router.refresh();
       }
     } finally {
@@ -184,7 +269,7 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       {status.stalledRunId ? (
         <Banner tone="red">
           Generation run {status.stalledRunId.slice(0, 8)}… is <strong>stalled</strong> — no heartbeat for over 30
-          minutes. Press “Advance now”, and check the worker logs if it stays silent.
+          minutes. Press “Continue until done”, and check the worker logs if it stays silent.
         </Banner>
       ) : null}
       {status.bankAlarms.map((a) => (
@@ -278,15 +363,38 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
                         : "queued"}
                   </span>
                   {!r.completed_at && !r.superseded_at ? (
-                    <MiniButton onClick={advance} disabled={advancing}>
-                      {advancing ? "Advancing…" : "Advance now"}
-                    </MiniButton>
+                    loop ? (
+                      <>
+                        <MiniButton onClick={() => { stopRef.current = true; }}>Stop</MiniButton>
+                        <span className="font-mono" style={{ fontSize: 10.5, color: "#94560a" }}>
+                          slice {loop.slice} · {r.written_count}/{r.target_count ?? "?"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <MiniButton
+                          onClick={() => continueUntilDone(r.id, { status: r.status, written: r.written_count })}
+                          disabled={advancing}
+                          title={`Runs worker slices back to back until the run finishes (max ${MAX_ADVANCE_SLICES}). Closing this tab just hands it back to the 10-minute cron.`}
+                        >
+                          Continue until done
+                        </MiniButton>
+                        <MiniButton onClick={advance} disabled={advancing} title="One slice only.">
+                          {advancing ? "Advancing…" : "Advance one slice"}
+                        </MiniButton>
+                      </>
+                    )
                   ) : null}
                 </div>
                 <FailureNote run={r} />
               </li>
             ))}
           </ul>
+          {/* why the loop stopped — kept after the list so it survives the run
+              completing (at which point the row loses its controls) */}
+          {loopEnd ? (
+            <p style={{ fontSize: 11.5, color: "#6b6257", margin: "6px 0 0" }}>{loopEnd}</p>
+          ) : null}
         </div>
       ) : null}
 
