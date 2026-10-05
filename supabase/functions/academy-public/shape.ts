@@ -12,6 +12,8 @@ import {
   type LessonRow,
   type ModuleRow,
   type QuizRow,
+  findBannedPhrase,
+  findCode,
   optionsOf,
 } from "./validate.ts";
 
@@ -80,6 +82,88 @@ export function priceOf(
   return course.level === "101" ? rules.price_101_usd : rules.price_advanced_usd;
 }
 
+export const SUMMARY_MAX = 160;
+
+/** The only persona names the lobby renders. Anything else is dropped. */
+export const PERSONAS: readonly string[] = [
+  "Executive", "Engineer", "Investor", "Operator", "Policy", "Consultant",
+];
+
+export function personasOf(course: CourseRow): string[] {
+  const raw = course.audience_personas;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of raw) {
+    const name = typeof p === "string" ? p.trim() : "";
+    if (PERSONAS.includes(name) && !seen.has(name)) {
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * First sentence. Terminators are . ! ? followed by whitespace; a single
+ * capital letter before the period is treated as an initial rather than an
+ * ending, which is the only abbreviation case that shows up in this copy.
+ */
+export function firstSentence(text: string): string {
+  const t = text.trim();
+  const m = t.match(/^[\s\S]*?[.!?](?=\s|$)/);
+  if (!m) return t;
+  const candidate = m[0].trim();
+  // "…by J. Smith." — a lone capital before the stop is an initial, not an end.
+  if (/\s[A-Z]\.$/.test(candidate) && candidate.length < t.length) {
+    const rest = t.slice(candidate.length).match(/^[\s\S]*?[.!?](?=\s|$)/);
+    if (rest) return (candidate + rest[0]).trim();
+  }
+  return candidate;
+}
+
+/** Clips on a word boundary and marks the clip with an ellipsis. */
+export function clip(text: string, max = SUMMARY_MAX): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.!?-]+$/, "")}…`;
+}
+
+/** The lesson a reader meets first: lowest module position, then lowest lesson position. */
+function firstLessonBody(b: CourseBundle): string | null {
+  const modulePosition = new Map(b.modules.map((m) => [m.id, m.position]));
+  const ordered = b.lessons
+    .filter((l) => modulePosition.has(l.module_id))
+    .sort((a, c) =>
+      (modulePosition.get(a.module_id)! - modulePosition.get(c.module_id)!) ||
+      (a.position - c.position)
+    );
+  return ordered[0]?.body ?? null;
+}
+
+/**
+ * A short, honest card line taken from copy that already exists: the welcome
+ * message if there is one, else the opening paragraph of the first lesson.
+ * Nothing is generated. A summary that trips the taxonomy-code guard or the
+ * house-style guard is dropped to null rather than cleaned up — the lobby
+ * renders no description at all, which is better than a laundered one.
+ */
+export function summaryOf(b: CourseBundle): string | null {
+  const welcome = b.course.welcome_message?.trim();
+  const source = welcome && welcome.length > 0
+    ? welcome
+    : paragraphsOf(firstLessonBody(b))[0] ?? "";
+  if (!source) return null;
+
+  const summary = clip(firstSentence(source));
+  if (!summary) return null;
+  if (findCode(summary)) return null;
+  if (findBannedPhrase(summary)) return null;
+  return summary;
+}
+
 export type CatalogEntry = Record<string, unknown>;
 
 export function buildCatalogEntry(
@@ -99,6 +183,8 @@ export function buildCatalogEntry(
     group: groupOf(b.course, domainName),
     reading_minutes: readingMinutes(courseWordCount(b.lessons)),
     narrated: isFullyNarrated(b.lessons, narration),
+    summary: summaryOf(b),
+    personas: personasOf(b.course),
   };
   // Beta: no price anywhere. Post-beta this path carries the stored price.
   if (!beta.free) entry.price_usd = priceOf(b.course, rules);
