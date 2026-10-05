@@ -71,8 +71,13 @@ async function fetchAll<T>(
   }
 }
 
-const COURSE_COLS =
+const COURSE_COLS_BASE =
   "id, course_code, title, level, voice, status, public_slug, primary_domain_id, welcome_message, updated_at";
+// audience_personas feeds the lobby's persona lens. Requested separately so a
+// deployment against a database that does not carry the column yet degrades to
+// a catalog without personas instead of a 500 — a missing column is a
+// PostgREST error on the whole select, which would take the catalog down.
+const COURSE_COLS = `${COURSE_COLS_BASE}, audience_personas`;
 const MODULE_COLS =
   "id, course_id, position, title, faradays_take, knowledge_check_question, knowledge_check_answer";
 const LESSON_COLS = "id, module_id, position, title, body, word_count";
@@ -131,10 +136,23 @@ async function loadNarration(db: SupabaseClient): Promise<NarrationMap> {
 }
 
 /** Every servable course, assembled and validated. */
+async function fetchCourses(db: SupabaseClient): Promise<CourseRow[]> {
+  try {
+    return await fetchAll<CourseRow>(db, "academy_courses", COURSE_COLS);
+  } catch (err) {
+    console.warn(
+      `academy-public: audience_personas unavailable, serving without personas (${
+        err instanceof Error ? err.message : err
+      })`,
+    );
+    return await fetchAll<CourseRow>(db, "academy_courses", COURSE_COLS_BASE);
+  }
+}
+
 async function loadBundles(
   db: SupabaseClient,
 ): Promise<{ bundles: CourseBundle[]; exclusions: Exclusion[] }> {
-  const courses = (await fetchAll<CourseRow>(db, "academy_courses", COURSE_COLS)).filter((c) =>
+  const courses = (await fetchCourses(db)).filter((c) =>
     (SERVABLE_STATUSES as readonly string[]).includes(c.status)
   );
   const servableIds = new Set(courses.map((c) => c.id));

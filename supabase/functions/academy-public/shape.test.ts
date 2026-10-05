@@ -9,13 +9,22 @@ import {
   authorOf,
   buildCatalogEntry,
   buildCourse,
+  clip,
+  firstSentence,
   groupOf,
   paragraphsOf,
+  personasOf,
   priceOf,
   readingMinutes,
   slugifyTerm,
+  summaryOf,
 } from "./shape.ts";
-import { type CourseBundle, type CourseRow, validateCourse } from "./validate.ts";
+import {
+  type CourseBundle,
+  type CourseRow,
+  findBannedPhrase,
+  validateCourse,
+} from "./validate.ts";
 
 const RULES = { price_101_usd: 4.99, price_advanced_usd: 9.99 };
 
@@ -30,6 +39,7 @@ function course(over: Partial<CourseRow> = {}): CourseRow {
     public_slug: "cooling-and-water-foundations-for-ai-infrastructure",
     primary_domain_id: "D1",
     welcome_message: null,
+    audience_personas: null,
     updated_at: "2026-09-01T00:00:00Z",
     ...over,
   };
@@ -227,4 +237,150 @@ Deno.test("validator catches taxonomy codes anywhere a learner reads", () => {
       : g
   );
   assertEquals(validateCourse({ ...bundle(), glossary: safe }), []);
+});
+
+
+// ---- summary + personas (FDY-39) ----
+
+Deno.test("first sentence stops at the first terminator", () => {
+  assertEquals(firstSentence("One. Two. Three."), "One.");
+  assertEquals(firstSentence("A question? Then more."), "A question?");
+  assertEquals(firstSentence("No terminator here"), "No terminator here");
+  assertEquals(firstSentence("  Padded. Next.  "), "Padded.");
+});
+
+Deno.test("an initial is not a sentence ending", () => {
+  assertEquals(
+    firstSentence("Written by J. Smith. Then the rest."),
+    "Written by J. Smith.",
+  );
+});
+
+Deno.test("clip cuts on a word boundary and marks the cut", () => {
+  assertEquals(clip("short enough", 20), "short enough");
+  const long = "a".repeat(10) + " " + "b".repeat(10) + " " + "c".repeat(10);
+  const out = clip(long, 20);
+  assertEquals(out.length <= 20, true);
+  assertEquals(out.endsWith("\u2026"), true);
+  assertEquals(out.includes("c"), false);
+  // No dangling punctuation before the ellipsis.
+  assertEquals(clip("one, two, three four", 12), "one, two\u2026");
+});
+
+Deno.test("summary prefers the welcome message", () => {
+  const b = bundle({
+    course: course({ welcome_message: "Power is the constraint. Everything else follows." }),
+  });
+  assertEquals(summaryOf(b), "Power is the constraint.");
+});
+
+Deno.test("summary falls back to the first lesson's first paragraph", () => {
+  assertEquals(summaryOf(bundle()), "First paragraph.");
+});
+
+Deno.test("summary reads the FIRST lesson, not whichever row came back first", () => {
+  const b = bundle();
+  const shuffled = { ...b, lessons: [...b.lessons].reverse() };
+  shuffled.lessons[0] = { ...shuffled.lessons[0], body: "Last lesson opener.\n\nMore." };
+  // m1-l1 is still the first lesson by (module position, lesson position).
+  assertEquals(summaryOf(shuffled), "First paragraph.");
+});
+
+Deno.test("summary is capped at 160 characters on a word boundary", () => {
+  const long = "The interconnection queue decides the schedule " .repeat(10) + ".";
+  const b = bundle({ course: course({ welcome_message: long }) });
+  const out = summaryOf(b)!;
+  assertEquals(out.length <= 160, true);
+  assertEquals(out.endsWith("\u2026"), true);
+});
+
+Deno.test("summary is dropped when it carries a taxonomy code", () => {
+  assertEquals(
+    summaryOf(bundle({ course: course({ welcome_message: "Covers D2.1 in depth." }) })),
+    null,
+  );
+  assertEquals(
+    summaryOf(bundle({ course: course({ welcome_message: "Tower T-001 explained." }) })),
+    null,
+  );
+});
+
+Deno.test("summary is dropped when it carries a banned phrase", () => {
+  assertEquals(
+    summaryOf(bundle({ course: course({ welcome_message: "A cutting-edge look at cooling." }) })),
+    null,
+  );
+  assertEquals(
+    summaryOf(bundle({ course: course({ welcome_message: "Our approach to grid policy." }) })),
+    null,
+  );
+  // A curly apostrophe must not slip the guard.
+  assertEquals(
+    summaryOf(bundle({ course: course({ welcome_message: "In today\u2019s fast-paced world, power rules." }) })),
+    null,
+  );
+});
+
+Deno.test("summary is null when there is no copy to take one from", () => {
+  const b = bundle();
+  const stripped = { ...b, lessons: b.lessons.map((l) => ({ ...l, body: null })) };
+  assertEquals(summaryOf(stripped), null);
+});
+
+Deno.test("banned-phrase guard is case-insensitive and returns the hit", () => {
+  assertEquals(findBannedPhrase("Truly REVOLUTIONARY"), "revolutionary");
+  assertEquals(findBannedPhrase("nothing wrong here"), null);
+  assertEquals(findBannedPhrase(null), null);
+});
+
+Deno.test("personas keep only the six known names, de-duplicated and in order", () => {
+  assertEquals(
+    personasOf(course({ audience_personas: ["Operator", "Wizard", "Executive", "Operator"] })),
+    ["Operator", "Executive"],
+  );
+  assertEquals(personasOf(course({ audience_personas: [] })), []);
+  assertEquals(personasOf(course({ audience_personas: null })), []);
+  assertEquals(personasOf(course()), []);
+});
+
+Deno.test("personas tolerate padding and non-string entries", () => {
+  assertEquals(
+    personasOf(course({ audience_personas: ["  Policy  ", 7, null, "Investor"] as never })),
+    ["Policy", "Investor"],
+  );
+});
+
+Deno.test("catalog entry carries summary and personas", () => {
+  const entry = buildCatalogEntry(
+    bundle({
+      course: course({
+        welcome_message: "Cooling is a water story. Then it is a power story.",
+        audience_personas: ["Engineer", "Operator"],
+      }),
+    }),
+    "Cooling & Water Technology",
+    narrationAll,
+    { free: true },
+    RULES,
+  );
+  assertEquals(entry.summary, "Cooling is a water story.");
+  assertEquals(entry.personas, ["Engineer", "Operator"]);
+  // The fields the lobby already depended on are unchanged.
+  assertEquals(entry.slug, "cooling-and-water-foundations-for-ai-infrastructure");
+  assertEquals(entry.group, "Cooling & Water Technology");
+  assertEquals(entry.narrated, true);
+  assertEquals("price_usd" in entry, false);
+});
+
+Deno.test("course payload inherits summary and personas from the catalog entry", () => {
+  const payload = buildCourse(
+    bundle({ course: course({ audience_personas: ["Executive"] }) }),
+    "Cooling & Water Technology",
+    narrationAll,
+    { free: true },
+    RULES,
+  );
+  assertEquals(payload.summary, "First paragraph.");
+  assertEquals(payload.personas, ["Executive"]);
+  assertEquals(payload.access, "open");
 });

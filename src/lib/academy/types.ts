@@ -25,6 +25,14 @@ export type CatalogCourse = {
   narrated: boolean;
   /** Present only after beta ends. Never rendered while beta.free is true. */
   price_usd?: number | null;
+  /**
+   * One sentence lifted from the course's own copy, never generated, and null
+   * where none could be taken safely. Optional: a catalog served by an older
+   * deployment of the function does not carry it.
+   */
+  summary?: string | null;
+  /** Audience lenses. Optional for the same reason as `summary`. */
+  personas?: string[];
 };
 
 export type Catalog = {
