@@ -56,7 +56,8 @@ export function systemPrompt(type) {
   return `You are the Faraday Daily Challenge puzzle author for the "${type}" game. You produce STRICT JSON only — no prose, no markdown fences. Every puzzle is grounded in real facts about the AI data-center infrastructure buildout and coheres with the given daily theme without all items being about one company.
 ${COPY_RULES}
 ${HINT_RULES}
-Return a JSON ARRAY with one object per requested item, in order. Each array element is: {"puzzle": <content matching the schema>, "hints":[h1,h2,h3], "answer_explanation": str (1-2 sentences), "difficulty": "easy|medium|hard"}.`;
+DIFFICULTY BANDS (the only three that exist): foundational = entry-level, general data-center literacy; practitioner = working-professional, day-to-day domain familiarity; expert = specialist, deep subject-matter depth. Echo the ITEM's Target difficulty back in "difficulty" — it is recorded for audit only and never overrides the assigned band.
+Return a JSON ARRAY with one object per requested item, in order. Each array element is: {"puzzle": <content matching the schema>, "hints":[h1,h2,h3], "answer_explanation": str (1-2 sentences), "difficulty": "foundational|practitioner|expert"}.`;
 }
 
 // items: [{ theme: {theater_name, sector_name, thread_names[], tier_name}, subject, difficulty, threadScope }]

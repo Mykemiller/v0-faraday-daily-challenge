@@ -28,6 +28,7 @@ import {
 import { liveGameTypes } from "./lib/game-roster.mjs";
 import { buildCorpus, buildSubjectPool, CORPUS_PATH } from "./lib/corpus.mjs";
 import { resolveRunStatus, isTerminal } from "./lib/run-bookkeeping.mjs";
+import { difficultyFor as bandForSlot, resolveRowDifficulty } from "./lib/difficulty.mjs";
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -58,10 +59,12 @@ function parseArray(raw) {
   return out;
 }
 
-// difficulty bag per FAR-287 default 40/40/20 (deterministic per day index)
+// difficulty bag per FAR-287 default 40/40/20 (deterministic per day index).
+// CC-DC-GEN-DIFFICULTY-CANON-1.0: the bands themselves come from
+// ./lib/difficulty.mjs — the staging CHECK only accepts the canonical three.
+// The 40/40/20 default reproduces the old easy/medium/hard slot mapping exactly.
 function difficultyFor(dayIdx, typeIdx) {
-  const r = ((dayIdx * 7 + typeIdx) % 10);
-  return r < 4 ? "easy" : r < 8 ? "medium" : "hard";
+  return bandForSlot([], dayIdx * 7 + typeIdx);
 }
 
 async function existingBankFingerprints() {
@@ -188,7 +191,9 @@ async function main() {
           answer_key: answerKey, answer_explanation: expl,
           domain: it.day.sector_code, sub_domain: (it.day.thread_codes || [])[0] || null,
           theater_id: it.day.theater_id, jpas_tier_code: it.day.jpas_tier_code,
-          difficulty: el.difficulty || it.difficulty, subject_fingerprint: fp,
+          // CC-DC-GEN-DIFFICULTY-CANON-1.0 D1/D2: season-assigned band wins;
+          // the model's self-report is audit-only in difficulty_raw.
+          ...resolveRowDifficulty(it.difficulty, el?.difficulty), subject_fingerprint: fp,
           source_refs: { subject: it.subject, thread_codes: it.day.thread_codes },
           content_hash: hash, generation_batch_id: runId, generator_model: GEN_MODEL,
           validation_status: "passed",

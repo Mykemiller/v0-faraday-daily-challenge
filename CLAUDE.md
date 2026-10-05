@@ -1,5 +1,45 @@
 @AGENTS.md
 
+## Generation writes CANONICAL difficulty bands (CC-DC-GEN-DIFFICULTY-CANON-1.0, claude/gen-difficulty-canon, 2026-10-05)
+
+**`dc_puzzle_bank_staging.difficulty` accepts exactly three values.** The column carries
+
+```
+CHECK dc_puzzle_bank_staging_difficulty_canon
+  (difficulty IS NULL OR difficulty IN ('foundational','practitioner','expert'))
+```
+
+and the generator used to write the legacy strings `easy`/`medium`/`hard`. Every
+insert was therefore rejected by Postgres, so a League Office run finished with
+**0 rows written** and no obvious cause in the UI — pilot run
+`0118d976-ca9a-4f8f-b3c3-f1c9f1ae347a` failed 5/5 with
+`violates check constraint "dc_puzzle_bank_staging_difficulty_canon"`.
+
+- **The canonical list lives in ONE place: `src/lib/generation/difficulty.js`** —
+  `CANONICAL_BANDS`, `LEGACY_ALIASES` (mirrors `puzzle_difficulty_alias`),
+  `canonicalDifficulty()`, `difficultyFor()` and `resolveRowDifficulty()`. The CLI
+  resolves modules only inside `scripts/far287`, so it carries the twin
+  `scripts/far287/lib/difficulty.mjs` — exactly as `prompts` and `puzzle-schema`
+  are already twinned. `src/lib/generation/difficulty.test.mjs` fails the suite if
+  the two copies ever disagree on output.
+- **D1 — the season-assigned band wins.** `difficulty` is derived from
+  `season_difficulty_mix` via `difficultyFor(mix, slot)`, which always returns a
+  canonical band: mix rows are canonicalized, unrecognisable rows are dropped, and
+  an empty/all-junk mix falls back to foundational 40 / practitioner 40 / expert 20.
+  **The model's self-reported difficulty is never written to `difficulty`.**
+- **D2 — the model's self-report is audit-only**, stored verbatim in
+  `difficulty_raw` (text, nullable). Nothing reported → `NULL`, never `''`.
+- **The prompts ask for the canonical vocabulary** (`"difficulty":
+  "foundational|practitioner|expert"`) and define the three bands from
+  `puzzle_difficulty_band`: foundational = entry-level, general data-center
+  literacy; practitioner = working-professional, day-to-day domain familiarity;
+  expert = specialist, deep subject-matter depth. A standing test asserts the
+  substring `easy|medium|hard` appears in neither prompt file.
+- **No trigger, no relaxed CHECK.** The strict constraint is what caught this;
+  softening it would have turned a loud failure into silently mislabelled puzzles.
+- **If you add a band**, change `puzzle_difficulty_band`, the CHECK, and
+  `CANONICAL_BANDS` together — nowhere else hard-codes the list.
+
 ## Adding a new game (CC-DC-GAME-REGISTRY-1.0, 2026-08-21)
 
 **`game_catalog` is the source of truth for the game roster.** Adding a game is a
