@@ -91,6 +91,64 @@ and League Office rendered written/failed counts and nothing else.
   distinct"`, `"count phrase"`); `puzzle-schema.js` never echoes content values
   into them, which is what makes them safe to render.
 
+## FULL runs survive truncation and the function limit (CC-DC-GEN-BATCH-HARDENING-1.0, claude/gen-batch-hardening, 2026-10-05)
+
+**The worker asked for 8–12 puzzles in a call capped at `max_tokens: 4096` and
+then ignored `stop_reason`.** When the answer hit the cap the JSON ended
+mid-object, `parseArray()` salvaged what it could, and every slot past that point
+was recorded as `no-content` — a structural, perfectly repeatable failure that
+looked like the model declining to answer. The offline sizing (chars/4 off the
+`prompts.js` exemplars, ×1.6 for hints + explanation + the JSON wrapper) says
+**The Brief costs ~662 output tokens/puzzle, so the OLD minimum batch of 8 could
+not fit 4096 no matter what the model did**; Circuit at 8 (~3.1k) was one verbose
+explanation from the same cliff.
+
+- **Sizing, splitting and the budget guard live in ONE pure module:
+  `src/lib/generation/batching.js`** — `TYPE_BATCH_SIZE`, `startingBatchSize()`,
+  `genMaxTokens()`, `createBudget()`, `runBatchWithSplit()`. No I/O, no imports,
+  no clock of its own; the model call is injected. Unlike `difficulty` and
+  `puzzle-schema` it is **shared, not twinned** — `scripts/far287` imports it
+  directly, because it imports nothing itself.
+  Tests: `npm run test:generation-batching`.
+- **`max_tokens` is 16000** (`DC_GEN_MAX_TOKENS` overrides; a value < 1024 is
+  ignored as a typo). `callModel()` returns `{ text, stopReason, ms }` — the old
+  `Promise<string>` is what threw away the only truncation signal there is.
+- **Per-type STARTING batch size:** The Brief 5, Circuit/Frequency/Rackl 8,
+  Signal Drop/The Stack/Dark Fiber 10, default 8 for a new catalog game. The
+  worker's `batchSize` (8–12) is an **upper bound only** — it clamps 10 down to
+  8, it never lifts The Brief's 5 up. Every one of these sits under 70% of the
+  16k cap on the estimate (worst: The Brief at ~21%).
+- **A truncated result is never partially trusted.** On
+  `stop_reason === "max_tokens"` the result is kept only when the count of
+  complete parsed objects **equals** the count asked for. Anything less is
+  discarded whole and the slice is **split in half and retried immediately**,
+  recursively, down to size 1. A size-1 call that still truncates is a real
+  failure with reason key `truncated`. A salvaged prefix would silently write an
+  unknown subset — that is the trap, not the fix.
+- **Fewer objects WITHOUT truncation is not a split.** `stop_reason end_turn`
+  with 6 of 8 elements is the model answering short; it stays on the existing
+  `no-content` path. A thrown call is a whole-sub-slice `model:<status>` failure
+  and does not split — a transport error says nothing about output length.
+- **No model call is STARTED that cannot finish.** The guard requires
+  `elapsed + EMA(batch duration) <= budgetMs` (alpha 0.5, seeded pessimistically
+  at 60s) **before every call, including each split retry**. The old code
+  checked `elapsed > budgetMs` once per batch, so a batch begun at 249s on a
+  250s budget ran into Vercel's 300s wall and lost its work uncheckpointed.
+  Slots refused by the guard are **unattempted, not failed** — they stay pending
+  and the next invocation resumes them, and `sweptAll` is false so the
+  zero-progress rule does not misfire.
+- **Both worker routes spend 230s of their 300s `maxDuration`** (down from
+  250s): `/api/cron/generation-worker`, `/api/lo/generation/worker`.
+- **Every split and every refusal emits one structured line** on the existing
+  `{ at: "generation-worker", run, type, … }` shape: `step: "split"` (with
+  `size`, `parsed`, `halves`, `depth`), `step: "truncated"`,
+  `step: "truncated-complete"`, `step: "budget-stop"` (with `elapsedMs`,
+  `emaMs`, `budgetMs`).
+- **Prompts, difficulty logic, run-status semantics and the zero-progress rule
+  are untouched.** If you add a game type, give it a `TYPE_BATCH_SIZE` entry
+  sized off the same chars/4 × 1.6 estimate; the default 8 is a guess, not a
+  measurement.
+
 ## Adding a new game (CC-DC-GAME-REGISTRY-1.0, 2026-08-21)
 
 **`game_catalog` is the source of truth for the game roster.** Adding a game is a

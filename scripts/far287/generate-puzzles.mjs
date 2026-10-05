@@ -19,7 +19,11 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { sbInsert, sbSelect, sbUpdate, anthropicJson, GEN_MODEL, airtableGet } from "./lib/clients.mjs";
+import { sbInsert, sbSelect, sbUpdate, anthropicMessage, GEN_MODEL, airtableGet } from "./lib/clients.mjs";
+// CC-DC-GEN-BATCH-HARDENING-1.0 D5 — the CLI and the deployed worker share ONE
+// implementation of the per-type size + truncation-split logic (the module is
+// pure and imports nothing, so it resolves across the scripts/src boundary).
+import { runBatchWithSplit, startingBatchSize } from "../../src/lib/generation/batching.js";
 import { systemPrompt, userPrompt } from "./lib/prompts.mjs";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
@@ -159,18 +163,23 @@ async function main() {
         threadScope: day.thread_names.join("; ") });
     });
 
-    for (let i = 0; i < items.length; i += BATCH) {
-      const batch = items.slice(i, i + BATCH);
-      let arr = [];
-      try {
-        const raw = await anthropicJson({ system: systemPrompt(type), user: userPrompt(type, batch), maxTokens: 4096 });
-        arr = parseArray(raw);
-      } catch (err) { batch.forEach((it) => { failed++; failures.push({ type, date: it.day.theme_date, error: `model: ${err.message}` }); }); continue; }
+    const startSize = startingBatchSize(type, BATCH);
 
-      for (let k = 0; k < batch.length; k++) {
-        const it = batch[k]; const el = arr[k];
-        const content = el?.puzzle, hints = el?.hints || [], expl = el?.answer_explanation || null;
+    for (let i = 0; i < items.length; i += startSize) {
+      const batch = items.slice(i, i + startSize);
+      const batchRun = await runBatchWithSplit(batch, {
+        call: async (sub) => {
+          const res = await anthropicMessage({ system: systemPrompt(type), user: userPrompt(type, sub) });
+          return { objects: parseArray(res.text), stopReason: res.stopReason, ms: res.ms };
+        },
+        log: (event) => console.warn(`\n[batch] ${JSON.stringify({ type, ...event })}`),
+      });
+
+      for (const outcome of batchRun.outcomes) {
+        const it = outcome.item; const el = outcome.object;
         const fail = (msg) => { failed++; failures.push({ type, date: it.day.theme_date, error: msg }); };
+        if (outcome.failure) { fail(`${outcome.failure.reason}: ${outcome.failure.message}`); continue; }
+        const content = el?.puzzle, hints = el?.hints || [], expl = el?.answer_explanation || null;
         if (!content) { fail("no content parsed"); continue; }
         const v = validateContent(type, content); if (!v.ok) { fail("schema: " + v.errors.join("; ")); continue; }
         const answerKey = answerKeyFrom(type, content);
@@ -202,7 +211,7 @@ async function main() {
         else { try { await sbInsert("dc_puzzle_bank_staging", [row], "on_conflict=content_hash"); written++; }
                catch (err) { fail("db: " + err.message); } }
       }
-      process.stdout.write(`\r${type}: ${Math.min(i + BATCH, items.length)}/${items.length} (written ${written}, failed ${failed})   `);
+      process.stdout.write(`\r${type}: ${Math.min(i + startSize, items.length)}/${items.length} (written ${written}, failed ${failed})   `);
       if (++sinceCheckpoint >= 5) { sinceCheckpoint = 0; await checkpoint(); }
     }
     process.stdout.write("\n");

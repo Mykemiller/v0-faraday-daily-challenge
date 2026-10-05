@@ -14,6 +14,9 @@ import { runGenerationSlice } from "@/lib/generation/worker";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+// CC-DC-GEN-BATCH-HARDENING-1.0 D4: the slice's budget is 230s, not 250s, so
+// the 300s function limit keeps ~70s of headroom for a batch already in flight.
+// The worker's own guard (elapsed + EMA batch duration) is what spends it.
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -25,7 +28,7 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 500 });
 
   try {
-    const report = await runGenerationSlice(s, { budgetMs: 250_000 });
+    const report = await runGenerationSlice(s, { budgetMs: 230_000 });
     if (!report.idle) console.log(`[generation-worker] ${JSON.stringify(report)}`);
     return Response.json({ ok: true, report });
   } catch (err) {
