@@ -13,6 +13,24 @@ import {
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
+import { failuresFrom, lastFailureFrom, clampMessage } from "@/lib/generation/failure-reasons";
+
+/**
+ * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D5 — the run row as the PANEL sees it.
+ *
+ * `phase_cursor` is deliberately dropped and replaced by three whitelisted
+ * projections. The commissioner needs to know WHY a run failed, and nothing
+ * more of the cursor should reach a browser: a jsonb blob passed through
+ * wholesale is how a future field ends up rendered by accident.
+ */
+export type GenRunView = Omit<GenRun, "phase_cursor"> & {
+  /** reason key → count, accumulated across worker slices */
+  failures: Record<string, number>;
+  /** the most recent failure: key + message only, never content */
+  lastFailure: { key: string; message: string; at: string } | null;
+  /** the failed_short summary the worker already wrote */
+  error: string | null;
+};
 
 export type GenerationStatus = {
   season: (GenSeason & { name: string; slug: string }) | null;
@@ -23,7 +41,7 @@ export type GenerationStatus = {
   pilotFindings: Finding[];
   fullFindings: Finding[];
   warnings: Finding[];
-  runs: GenRun[];
+  runs: GenRunView[];
   stalledRunId: string | null;
   bankAlarms: Finding[];
   /** Draft rows of the latest pilot run, for the review table. */
@@ -70,7 +88,7 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
       : Promise.resolve([]),
     q<GenRun>(
       s,
-      `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,season_id,run_kind,status,target_count,written_count,failed_count,started_at,completed_at,superseded_at,last_heartbeat_at&order=started_at.desc&limit=10`
+      `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,season_id,run_kind,status,target_count,written_count,failed_count,started_at,completed_at,superseded_at,last_heartbeat_at,phase_cursor&order=started_at.desc&limit=10`
     ),
     q<{ sector_code: string }>(s, `dc_daily_theme?season_id=is.null&select=sector_code`),
   ]);
@@ -84,6 +102,18 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const input: GenerationInput = {
     season, slate, catalog, themeMix, difficultyMix, activeDomainCodes, inflightRuns,
   };
+
+  // D5: project the cursor down to the three failure facts; the blob itself
+  // never leaves the server.
+  const runViews: GenRunView[] = runs.map(({ phase_cursor, ...r }) => {
+    const pc = (phase_cursor && typeof phase_cursor === "object" ? phase_cursor : {}) as Record<string, unknown>;
+    return {
+      ...r,
+      failures: failuresFrom(phase_cursor),
+      lastFailure: lastFailureFrom(phase_cursor),
+      error: typeof pc.error === "string" ? clampMessage(pc.error) : null,
+    };
+  });
 
   const targets = computeTargets(input);
   const now = new Date().toISOString();
@@ -139,7 +169,7 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     pilotFindings: generationFindings(input, false),
     fullFindings: generationFindings(input, true),
     warnings: generationWarnings(input),
-    runs,
+    runs: runViews,
     stalledRunId: stalled?.id ?? null,
     bankAlarms: bankAlarmApplies(season) ? bankMinimumFindings(configuredKeys, coverage, window.required) : [],
     pilotPreview,

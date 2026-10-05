@@ -40,6 +40,57 @@ insert was therefore rejected by Postgres, so a League Office run finished with
 - **If you add a band**, change `puzzle_difficulty_band`, the CHECK, and
   `CANONICAL_BANDS` together — nowhere else hard-codes the list.
 
+## A failed run must say WHY (CC-DC-GEN-FAILURE-VISIBILITY-1.0, claude/gen-failure-visibility, 2026-10-05)
+
+**A generation run that writes 0 rows has to be diagnosable from the panel and
+from the logs — without ever storing or showing answer content.** The difficulty
+CHECK bug above took far too long to find because the evidence was destroyed on
+the way out: `sb()` truncated the PostgREST body at 200 chars and the per-item
+handler sliced that string *again*, so the SQLSTATE (`23514`) and the constraint
+name were cut off; the run row carried an `error` string only on `failed_short`;
+and League Office rendered written/failed counts and nothing else.
+
+- **Reason naming lives in ONE place: `src/lib/generation/failure-reasons.js`** —
+  `parsePostgrestError()`, `failureKey()`, `mergeFailures()`,
+  `restErrorMessage()`, `lastFailureEntry()`, `topFailure()`, `clampMessage()`,
+  `failuresFrom()`, `lastFailureFrom()`. Pure, no I/O, shared by the worker, the
+  server-side status assembler and the client panel.
+  Tests: `npm run test:generation-failures`.
+- **Keys are short and stable** so counts sum across worker slices and compare
+  between runs: `db:<sqlstate>:<constraint|->`, `model:<httpStatus|error>`,
+  `schema`, `hints`, `copy`, `subject-repeat`, `no-content`, `skip:no-spec`.
+  A 23514 on this table reads `db:23514:dc_puzzle_bank_staging_difficulty_canon`
+  — the key alone names the bug.
+- **`sb()` throws `SupabaseRestError`**, whose `message` is
+  `Supabase <METHOD> <table> <status> <code> <message>` (≤500 chars) and which
+  carries `status`/`code`/`hint`/`constraint` for keying. Nothing truncates it a
+  second time.
+- **Every checkpoint writes the reasons.** `phase_cursor.failures` is
+  `mergeFailures(what the DB had when this slice claimed the run, what this
+  slice has seen)` — so a resumed run accumulates and a repeated checkpoint is
+  idempotent — plus `phase_cursor.last_failure = { key, message (≤300), at }`.
+- **PostgREST's `details` is never read, stored or rendered.** On a constraint
+  violation Postgres puts the whole offending row in `details` ("Failing row
+  contains (…)"), which for `dc_puzzle_bank_staging` means the puzzle content,
+  the hints and the answer key. `code` + `message` + the constraint NAME
+  diagnose the fault; `details` adds nothing but an answer leak.
+  `clampMessage()` scrubs it (including from a truncated body) on every path,
+  and the test asserts a planted answer string appears in no returned value.
+- **`generation-status.ts` drops `phase_cursor`** and exposes three whitelisted
+  projections per run (`failures`, `lastFailure`, `error`) as `GenRunView`. A
+  jsonb blob passed through wholesale is how a future field gets rendered by
+  accident.
+- **The panel shows one line** under a run with failures:
+  `Top failure: <key> ×<n> — <message> · +N other reasons`, plus the existing
+  `failed_short` summary. Counters, run-status semantics, batch logic and
+  prompts are untouched.
+- **If you add a failure path**, give it a key in `failureKey()` and route it
+  through `fail()`/`noteFailure()` — do not `console.error` a bare string, and
+  never put model output or row data in the message. The per-item messages the
+  worker persists are structural (`"Rackl g0: label"`, `"hints: must be
+  distinct"`, `"count phrase"`); `puzzle-schema.js` never echoes content values
+  into them, which is what makes them safe to render.
+
 ## Adding a new game (CC-DC-GAME-REGISTRY-1.0, 2026-08-21)
 
 **`game_catalog` is the source of truth for the game roster.** Adding a game is a

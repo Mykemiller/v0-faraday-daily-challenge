@@ -33,6 +33,7 @@
     "test:far287": "node --test scripts/far287/lib/run-bookkeeping.test.mjs scripts/far287/lib/puzzle-schema.test.mjs",
     "test:generation": "node --test src/lib/league-office/generation-logic.test.ts",
     "test:generation-difficulty": "node --test src/lib/generation/difficulty.test.mjs",
+    "test:generation-failures": "node --test src/lib/generation/failure-reasons.test.mjs",
     "test:generation-readonly": "node --test src/lib/generation/generation-readonly.test.mjs",
     "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts",
     "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",
