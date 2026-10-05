@@ -27,6 +27,9 @@ import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./co
 import { systemPrompt, userPrompt } from "./prompts";
 import { difficultyFor, resolveRowDifficulty } from "./difficulty";
 import {
+  parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry,
+} from "./failure-reasons";
+import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
 } from "./puzzle-schema";
@@ -35,13 +38,53 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.s
 export const GEN_MODEL = process.env.DC_GEN_MODEL || process.env.FAR287_GEN_MODEL || "claude-sonnet-4-6";
 
 // ── PostgREST (loud failures — the worker records them per batch) ────────────
+
+/**
+ * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D2 — a PostgREST failure that CARRIES its
+ * diagnosis. The old code built `... ${status}: ${body.slice(0, 200)}` and the
+ * per-item handler sliced that string again, so the SQLSTATE and the constraint
+ * name — the only two facts that identify the fault — were routinely cut off
+ * before anyone read them. `message` is now the structured D2 line and the
+ * parsed facts ride along for failureKey(). PostgREST's `details` is never
+ * read: on this table it contains the whole failing row (content + answer key).
+ */
+export class SupabaseRestError extends Error {
+  readonly status: number | null;
+  readonly code: string | null;
+  readonly hint: string | null;
+  readonly constraint: string | null;
+  constructor(message: string, info: { status: number | null; code: string | null; hint: string | null; constraint: string | null }) {
+    super(message);
+    this.name = "SupabaseRestError";
+    this.status = info.status;
+    this.code = info.code;
+    this.hint = info.hint;
+    this.constraint = info.constraint;
+  }
+}
+
+/** An Anthropic failure that carries its HTTP status, for `model:<status>` keys. */
+export class ModelCallError extends Error {
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ModelCallError";
+    this.status = status;
+  }
+}
+
 async function sb(s: Svc, path: string, init: RequestInit = {}): Promise<unknown> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: { ...s.headers, ...(init.headers || {}) },
     cache: "no-store",
   });
-  if (!r.ok) throw new Error(`Supabase ${init.method || "GET"} ${path.split("?")[0]} ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) {
+    const method = (init.method || "GET").toUpperCase();
+    const table = path.split("?")[0];
+    const info = parsePostgrestError(r.status, await r.text());
+    throw new SupabaseRestError(restErrorMessage(method, table, info), info);
+  }
   // `Prefer: return=minimal` answers a POST with 201 + an EMPTY body (and a
   // PATCH/DELETE with 204). Calling r.json() on that empty body throws
   // "Unexpected end of JSON input" — which made every SUCCESSFUL staging insert
@@ -68,7 +111,7 @@ async function callModel(system: string, user: string): Promise<string> {
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: GEN_MODEL, max_tokens: 4096, system, messages: [{ role: "user", content: user }] }),
     });
-    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) throw new ModelCallError(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
     const data = (await res.json()) as { content?: { type: string; text?: string }[] };
     return (data.content || []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
   };
@@ -151,8 +194,37 @@ export async function runGenerationSlice(
   const run = runs[0];
   if (!run) return { idle: true };
 
-  const checkpoint = (patch: Record<string, unknown>) =>
-    sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, { last_heartbeat_at: nowIso(), ...patch });
+  // CC-DC-GEN-FAILURE-VISIBILITY-1.0 D3 — WHY a run failed must survive the
+  // slice that saw it. `baseFailures` is what the DB already had when this
+  // slice claimed the run; `sliceFailures` is what THIS slice has seen so far.
+  // Every checkpoint writes mergeFailures(base, slice), so a resumed run
+  // accumulates across slices and a second checkpoint inside one slice is
+  // idempotent rather than double-counting.
+  const cursor = { ...(run.phase_cursor || {}) } as Record<string, unknown>;
+  const baseFailures = cursor.failures;
+  const sliceFailures: Record<string, number> = {};
+  let lastFailure: { key: string; message: string; at: string } | null = null;
+  const countFailure = (key: string, n = 1) => {
+    sliceFailures[key] = (sliceFailures[key] ?? 0) + n;
+  };
+  const noteFailure = (key: string, message: string, n = 1) => {
+    countFailure(key, n);
+    lastFailure = lastFailureEntry(key, message, nowIso());
+  };
+
+  const checkpoint = (patch: Record<string, unknown>) => {
+    const body: Record<string, unknown> = { last_heartbeat_at: nowIso(), ...patch };
+    const given = body.phase_cursor;
+    const hasCursor = !!given && typeof given === "object";
+    if (hasCursor || lastFailure || Object.keys(sliceFailures).length > 0) {
+      body.phase_cursor = {
+        ...(hasCursor ? (given as Record<string, unknown>) : cursor),
+        failures: mergeFailures(baseFailures, sliceFailures),
+        ...(lastFailure ? { last_failure: lastFailure } : {}),
+      };
+    }
+    return sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, body);
+  };
 
   const seasons = await sbGet<SeasonRow>(s, `seasons?id=eq.${run.season_id}&select=id,slug,starts_on,ends_on,generated_at,locked_at&limit=1`);
   const season = seasons[0];
@@ -193,7 +265,6 @@ export async function runGenerationSlice(
   }
 
   const dates = seasonDates(season.starts_on, season.ends_on);
-  const cursor = { ...(run.phase_cursor || {}) } as Record<string, unknown>;
   const report: SliceReport = { runId: run.id, written: 0, failed: 0, themesInserted: 0 };
 
   // ── Phase A — season theme rows, derived from the corpus calendar ──────────
@@ -359,7 +430,12 @@ export async function runGenerationSlice(
       // its generator does; that must degrade, never fabricate.
       const user = userPrompt(type, items);
       if (!user) {
-        console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "skip", reason: "no prompt spec for this game type" }));
+        const key = failureKey("skip");
+        // Counted for visibility only: a skip is NOT a failure (the slot was
+        // never attempted, and D6 keeps failed_count's meaning intact), and it
+        // must not displace a real failure's last_failure message either.
+        countFailure(key, slice.length);
+        console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "skip", key, reason: "no prompt spec for this game type" }));
         continue;
       }
 
@@ -369,7 +445,10 @@ export async function runGenerationSlice(
         arr = parseArray(raw);
       } catch (err) {
         failed += slice.length;
-        console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "model", error: String(err) }));
+        const msg = err instanceof Error ? err.message : String(err);
+        const key = failureKey("model", { status: err instanceof ModelCallError ? err.status : null });
+        noteFailure(key, msg, slice.length);
+        console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "model", key, error: msg }));
         await checkpoint({ failed_count: baseFailed + failed, phase_cursor: { ...cursor, phase: "puzzles", type, at: slice[0]?.date } });
         continue;
       }
@@ -379,24 +458,30 @@ export async function runGenerationSlice(
         const el = arr[k] as { puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string } | undefined;
         const content = el?.puzzle;
         const hints = el?.hints || [];
-        const fail = (msg: string) => {
+        // D4: the structured log line keeps its shape and gains `key`. The
+        // messages below are STRUCTURAL ("Rackl g0: label", "hints: must be
+        // distinct", "count phrase") — puzzle-schema never echoes content
+        // values into them, which is why they are safe to persist and render.
+        const fail = (kind: string, msg: string, info?: { code?: string | null; constraint?: string | null; status?: number | null }) => {
           failed++;
-          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, error: msg }));
+          const key = failureKey(kind, info);
+          noteFailure(key, msg);
+          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, key, error: msg }));
         };
-        if (!content) { fail("no content parsed"); continue; }
+        if (!content) { fail("no-content", "no content parsed"); continue; }
         const v = validateContent(type, content);
-        if (!v.ok) { fail("schema: " + v.errors.join("; ")); continue; }
+        if (!v.ok) { fail("schema", "schema: " + v.errors.join("; ")); continue; }
         const answerKey = answerKeyFrom(type, content);
         const hv = checkHints(hints[0], hints[1], hints[2], answerKey);
-        if (!hv.ok) { fail("hints: " + hv.errors.join("; ")); continue; }
+        if (!hv.ok) { fail("hints", "hints: " + hv.errors.join("; ")); continue; }
         let copyBad = false;
         for (const text of [content.name, el?.answer_explanation, ...hints]) {
           const cv = copyViolations(text);
-          if (cv.length) { fail("copy: " + cv.join("; ")); copyBad = true; break; }
+          if (cv.length) { fail("copy", "copy: " + cv.join("; ")); copyBad = true; break; }
         }
         if (copyBad) continue;
         const fp = subjectFingerprint(type, content);
-        if (fpSet.has(fp)) { fail("subject repeat within the bank"); continue; }
+        if (fpSet.has(fp)) { fail("subject-repeat", "subject repeat within the bank"); continue; }
 
         const day = it.day;
         try {
@@ -431,7 +516,13 @@ export async function runGenerationSlice(
           fpSet.add(fp);
           written++;
         } catch (err) {
-          fail("db: " + String(err).slice(0, 200));
+          // The D2 message already reads
+          //   `Supabase POST dc_puzzle_bank_staging 400 23514 new row ... constraint "..."`
+          // so it is logged WHOLE — the old `String(err).slice(0, 200)` was a
+          // second truncation of an already-truncated body and was exactly what
+          // hid the SQLSTATE and the constraint name.
+          const e = err instanceof SupabaseRestError ? err : null;
+          fail("db", e ? e.message : String(err), e ? { code: e.code, constraint: e.constraint } : undefined);
         }
       }
 

@@ -21,12 +21,18 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/components/league-office/actions";
 import { ReasonDialog } from "./ReasonDialog";
 import { MiniButton, PrimaryButton } from "./fields";
+import { topFailure } from "@/lib/generation/failure-reasons";
 
 type Finding = { severity: "error" | "warning"; code: string; message: string };
 type Run = {
   id: string; run_kind: string; status: string; target_count: number | null;
   written_count: number; failed_count: number; started_at: string;
   completed_at: string | null; superseded_at: string | null; last_heartbeat_at: string | null;
+  // CC-DC-GEN-FAILURE-VISIBILITY-1.0 D5 — WHY, projected server-side out of
+  // phase_cursor. Optional so an older cached payload still renders.
+  failures?: Record<string, number> | null;
+  lastFailure?: { key: string; message: string; at: string } | null;
+  error?: string | null;
 };
 type Status = {
   season: {
@@ -258,23 +264,26 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
           <SectionLabel>Runs</SectionLabel>
           <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "grid", gap: 6 }}>
             {status.runs.slice(0, 4).map((r) => (
-              <li key={r.id} style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: 12.5, color: "#141210", flexWrap: "wrap" }}>
-                <span className="font-mono" style={{ fontSize: 10.5, color: "#8d8375" }}>{r.id.slice(0, 8)}</span>
-                <span style={{ fontWeight: 600 }}>{r.run_kind}</span>
-                <StatusDot status={r.status} stalled={status.stalledRunId === r.id} />
-                <span>{r.written_count}/{r.target_count ?? "?"} written{r.failed_count ? ` · ${r.failed_count} failed` : ""}</span>
-                <span style={{ color: "#8d8375" }}>
-                  {r.completed_at
-                    ? `finished ${r.completed_at.slice(0, 16).replace("T", " ")}`
-                    : r.last_heartbeat_at
-                      ? `heartbeat ${r.last_heartbeat_at.slice(11, 16)} UTC`
-                      : "queued"}
-                </span>
-                {!r.completed_at && !r.superseded_at ? (
-                  <MiniButton onClick={advance} disabled={advancing}>
-                    {advancing ? "Advancing…" : "Advance now"}
-                  </MiniButton>
-                ) : null}
+              <li key={r.id} style={{ display: "grid", gap: 3 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: 12.5, color: "#141210", flexWrap: "wrap" }}>
+                  <span className="font-mono" style={{ fontSize: 10.5, color: "#8d8375" }}>{r.id.slice(0, 8)}</span>
+                  <span style={{ fontWeight: 600 }}>{r.run_kind}</span>
+                  <StatusDot status={r.status} stalled={status.stalledRunId === r.id} />
+                  <span>{r.written_count}/{r.target_count ?? "?"} written{r.failed_count ? ` · ${r.failed_count} failed` : ""}</span>
+                  <span style={{ color: "#8d8375" }}>
+                    {r.completed_at
+                      ? `finished ${r.completed_at.slice(0, 16).replace("T", " ")}`
+                      : r.last_heartbeat_at
+                        ? `heartbeat ${r.last_heartbeat_at.slice(11, 16)} UTC`
+                        : "queued"}
+                  </span>
+                  {!r.completed_at && !r.superseded_at ? (
+                    <MiniButton onClick={advance} disabled={advancing}>
+                      {advancing ? "Advancing…" : "Advance now"}
+                    </MiniButton>
+                  ) : null}
+                </div>
+                <FailureNote run={r} />
               </li>
             ))}
           </ul>
@@ -322,6 +331,34 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
         onConfirm={run}
       />
     </div>
+  );
+}
+
+/**
+ * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D5 — the one line that answers "why did it
+ * fail?". The key already names the cause
+ * (`db:23514:dc_puzzle_bank_staging_difficulty_canon`); the message is the
+ * server-scrubbed Postgres message, never the row, the hints or the answer key.
+ */
+function FailureNote({ run }: { run: Run }) {
+  const top = topFailure(run.failures);
+  const shortfall = run.status === "failed_short" && run.error ? run.error : null;
+  if (!top && !shortfall) return null;
+
+  const parts: string[] = [];
+  if (top) {
+    // the stored message belongs to the LAST failure; show it only when that is
+    // the reason being named, so the line never mislabels a message.
+    const msg = run.lastFailure && run.lastFailure.key === top.key ? run.lastFailure.message : "";
+    parts.push(`Top failure: ${top.key} ×${top.count}${msg ? ` — ${msg}` : ""}`);
+    if (top.others > 0) parts.push(`+${top.others} other reason${top.others === 1 ? "" : "s"}`);
+  }
+  if (shortfall) parts.push(shortfall);
+
+  return (
+    <span style={{ fontSize: 11.5, color: "#9c3b2e", wordBreak: "break-word" }}>
+      {parts.join(" · ")}
+    </span>
   );
 }
 

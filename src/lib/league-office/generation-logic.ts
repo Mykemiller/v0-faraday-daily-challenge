@@ -73,6 +73,8 @@ export type GenRun = {
   completed_at: string | null;
   superseded_at: string | null;
   last_heartbeat_at: string | null;
+  /** jsonb — resume state + CC-DC-GEN-FAILURE-VISIBILITY-1.0 failure counts. */
+  phase_cursor?: Record<string, unknown> | null;
 };
 
 /** Never a game, never accepted, never surfaced (Phase 0 item 6). */
