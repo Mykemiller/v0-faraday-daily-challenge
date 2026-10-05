@@ -25,6 +25,7 @@ import type { Svc } from "@/lib/league-office/service";
 import { seasonDates } from "@/lib/league-office/generation-logic";
 import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./corpus";
 import { systemPrompt, userPrompt } from "./prompts";
+import { difficultyFor, resolveRowDifficulty } from "./difficulty";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
@@ -98,22 +99,6 @@ function parseArray(raw: string): Record<string, unknown>[] {
     else if (ch === "}") { depth--; if (depth === 0 && start >= 0) { const o = parseModelJson(s.slice(start, i + 1)); if (o) out.push(o as Record<string, unknown>); } }
   }
   return out;
-}
-
-// difficulty bag from the season's difficulty mix (default 40/40/20), deterministic per slot
-function difficultyFor(mix: { difficulty_band: string; target_pct: number }[], slot: number): string {
-  const bands = mix.length ? mix : [
-    { difficulty_band: "easy", target_pct: 40 },
-    { difficulty_band: "medium", target_pct: 40 },
-    { difficulty_band: "hard", target_pct: 20 },
-  ];
-  const order = ["easy", "medium", "hard"];
-  const sorted = [...bands].sort((a, b) => order.indexOf(a.difficulty_band) - order.indexOf(b.difficulty_band));
-  const total = sorted.reduce((a, b) => a + b.target_pct, 0) || 100;
-  let acc = 0;
-  const thresholds = sorted.map((b) => ({ band: b.difficulty_band, upto: (acc += (b.target_pct / total) * 10) }));
-  const r = slot % 10;
-  return thresholds.find((t) => r < t.upto)?.band ?? sorted[sorted.length - 1].difficulty_band;
 }
 
 // ── run/row types ────────────────────────────────────────────────────────────
@@ -432,7 +417,10 @@ export async function runGenerationSlice(
             sub_domain: (day.thread_codes || [])[0] || null,
             theater_id: day.theater_id || null,
             jpas_tier_code: day.jpas_tier_code || null,
-            difficulty: el?.difficulty || it.difficulty,
+            // CC-DC-GEN-DIFFICULTY-CANON-1.0 D1/D2: the season-assigned band is
+            // authoritative for `difficulty` (the staging CHECK only accepts the
+            // canonical three); the model's self-report is audit-only in difficulty_raw.
+            ...resolveRowDifficulty(it.difficulty, el?.difficulty),
             subject_fingerprint: fp,
             source_refs: { subject: it.subject, thread_codes: day.thread_codes },
             content_hash: contentHash(content, answerKey),
