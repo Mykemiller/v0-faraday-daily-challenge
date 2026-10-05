@@ -12,6 +12,11 @@
 //                 unique(season_id, puzzle_type, go_live_date) — CC-LO-CONCURRENT-
 //                 SEASONS-1.0 — so a re-run never duplicates.
 //   HEARTBEAT   — last_heartbeat_at is written with every checkpoint.
+//   EXCLUSIVE   — exactly one slice works a run at a time. The slice LEASES the
+//                 run (phase_cursor.slice_active, compare-and-swapped on
+//                 last_heartbeat_at) and releases it in a finally; a run whose
+//                 lease is held is IDLE to everyone else, not an error
+//                 (CC-DC-GEN-LEASE-AUTOADVANCE-1.0).
 //   BOUNDED     — per-type starting batch size (≤8–12), halved on a truncated
 //                 response, and no model call is STARTED unless
 //                 elapsed + the moving-average batch duration still fits the
@@ -35,6 +40,10 @@ import {
 import {
   createBudget, genMaxTokens, runBatchWithSplit, startingBatchSize,
 } from "./batching";
+import {
+  claimCursor, heartbeatGuard, isClaimable, leaseNote, releaseCursor, withLease,
+} from "./lease";
+import { isBenignSlotConflict, sliceOutcome } from "./slots";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
@@ -104,6 +113,18 @@ async function sb(s: Svc, path: string, init: RequestInit = {}): Promise<unknown
 const sbGet = <T>(s: Svc, path: string) => sb(s, path) as Promise<T[]>;
 const sbPatch = (s: Svc, path: string, body: unknown) =>
   sb(s, path, { method: "PATCH", body: JSON.stringify(body), headers: { Prefer: "return=minimal" } });
+/**
+ * A PATCH that reports WHICH rows it hit. The lease claim is a conditional
+ * update (CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L2) and "did my filter match" is the
+ * entire answer, so the body must come back. `select=id` keeps it to the id —
+ * the run's phase_cursor never needs to travel for this.
+ */
+const sbPatchReturning = (s: Svc, path: string, body: unknown) =>
+  sb(s, path, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { Prefer: "return=representation" },
+  }) as Promise<{ id: string }[] | null>;
 const sbInsert = (s: Svc, path: string, rows: unknown, prefer = "return=minimal") =>
   sb(s, path, { method: "POST", body: JSON.stringify(rows), headers: { Prefer: prefer } });
 
@@ -177,7 +198,27 @@ type RunRow = {
   written_count: number;
   failed_count: number;
   phase_cursor: Record<string, unknown>;
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L1/L2 — the two facts the lease needs:
+  // how long the run has been silent, and the exact heartbeat value to
+  // compare-and-swap the claim against.
+  started_at: string | null;
+  last_heartbeat_at: string | null;
 };
+
+/**
+ * The mutable handle the lease and the checkpoints share (L4).
+ *   cursor      — the phase_cursor the slice LAST wrote, so the release flips
+ *                 slice_active without discarding the slice's progress.
+ *   heartbeatAt — the heartbeat the slice last wrote through checkpoint(), or
+ *                 the run's original value if it never got that far. The CLAIM
+ *                 has to bump last_heartbeat_at (that is the compare-and-swap),
+ *                 but a slice that threw before doing any work must not leave
+ *                 behind a fresh heartbeat: the 30-minute stall banner
+ *                 (isStalled) is the only alarm for a run that cannot progress,
+ *                 and a per-cron claim would silence it forever. So the release
+ *                 writes the TRUTHFUL value back.
+ */
+type Lease = { cursor: Record<string, unknown>; heartbeatAt: string | null };
 
 type SeasonRow = {
   id: string; slug: string; starts_on: string; ends_on: string;
@@ -199,10 +240,66 @@ export type SliceReport = {
   note?: string;
 };
 
-/** One bounded slice of work against the oldest in-flight run. */
+/**
+ * One bounded slice of work against the oldest in-flight run — under a LEASE.
+ *
+ * CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D1. The claim is deliberately the FIRST write
+ * this function makes, before the season/config reads, so two slices never both
+ * get as far as computing `occupied`. The release is in withLease()'s finally,
+ * so a slice that throws frees the run for the next cron firing rather than
+ * parking it for STALE_LEASE_MS.
+ */
 export async function runGenerationSlice(
   s: Svc,
   opts: { budgetMs?: number; batchSize?: number } = {}
+): Promise<SliceReport> {
+  const nowIso = () => new Date().toISOString();
+
+  const runs = await sbGet<RunRow>(
+    s,
+    `dc_puzzle_generation_runs?completed_at=is.null&superseded_at=is.null&season_id=not.is.null&select=id,season_id,run_kind,status,target_count,written_count,failed_count,phase_cursor,started_at,last_heartbeat_at&order=started_at.asc&limit=1`
+  );
+  const run = runs[0];
+  if (!run) return { idle: true };
+
+  // L1 — cheap local check first: a lease held and heartbeating means another
+  // slice is mid-batch, and there is nothing for this one to do.
+  if (!isClaimable(run, { now: Date.now() })) return { idle: true, note: leaseNote(run) };
+
+  const lease: Lease = { cursor: claimCursor(run.phase_cursor), heartbeatAt: run.last_heartbeat_at };
+
+  return withLease<SliceReport>({
+    // L2 — compare-and-swap on the heartbeat we just read. Of two slices that
+    // read the same row, the second one's filter matches nothing.
+    claim: async () => {
+      const rows = await sbPatchReturning(
+        s,
+        `dc_puzzle_generation_runs?id=eq.${run.id}&${heartbeatGuard(run.last_heartbeat_at)}&select=id`,
+        { phase_cursor: lease.cursor, last_heartbeat_at: nowIso() }
+      );
+      return Array.isArray(rows) && rows.length > 0;
+    },
+    work: () => sliceBody(s, opts, run, lease),
+    // L4 — written over the cursor the slice LAST checkpointed, so releasing
+    // the lease cannot roll back this slice's progress — and with the heartbeat
+    // the slice actually earned, so a slice that threw before doing any work
+    // leaves the stall alarm armed rather than reset by its own claim.
+    release: () =>
+      sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, {
+        phase_cursor: releaseCursor(lease.cursor),
+        last_heartbeat_at: lease.heartbeatAt,
+      }),
+    onUnavailable: () => ({ idle: true, note: "lease held" }),
+    onReleaseError: (err) =>
+      console.error(JSON.stringify({ at: "generation-worker", run: run.id, step: "release-lease", error: String(err) })),
+  });
+}
+
+async function sliceBody(
+  s: Svc,
+  opts: { budgetMs?: number; batchSize?: number },
+  run: RunRow,
+  lease: Lease
 ): Promise<SliceReport> {
   const budgetMs = opts.budgetMs ?? 240_000;
   const batchSize = Math.max(8, Math.min(12, opts.batchSize ?? 10));
@@ -213,13 +310,6 @@ export async function runGenerationSlice(
   // budget and run into Vercel's 300s wall, losing it uncheckpointed.
   const budget = createBudget({ budgetMs, startedAt: t0 });
   const nowIso = () => new Date().toISOString();
-
-  const runs = await sbGet<RunRow>(
-    s,
-    `dc_puzzle_generation_runs?completed_at=is.null&superseded_at=is.null&season_id=not.is.null&select=id,season_id,run_kind,status,target_count,written_count,failed_count,phase_cursor&order=started_at.asc&limit=1`
-  );
-  const run = runs[0];
-  if (!run) return { idle: true };
 
   // CC-DC-GEN-FAILURE-VISIBILITY-1.0 D3 — WHY a run failed must survive the
   // slice that saw it. `baseFailures` is what the DB already had when this
@@ -239,17 +329,26 @@ export async function runGenerationSlice(
     lastFailure = lastFailureEntry(key, message, nowIso());
   };
 
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L4 — every checkpoint now ALWAYS writes a
+  // phase_cursor (it used to skip the write when there was nothing new to say)
+  // and always re-stamps `slice_active: true`, because the heartbeat and the
+  // lease flag must stay in agreement: a run that is heartbeating is a run
+  // someone owns. `lease.cursor` tracks what was last written so the release can
+  // flip the flag without discarding this slice's progress.
   const checkpoint = (patch: Record<string, unknown>) => {
-    const body: Record<string, unknown> = { last_heartbeat_at: nowIso(), ...patch };
+    const beat = nowIso();
+    const body: Record<string, unknown> = { last_heartbeat_at: beat, ...patch };
+    lease.heartbeatAt = beat;
     const given = body.phase_cursor;
     const hasCursor = !!given && typeof given === "object";
-    if (hasCursor || lastFailure || Object.keys(sliceFailures).length > 0) {
-      body.phase_cursor = {
-        ...(hasCursor ? (given as Record<string, unknown>) : cursor),
-        failures: mergeFailures(baseFailures, sliceFailures),
-        ...(lastFailure ? { last_failure: lastFailure } : {}),
-      };
-    }
+    const next: Record<string, unknown> = {
+      ...(hasCursor ? (given as Record<string, unknown>) : cursor),
+      slice_active: true,
+      failures: mergeFailures(baseFailures, sliceFailures),
+      ...(lastFailure ? { last_failure: lastFailure } : {}),
+    };
+    body.phase_cursor = next;
+    lease.cursor = next;
     return sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, body);
   };
 
@@ -391,7 +490,7 @@ export async function runGenerationSlice(
   report.skippedExisting = types.length * slotDates.length - pending.length;
 
   if (pending.length === 0) {
-    const done = run.run_kind === "pilot" ? "pilot_complete" : "complete";
+    const done = sliceOutcome({ runKind: run.run_kind, pendingCount: 0 }).status;
     const mine = await sbGet<{ id: string }>(s, `dc_puzzle_bank_staging?generation_batch_id=eq.${run.id}&select=id`);
     await checkpoint({ status: done, completed_at: nowIso(), written_count: mine.length, phase_cursor: cursor });
     if (run.run_kind === "full" && !season.generated_at)
@@ -418,6 +517,10 @@ export async function runGenerationSlice(
   const baseFailed = run.failed_count || 0;
   let written = 0;
   let failed = 0;
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D2 — slots this slice found already filled
+  // by someone else MID-SLICE (the pre-computed `occupied` set could not know).
+  // Filled is filled: these are progress, not failures.
+  let duplicateSkips = 0;
   let sweptAll = true;
 
   outer:
@@ -570,6 +673,19 @@ export async function runGenerationSlice(
           // second truncation of an already-truncated body and was exactly what
           // hid the SQLSTATE and the constraint name.
           const e = err instanceof SupabaseRestError ? err : null;
+          // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D2/S1 — 23505 on
+          // dc_staging_season_type_date_uniq means this exact (season, type,
+          // date) slot already has a row. That is the outcome the slice wanted,
+          // so it is a SKIP: it does not touch failed_count, it is not recorded
+          // in phase_cursor.failures, and it counts as progress (S3) so a slice
+          // that only hit duplicates cannot trip the zero-progress rule. S2:
+          // any OTHER 23505 is still a failure.
+          if (e && isBenignSlotConflict({ code: e.code, constraint: e.constraint })) {
+            duplicateSkips++;
+            fpSet.add(fp);
+            console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, step: "slot-already-filled" }));
+            continue;
+          }
           fail("db", e ? e.message : String(err), e ? { code: e.code, constraint: e.constraint } : undefined);
         }
       }
@@ -590,16 +706,30 @@ export async function runGenerationSlice(
 
   report.written = written;
   report.failed = failed;
-  const pendingAfter = pending.length - written;
+  // D2/S1 — the duplicates this slice discovered mid-flight join the slots that
+  // were already filled when it started. Both are "skipped, not failed".
+  report.skippedExisting = (report.skippedExisting ?? 0) + duplicateSkips;
+
+  // D2/S3 — the completion and zero-progress rules now live in slots.js, where
+  // the clause that matters ("a duplicate-only slice made progress") is a test
+  // rather than an inline condition. The zero-progress THRESHOLD is unchanged.
+  const outcome = sliceOutcome({
+    runKind: run.run_kind,
+    pendingCount: pending.length,
+    written,
+    duplicateSkips,
+    failed,
+    sweptAll,
+  });
+  const pendingAfter = outcome.pendingAfter;
   report.pendingAfter = pendingAfter;
 
-  if (pendingAfter <= 0) {
-    const done = run.run_kind === "pilot" ? "pilot_complete" : "complete";
-    await checkpoint({ status: done, completed_at: nowIso(), written_count: baseWritten + written, phase_cursor: cursor });
+  if (outcome.done && !outcome.failedShort) {
+    await checkpoint({ status: outcome.status, completed_at: nowIso(), written_count: baseWritten + written, phase_cursor: cursor });
     if (run.run_kind === "full" && !season.generated_at)
       await sbPatch(s, `seasons?id=eq.${season.id}`, { generated_at: nowIso() });
-    report.status = done;
-  } else if (sweptAll && written === 0 && failed > 0) {
+    report.status = outcome.status;
+  } else if (outcome.failedShort) {
     // a full sweep produced nothing — stop and report rather than loop forever
     await checkpoint({
       status: "failed_short",
@@ -609,7 +739,7 @@ export async function runGenerationSlice(
       phase_cursor: { ...cursor, error: `zero-progress sweep: ${pendingAfter} slots unreachable` },
     });
     report.status = "failed_short";
-    report.note = `stopped short: ${pendingAfter} slots kept failing — see run phase_cursor and logs`;
+    report.note = outcome.note;
   } else {
     report.status = "generating";
   }

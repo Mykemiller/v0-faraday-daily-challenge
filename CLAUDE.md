@@ -1,5 +1,70 @@
 @AGENTS.md
 
+## One slice per run; a taken slot is a skip (CC-DC-GEN-LEASE-AUTOADVANCE-1.0, claude/gen-lease-autoadvance, 2026-10-05)
+
+**The generator was competing with itself.** Every entry point —
+`/api/cron/generation-worker` (every 10 min), the League Office "Advance now"
+button, and the kick fired on run creation — claimed "the oldest in-flight run"
+with nothing but `completed_at is null and superseded_at is null`. Two slices
+could therefore be inside the SAME run at once, each with its own `occupied`
+snapshot taken once at slice start, both generating the same
+`(season_id, puzzle_type, go_live_date)` slot. The loser's insert died on
+`unique dc_staging_season_type_date_uniq` (SQLSTATE **23505**) and the worker
+scored it as a FAILURE. That was **84% of the failures in the 2026-10 full run**,
+plus the Anthropic spend for every duplicate.
+
+- **D1 — a slice LEASES the run; no schema change.** The flag lives in the
+  existing `phase_cursor` jsonb as **`slice_active`**, set by the claim and
+  cleared by the release. A run is claimable when `slice_active` is not exactly
+  `true`, **or** its heartbeat is older than **`STALE_LEASE_MS = 180_000`** (the
+  worker heartbeats after every batch, so a silent lease is a dead slice — a
+  function killed at Vercel's 300s wall is reclaimed on the next cron firing).
+  Rules live in **`src/lib/generation/lease.js`**; `withLease()` takes its claim,
+  work and release as injected effects, which is why "released on a normal exit
+  AND on a thrown exit" is a unit test rather than a code review.
+- **The claim is a compare-and-swap on `last_heartbeat_at`.** The claiming PATCH
+  is filtered on the EXACT heartbeat value the claimer read (`eq.<value>`, or
+  `is.null` for a never-heartbeated run), so of two slices that read the same row
+  only one can write; the loser gets 0 rows back. **Plain PostgREST filters
+  only** — deliberately no jsonb-path predicate, whose syntax could 400 a live
+  production slice. The residual read→write gap is absorbed by D2.
+- **A held lease is `{ idle: true, note: "lease held" }`, never an error.** The
+  cron must treat "someone else is working" as the normal case.
+- **Release is in a `finally`**, so a thrown slice frees the run for the next
+  firing instead of parking it for 180s. A release that itself fails is logged
+  and **never masks the slice's own result or exception**. Every `checkpoint()`
+  re-stamps `slice_active: true` and records what it wrote, so the release flips
+  the flag without rolling back the slice's progress.
+- **D2 — 23505 on `dc_staging_season_type_date_uniq` is a BENIGN SKIP.** The slot
+  is filled, which is the outcome the slice wanted: it increments
+  `skippedExisting`, does **not** touch `failed_count`, and is **not** recorded
+  in `phase_cursor.failures`. **Any other 23505** (a different unique index) is
+  still a failure.
+- **A duplicate counts as PROGRESS.** `pendingAfter` subtracts it and the
+  zero-progress clause requires `duplicateSkips === 0`, so **a slice whose every
+  slot was already filled finishes the run `complete` instead of `failed_short`**
+  — the bug that let a finished bank be reported as dead. The zero-progress
+  THRESHOLD itself is unchanged (one full sweep, 0 written, ≥1 failure). Rules in
+  **`src/lib/generation/slots.js`** (`isBenignSlotConflict`, `sliceOutcome`).
+- **D3 — "Continue until done" replaces "Advance now."** The panel drives worker
+  slices **sequentially** (each POST awaited in full, then the run re-read; never
+  two slices in flight) and stops on the first of: the run's status leaves
+  `generating`/`queued`; **3** consecutive slices with no increase in
+  `written_count`; **60** slices; Stop pressed; a POST failed. Stop is honoured
+  BETWEEN slices so the one in flight still checkpoints. A slice that reports
+  `idle` (the cron holds the lease) backs off 4s and is not an error. Loop rules
+  in **`src/lib/generation/advance.js`** (`advanceUntilDone`, `advanceDecision`,
+  `trackProgress`) — the panel only supplies the effects.
+- **The loop is a convenience, never the mechanism.** Closing the tab reverts the
+  run to the ten-minute cron; nothing needs the browser back. "Advance one slice"
+  keeps the old single-shot behaviour reachable.
+- **No migration, no new column, no run restart.** Shipping this under a run that
+  is mid-flight is safe: slices are stateless and resume from the DB, and a run
+  whose `phase_cursor` has no `slice_active` is simply claimable.
+- Tests: `npm run test:generation-lease`
+  (`src/lib/generation/lease-autoadvance.test.mjs`, 39 tests — no network, no DB,
+  no clock).
+
 ## Generation writes CANONICAL difficulty bands (CC-DC-GEN-DIFFICULTY-CANON-1.0, claude/gen-difficulty-canon, 2026-10-05)
 
 **`dc_puzzle_bank_staging.difficulty` accepts exactly three values.** The column carries
