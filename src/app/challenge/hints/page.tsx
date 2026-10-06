@@ -7,7 +7,7 @@
 //
 // The reveal budget IS the existing FAR-198 gate: HINT_MAX(3) per game per day,
 // persisted in the same localStorage key the in-game HintControl spends
-// (`faraday_hints_${TODAY}_${gameType}`). Revealing tier N here consumes the
+// (`faraday_hints_${centralDay}_${gameType}`). Revealing tier N here consumes the
 // same budget as pressing "Hint?" in-game, and vice versa; the count is later
 // reported to dc_completions.hints_used at completion via /api/score. No gate
 // logic is duplicated or modified — this page just reads/spends the same key.
@@ -19,11 +19,15 @@ import { useEffect, useState } from "react";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import { SESSION_STORAGE_KEY, HANDLE_STORAGE_KEY } from "@/lib/supabase";
+import { hintBudgetKey } from "@/lib/dc-day.js";
 
 const HINT_MAX = 3; // mirrors DailyChallenge.jsx (FAR-198)
-// Same day key the in-game HintControl uses (UTC slice, NOT the CT serve day —
-// matching exactly is what keeps the two budgets shared).
-const TODAY = new Date().toISOString().slice(0, 10);
+// Same day key the in-game HintControl uses — now the CENTRAL serve day, read
+// at call time. It was a frozen UTC slice, which disagreed with the server's
+// completion date for five hours every evening; harmless while hints were
+// analytics, wrong once hint_penalty_pct became score math
+// (CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 FIX B2). The key SHAPE is unchanged, so
+// the two budgets are still the same budget.
 
 interface DayPuzzle {
   puzzle_type: string;
@@ -43,7 +47,7 @@ interface DayContent {
 }
 
 function budgetKey(gameType: string) {
-  return `faraday_hints_${TODAY}_${gameType}`;
+  return hintBudgetKey(gameType);
 }
 
 function readUsed(gameType: string): number {

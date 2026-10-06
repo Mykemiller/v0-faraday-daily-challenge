@@ -26,6 +26,14 @@ import PlayoffBanner from "@/components/PlayoffBanner";
 import MessageDock from "@/components/messaging/MessageDock";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — the season's scoring. The SAME
+// pure module /api/score recomputes with, so the number on the score card and
+// the number written to dc_completions are one function of one input, not two
+// implementations that happen to agree.
+import { seasonScore, gameScoringRules, effectiveStreak } from "@/lib/scoring/season-scoring.js";
+// FIX B2 — the hint budget's day key. CENTRAL, and read at call time, so it is
+// the same day the server stamps the completion with. See src/lib/dc-day.js.
+import { hintBudgetKey, readHintBudget } from "@/lib/dc-day.js";
 import { deriveTakeFallback } from "@/lib/faradays-take";
 import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 import { resolveDomainName } from "@/lib/idf-labels";
@@ -240,7 +248,7 @@ function hintsForQuestion(q) {
 // when there are no hints to give.
 function HintControl({ gameType, hints }) {
   const list = Array.isArray(hints) ? hints.filter(Boolean) : [];
-  const storageKey = `faraday_hints_${TODAY}_${gameType}`;
+  const storageKey = hintBudgetKey(gameType);
   const [usedTotal, setUsedTotal] = useState(0);   // budget spent across the game today
   const [localShown, setLocalShown] = useState(0); // revealed within this instance
 
@@ -472,6 +480,29 @@ const SolveBandsContext = createContext(null);
 // today) reads exactly as it always has.
 const PlayoffPhaseContext = createContext(false);
 
+// D7: `rules.scoring` from /api/challenge/today —
+// `{ [gameType]: { pointsMax, hintPenaltyPct }, streakBonus }`. null until the
+// today fetch resolves, and null is the identity transform, so a score card
+// rendered before it lands shows the platform default rather than a wrong
+// season number. Context for the same reason SolveBandsContext is: ScoreCard
+// is the consumer and it is nested inside all 7 game components.
+const SeasonScoringContext = createContext(null);
+
+/** The FAR-198 hint budget spent on `gameType` today, 0..3. The same key
+ *  HintControl writes and the same clamp /api/score applies — read here so the
+ *  score card can show the penalty at the moment it is incurred. CENTRAL day,
+ *  evaluated per call (FIX B2). */
+function hintsSpentToday(gameType) {
+  return readHintBudget(gameType, HINT_MAX);
+}
+
+/** The streak calcScore should use. `streak_bonus_enabled = false` can only be
+ *  applied HERE: by the time calcScore returns, the readiness multiplier is
+ *  already inside the raw score and no server can take it back out. */
+function useScoringStreak(streak) {
+  return effectiveStreak(streak, useContext(SeasonScoringContext));
+}
+
 // FAR-385: games whose ScoreCard renders the Faraday Signal card. The matcher
 // computes matched_signal_id for every game at sync time; which ones RENDER it
 // is `game_catalog.signal_enabled` (CC-DC-GAME-REGISTRY-1.0) — enabling another
@@ -481,7 +512,24 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   const scoreCardRegistry = useGameRegistry();
   const scoreCardGame = scoreCardRegistry.byKey[puzzleType] || null;
   const signalEnabled = !!scoreCardGame?.signal_enabled;
+  // D7: `score` is the RAW 0..150 roll-up calcScore produces. What the season
+  // awards for it is the raw score scaled to this game's points_override and
+  // reduced by hint_penalty_pct — rendered immediately, so the card never
+  // shows a number the database will not hold. /api/score recomputes the same
+  // value from the same module and is the authority on what is written.
+  const scoringRules = useContext(SeasonScoringContext);
+  const seasonPoints = seasonScore({
+    rawScore: score,
+    rules: gameScoringRules(scoringRules, puzzleType),
+    hintsUsed: hintsSpentToday(puzzleType),
+  });
+  // The grade bands read against the raw score, which is the thing they were
+  // calibrated on — a 500-point ceiling must not make every game a ◆.
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
+  // `dailyTotal` arrives as (today's prior total + this game's raw score), so
+  // swapping this game's contribution keeps the two halves of "x / y" in the
+  // same currency.
+  const seasonDailyTotal = (dailyTotal || 0) - score + seasonPoints;
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
   // Prefers per-game-type percentile bands when available; else seed par times.
@@ -505,7 +553,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
     surface: "scorecard",
     puzzleType,
     publicId,
-    score,
+    score: seasonPoints,
     elapsedSec,
     bandLabel: reaction?.label ?? null,
     outcome,
@@ -524,9 +572,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"2px" }}>
-          <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{score}</div>
+          <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{seasonPoints}</div>
           <div style={{ fontSize:"22px", fontWeight:500, color:C.sage, letterSpacing:"-0.02em", ...sans }}>
-            /{dailyTotal}
+            /{seasonDailyTotal}
           </div>
         </div>
         <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>
@@ -564,7 +612,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-        Score includes {getStreakMultiplier(streak).mult}× Readiness multiplier
+        {scoringRules && scoringRules.streakBonus === false
+          ? "Readiness multiplier is off for this season"
+          : `Score includes ${getStreakMultiplier(streak).mult}× Readiness multiplier`}
       </div>
     </div>
   );
@@ -578,6 +628,10 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
 const RACKL_MAX_MISTAKES = 4;
 
 function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const allItems = puzzle.groups.flatMap((g, gi) => g.items.map((item, i) => ({ item, groupIdx:gi, id:`${gi}-${i}` })));
   const [tiles,    setTiles]    = useState(() => [...allItems].sort(() => Math.random()-0.5));
   const [selected, setSelected] = useState([]);
@@ -607,7 +661,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       if (newSolved.length === 16) {
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
-        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak });
+        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak: scoreStreak });
         setScoreVal(s);
         setDone(true);
       }
@@ -619,7 +673,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         // Out of guesses — end the round and score partial credit for any groups
         // already solved (no perfect bonus on a loss).
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
-        const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak });
+        const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak: scoreStreak });
         setFeedback(null);
         setScoreVal(s);
         setLost(true);
@@ -723,6 +777,10 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: SIGNAL DROP — Wordle-style
 // ══════════════════════════════════════════════════════════════════════════════
 function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   // Live puzzles arrive WITHOUT the answer (`word` is stripped server-side and
   // guesses are validated at /api/challenge/guess). Mock/legacy puzzles still
   // carry `word` and are validated locally. `localWord` decides which path we
@@ -760,7 +818,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = newGuesses.length === 1;
       const baseP   = Math.max(0, maxGuesses - newGuesses.length + 1);
-      setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak }));
+      setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak: scoreStreak }));
     } else if (newGuesses.length >= maxGuesses) {
       setLost(true);
       setElapsedSec((Date.now() - startTime.current) / 1000);
@@ -911,6 +969,10 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: THE STACK — Drag-to-rank
 // ══════════════════════════════════════════════════════════════════════════════
 function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [order,    setOrder]    = useState(() => [...puzzle.items.map((_,i)=>i)].sort(()=>Math.random()-0.5));
   const [dragging, setDragging] = useState(null);
   const [submitted,setSubmitted]= useState(false);
@@ -961,7 +1023,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
     const correct = order.filter((item, idx) => puzzle.correctOrder.indexOf(item) === idx).length;
     const perfect = correct === order.length;
     const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
-    const s = calcScore({ basePoints:correct, maxPoints:order.length, timeElapsed:elapsed, timeLimit:120, perfect, streak });
+    const s = calcScore({ basePoints:correct, maxPoints:order.length, timeElapsed:elapsed, timeLimit:120, perfect, streak: scoreStreak });
     setScoreVal(s);
     setSubmitted(true);
   }
@@ -1041,6 +1103,10 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: CIRCUIT — True/False sprint with timer
 // ══════════════════════════════════════════════════════════════════════════════
 function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [timeLeft,setTimeLeft]= useState(puzzle.timeLimit);
@@ -1078,7 +1144,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
     const correct = finalAnswers.filter(a => a.ok).length;
     const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
     const perfect = correct === puzzle.questions.length;
-    const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:puzzle.timeLimit, perfect, streak });
+    const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:puzzle.timeLimit, perfect, streak: scoreStreak });
     setScoreVal(s);
   }
 
@@ -1146,6 +1212,10 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: THE BRIEF — Read + comprehension
 // ══════════════════════════════════════════════════════════════════════════════
 function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [phase,   setPhase]   = useState("read"); // read | quiz | done
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
@@ -1174,7 +1244,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
       const correct = newAnswers.filter(a => a.ok).length;
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
-      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:300, perfect, streak });
+      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:300, perfect, streak: scoreStreak });
       setScoreVal(s);
       setPhase("done");
     } else {
@@ -1253,6 +1323,10 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: DARK FIBER — Term ↔ Definition matching
 // ══════════════════════════════════════════════════════════════════════════════
 function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [selectedDef,  setSelectedDef]  = useState(null);
   const [matched,      setMatched]      = useState([]);
@@ -1274,7 +1348,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
       if (newMatched.length === puzzle.pairs.length) {
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
-        const s = calcScore({ basePoints:puzzle.pairs.length, maxPoints:puzzle.pairs.length, timeElapsed:elapsed, timeLimit:180, perfect, streak });
+        const s = calcScore({ basePoints:puzzle.pairs.length, maxPoints:puzzle.pairs.length, timeElapsed:elapsed, timeLimit:180, perfect, streak: scoreStreak });
         setScoreVal(s);
         setDone(true);
       }
@@ -1353,6 +1427,10 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: FREQUENCY — Multiple choice quiz
 // ══════════════════════════════════════════════════════════════════════════════
 function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [selected,setSelected]= useState(null);
@@ -1378,7 +1456,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
       const correct = newAnswers.filter(a=>a.ok).length;
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
-      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:240, perfect, streak });
+      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:240, perfect, streak: scoreStreak });
       setScoreVal(s);
       setDone(true);
     } else {
@@ -1645,6 +1723,13 @@ function GameReplay({ gameType, snapshot, puzzle, onBack }) {
 }
 
 // ── Daily results persistence ────────────────────────────────────────────────
+// Deliberately still the UTC slice, and deliberately still frozen at load: the
+// only two things left keyed on it are `faraday_daily_*` (a local scratch of
+// this session's results — the server's todayCompletions is authoritative) and
+// a display date. The HINT BUDGET moved off it to the Central serve day in
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 FIX B2, because that one feeds score
+// math and has to agree with the server; these two do not and changing them
+// would reset a player's local scratch for no gain. See src/lib/dc-day.js.
 const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2736,6 +2821,9 @@ function DailyChallengeInner() {
   // FAR-388: per-game-type solve-time percentile bands, served alongside today's
   // puzzles. null until resolved → Market Reaction band uses seed par times.
   const [solveBands,   setSolveBands]   = useState(null);
+  // D7: `rules.scoring` from /api/challenge/today. null until it lands, which
+  // reads as the platform default (150 / no penalty / streak on).
+  const [scoringRules, setScoringRules] = useState(null);
   // The season's enabled games (game_catalog.runtime_key list), from
   // /api/challenge/today. null = no slate configured → show them all.
   const [slate,        setSlate]        = useState(null);
@@ -2793,6 +2881,8 @@ function DailyChallengeInner() {
         setLivePuzzles(data.puzzles && typeof data.puzzles === "object" ? data.puzzles : {});
         if (data.tip) setTipOfTheDay(data.tip);
         if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
+        if (data.rules && data.rules.scoring && typeof data.rules.scoring === "object")
+          setScoringRules(data.rules.scoring);
         // Season slate (D4 retired): the list of games THIS season serves.
         // null/absent → show every game, which is the pre-enforcement behaviour
         // and what an older payload produces.
@@ -3082,11 +3172,10 @@ function DailyChallengeInner() {
       // Analytics-only: highest hint tier revealed today for this game, from the
       // shared FAR-198 budget key (in-game HintControl + the /challenge/hints
       // page both spend it). Free — never an input to score math.
-      let hintsUsed = 0;
-      try {
-        const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${playedGame}`) || "0", 10);
-        if (!Number.isNaN(v)) hintsUsed = Math.max(0, Math.min(3, v));
-      } catch { /* storage disabled */ }
+      // D7: no longer analytics-only — under scoringVersion 2 this is the hint
+      // penalty's input. Read through the same helper the score card uses, so
+      // the number shown and the number sent cannot drift.
+      const hintsUsed = hintsSpentToday(playedGame);
       // FAR-388: elapsed solve time (seconds), analytics-only. Persisted additively
       // by complete-puzzle; feeds the Market Reaction Speed band's percentile
       // recompute. Only forwarded when it's a usable positive number.
@@ -3101,15 +3190,30 @@ function DailyChallengeInner() {
         body: JSON.stringify({
           token: sessionToken,
           gameType: playedGame,
+          // Still the RAW 0..150 roll-up. The server scales it by the
+          // season's points_override and hint_penalty_pct itself — this body
+          // carries no rules, and the server would not read them if it did.
           score,
           result: "win",
           hintsUsed,
+          // D7: opt in to server-side season scoring. A client cached from
+          // before this deploy omits it and keeps the old behaviour exactly.
+          scoringVersion: 2,
           ...(solveSecondsOut !== null ? { solveSeconds: solveSecondsOut } : {}),
         }),
       })
         .then(r => r.json())
         .then(data => {
           if (data?.alreadyPlayed) return; // idempotent — already counted
+          // D7: what the server actually wrote. Reconciles the optimistic
+          // per-game record with the season's number, so a reload and the
+          // score card agree.
+          if (typeof data?.finalScore === "number" && data.finalScore !== score) {
+            setTodayCompletions(prev => ({
+              ...prev,
+              [playedGame]: { ...(prev[playedGame] || {}), score: data.finalScore },
+            }));
+          }
           if (typeof data?.playStreak === "number") setStreak(data.playStreak);
           if (typeof data?.runningDailyTotal === "number") {
             setLastDailyTotal(data.runningDailyTotal);
@@ -3495,9 +3599,11 @@ function DailyChallengeInner() {
                 // leaving stale tiles while the title/hints/scoring use the live
                 // puzzle. Falls back to a per-game key when there is no publicId.
                 <SolveBandsContext.Provider value={solveBands}>
-                  <PlayoffPhaseContext.Provider value={playoffsLive}>
-                    <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
-                  </PlayoffPhaseContext.Provider>
+                  <SeasonScoringContext.Provider value={scoringRules}>
+                    <PlayoffPhaseContext.Provider value={playoffsLive}>
+                      <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                    </PlayoffPhaseContext.Provider>
+                  </SeasonScoringContext.Provider>
                 </SolveBandsContext.Provider>
               )}
             </div>
