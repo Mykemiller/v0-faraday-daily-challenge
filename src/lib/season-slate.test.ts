@@ -18,7 +18,7 @@ import { filterToSlate, narrowToScheduled, servedGameList } from "./season-slate
 // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the serve-path narrowing and the lobby's
 // reading of it are one guarantee, so they are asserted together: a season
 // that plays nothing today must land on `no_puzzles`, never on fixtures.
-import { lobbyModel } from "./lobby-model.ts";
+import { lobbyModel, type LobbyGame } from "./lobby-model.ts";
 
 // CC-DC-GAME-REGISTRY-1.0 D10: generic names, and the count is derived. Slate
 // filtering has nothing to do with WHICH games exist — hardcoding the live seven
@@ -164,7 +164,8 @@ test("SCHEDULE: a zero-game day reads as no_puzzles in the lobby, never as mocks
   });
   assert.equal(model.mode, "no_puzzles");
   assert.equal(model.servedCount, 0);
-  assert.deepEqual(model.games, []);
+  const noTiles: LobbyGame[] = [];
+  assert.deepEqual(model.games, noTiles);
   assert.equal(model.games.some((g) => g.mock), false, "production must never serve a fixture");
 });
 
