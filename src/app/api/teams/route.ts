@@ -1,7 +1,9 @@
 // Teams API — search teams + read/write player's season-scoped team memberships.
 //
+// GET /api/teams                        → all teams (max 50) + the season's teamCap
 // GET /api/teams?q=search               → list teams matching query (max 50)
 // GET /api/teams?scope=my&token=...     → player's current memberships + pending
+//                                         + teamCap / maxTeamSize
 // POST /api/teams                       → upsert memberships (respects Free Agency gate)
 //   body: { token, team_ids: string[], season_id: string }
 //
@@ -10,10 +12,27 @@
 // roster freeze added in migration 20260802120000 lives in those RPCs, so it does
 // NOT cover this route: the guards below are the matching fence, using the same
 // predicate from the same pure module. Add a guard to any NEW write path here.
+//
+// CC-DC-TEAM-CAP-FROM-CONFIG-1.0: the per-player team cap and the maximum team
+// size come from the season's effective config via `@/lib/seasons/team-rules`,
+// never from a constant here. Every cap decision on this route goes through
+// that module's pure predicates so the API, the DB RPC and the UI copy agree.
 
 import { fetchSeasonRules, rosterMoveGuard } from '@/lib/league-playoffs/server';
 import { SEASON_PLAYOFF_COLUMNS } from '@/lib/league-playoffs/server';
+import { memberCountsPath, tallyMemberCounts } from '@/lib/league-office/member-counts';
 import { resolveSeasonFor } from '@/lib/seasons/resolve';
+import {
+  TEAM_FULL_CODE,
+  TEAM_LIMIT_CODE,
+  type TeamRules,
+  canJoinAnotherTeam,
+  isTeamFull,
+  isTeamSetAllowed,
+  teamFullMessage,
+  teamLimitMessage,
+  teamRulesFor,
+} from '@/lib/seasons/team-rules';
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || 'https://ycadmmngkdhvpcsrcuaq.supabase.co';
@@ -46,6 +65,41 @@ async function resolveSubscriber(token: string): Promise<string | null> {
   return row.subscriber_id ?? null;
 }
 
+/** The 400 a blocked join returns. `teamCap` is on the wire so the client can
+ *  say the season's number instead of guessing 5. */
+function teamLimitResponse(rules: TeamRules): Response {
+  return Response.json(
+    {
+      error: TEAM_LIMIT_CODE,
+      message: teamLimitMessage(rules.maxTeamsPerPlayer),
+      teamCap: rules.maxTeamsPerPlayer,
+    },
+    { status: 400 }
+  );
+}
+
+/** Distinct CONFIRMED members each of `teamIds` holds in this season.
+ *
+ *  COUNT(DISTINCT subscriber_id), never a row count: `team_memberships` is
+ *  season-keyed and one person can own several rows (CC-LO-TEAM-COUNTS-1.0).
+ *  Reuses the League Office path so the cap and the console agree on who counts
+ *  (left_at IS NULL, pending bucketed separately, no `active` filter).
+ */
+async function confirmedMemberCounts(
+  h: Record<string, string>,
+  seasonId: string,
+  teamIds: string[]
+): Promise<(teamId: string) => number> {
+  if (teamIds.length === 0) return () => 0;
+  const inList = teamIds.map(encodeURIComponent).join(',');
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/${memberCountsPath(seasonId)}&team_id=in.(${inList})`,
+    { headers: h, cache: 'no-store' }
+  ).catch(() => null);
+  const rows = r && r.ok ? await r.json().catch(() => []) : [];
+  return tallyMemberCounts(Array.isArray(rows) ? rows : []).members;
+}
+
 export async function GET(request: Request) {
   const h = svcHeaders();
   if (!h) return Response.json({ error: 'not_configured' }, { status: 500 });
@@ -64,6 +118,10 @@ export async function GET(request: Request) {
     const seasonId = (await resolveSeasonFor(h, subscriberId))?.id ?? null;
     if (!seasonId) return Response.json({ memberships: [] });
 
+    // The cap travels with the payload the account screen and the picker
+    // already fetch, so no surface has to hardcode 5 to render its copy.
+    const myRules = await teamRulesFor(h, seasonId);
+
     const memR = await fetch(
       `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id,pending,teams(id,name)`,
       { headers: h, cache: 'no-store' }
@@ -75,7 +133,12 @@ export async function GET(request: Request) {
       team_name: m.teams?.name ?? '',
       pending: m.pending,
     }));
-    return Response.json({ teams, season_id: seasonId });
+    return Response.json({
+      teams,
+      season_id: seasonId,
+      teamCap: myRules.maxTeamsPerPlayer,
+      maxTeamSize: myRules.maxTeamSize,
+    });
   }
 
   // Search teams by name (default)
@@ -87,7 +150,25 @@ export async function GET(request: Request) {
     { headers: h, cache: 'no-store' }
   );
   const teams = teamsR.ok ? await teamsR.json().catch(() => []) : [];
-  return Response.json({ teams });
+
+  // OTPGate's team step runs before the player holds anything, so it reads this
+  // branch anonymously: resolve the DEFAULT season's cap (CC-LO-CONCURRENT-
+  // SEASONS-1.0 — `resolveSeasonFor(h, null)`, never a status=active pick).
+  //
+  // Only on the UNFILTERED listing. This branch is unauthenticated and both
+  // pickers re-query it on every keystroke; two extra round-trips per
+  // character would be a poor trade for a number that cannot change mid-search.
+  // Every caller loads the unfiltered list first, so the cap always arrives,
+  // and a client that somehow does not get it keeps its previous value.
+  if (q) return Response.json({ teams });
+
+  const searchSeasonId = (await resolveSeasonFor(h, null))?.id ?? null;
+  const searchRules = await teamRulesFor(h, searchSeasonId);
+  return Response.json({
+    teams,
+    teamCap: searchRules.maxTeamsPerPlayer,
+    maxTeamSize: searchRules.maxTeamSize,
+  });
 }
 
 export async function POST(request: Request) {
@@ -106,8 +187,9 @@ export async function POST(request: Request) {
 
   // ── Join a team via a durable invite token (team page "Invite / Share") ──────
   // Resolves the joiner's season itself (the invite link carries no season_id) and
-  // adds an immediate, non-pending membership, honouring the 5-team cap and the
-  // season lock. Idempotent: already-a-member is a success no-op.
+  // adds an immediate, non-pending membership, honouring the season's configured
+  // team cap and maximum team size and the season lock. Idempotent:
+  // already-a-member is a success no-op.
   if (action === 'join_by_token') {
     const joinToken = typeof body.join_token === 'string' ? body.join_token.trim() : '';
     if (!joinToken) return Response.json({ error: 'missing_join_token' }, { status: 400 });
@@ -145,7 +227,27 @@ export async function POST(request: Request) {
     if (curRows.some(r => r.team_id === team.id)) {
       return Response.json({ ok: true, team_id: team.id, team_name: team.name, already_member: true });
     }
-    if (curRows.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
+    // The season's own cap, not a constant (CC-DC-TEAM-CAP-FROM-CONFIG-1.0).
+    const inviteTeamRules = await teamRulesFor(h, season.id);
+    const heldHere = new Set(curRows.map(r => r.team_id)).size;
+    if (!canJoinAnotherTeam(heldHere, inviteTeamRules)) {
+      return teamLimitResponse(inviteTeamRules);
+    }
+
+    // And the team's own size limit. Distinct confirmed members in THIS season.
+    if (inviteTeamRules.maxTeamSize != null) {
+      const counts = await confirmedMemberCounts(h, season.id, [team.id]);
+      if (isTeamFull(counts(team.id), inviteTeamRules)) {
+        return Response.json(
+          {
+            error: TEAM_FULL_CODE,
+            message: teamFullMessage(inviteTeamRules.maxTeamSize),
+            maxTeamSize: inviteTeamRules.maxTeamSize,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Freeze → config lock → late-join / switch flags → windows, in that
     // precedence (see canMoveRoster). A player holding no team yet is joining
@@ -203,6 +305,11 @@ export async function POST(request: Request) {
   // every guard below so two writes in one request cannot see different rules.
   const rules = await fetchSeasonRules(h, seasonId);
 
+  // The roster SIZE knobs, from the same effective config
+  // (CC-DC-TEAM-CAP-FROM-CONFIG-1.0). Resolved once here for the same reason
+  // `rules` is: two writes in one request must not see different caps.
+  const teamRules = await teamRulesFor(h, seasonId);
+
   // Playoff freeze THEN trading windows — covers BOTH remaining actions below
   // (`create`, which self-joins the new team, and the default membership upsert,
   // which is how a player joins AND leaves from the pickers). Placed once here
@@ -221,7 +328,8 @@ export async function POST(request: Request) {
     if (frozenGuard) return frozenGuard;
   }
   // Joins are immediate — the Free Agency deferral (pending) has been retired.
-  // Players may hold up to 5 teams and edits take effect right away.
+  // Players may hold up to `teamRules.maxTeamsPerPlayer` teams and edits take
+  // effect right away.
   const pending = false;
 
   // ── Create a new team and auto-join it ──────────────────────────────────────
@@ -231,13 +339,13 @@ export async function POST(request: Request) {
       return Response.json({ error: 'invalid_team_name' }, { status: 400 });
     }
 
-    // Guard membership cap
-    const myMemR = await fetch(
-      `${SUPABASE_URL}/rest/v1/team_memberships?subscriber_id=eq.${subscriberId}&season_id=eq.${seasonId}&select=team_id`,
-      { headers: h, cache: 'no-store' }
-    );
-    const myMem: { team_id: string }[] = myMemR.ok ? await myMemR.json().catch(() => []) : [];
-    if (myMem.length >= 5) return Response.json({ error: 'team_limit_reached' }, { status: 400 });
+    // Guard membership cap — reuses the set already read above (one read, not
+    // two) and the season's configured cap, not a constant.
+    if (!canJoinAnotherTeam(heldTeamIds.length, teamRules)) {
+      return teamLimitResponse(teamRules);
+    }
+    // No max_team_size check here: a team that does not exist yet has no
+    // members, so creating one and self-joining can never overfill it.
 
     // Fetch subscriber email for created_by_email (required field on teams table)
     const subEmailR = await fetch(
@@ -337,10 +445,20 @@ export async function POST(request: Request) {
         (x): x is string => typeof x === 'string' && x.length > 0
       )
     )
-  ).slice(0, 5);
+  );
 
   // Reuses the set fetched above — one read, not two.
   const currentTeamIds = heldTeamIds;
+
+  // The cap, applied to the WHOLE desired set rather than by silently truncating
+  // it — the previous code sliced the set to a fixed five, which dropped teams
+  // the player had asked for and still returned 200.
+  // Grandfathered: a player already above a lowered cap may save
+  // — to leave a team, or to re-confirm unchanged — but may never grow. See
+  // `isTeamSetAllowed`.
+  if (!isTeamSetAllowed(desired.length, currentTeamIds.length, teamRules)) {
+    return teamLimitResponse(teamRules);
+  }
 
   const toRemove = currentTeamIds.filter(tid => !desired.includes(tid));
   const toAdd = desired.filter(tid => !currentTeamIds.includes(tid));
@@ -357,6 +475,24 @@ export async function POST(request: Request) {
       rules,
     });
     if (moveBlocked) return moveBlocked;
+  }
+
+  // Size limit, on the teams being ADDED only. A team the player is already on
+  // is never re-checked: an over-size team must not trap its own members.
+  if (teamRules.maxTeamSize != null && toAdd.length > 0) {
+    const counts = await confirmedMemberCounts(h, seasonId, toAdd);
+    const full = toAdd.find(tid => isTeamFull(counts(tid), teamRules));
+    if (full) {
+      return Response.json(
+        {
+          error: TEAM_FULL_CODE,
+          message: teamFullMessage(teamRules.maxTeamSize),
+          maxTeamSize: teamRules.maxTeamSize,
+          team_id: full,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // Remove dropped teams — every row for that team, regardless of pending.
@@ -408,5 +544,11 @@ export async function POST(request: Request) {
     team_name: m.teams?.name ?? '',
     pending: m.pending,
   }));
-  return Response.json({ ok: true, pending, teams });
+  return Response.json({
+    ok: true,
+    pending,
+    teams,
+    teamCap: teamRules.maxTeamsPerPlayer,
+    maxTeamSize: teamRules.maxTeamSize,
+  });
 }

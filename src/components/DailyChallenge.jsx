@@ -1727,7 +1727,10 @@ const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 // ══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-const MAX_ACCOUNT_TEAMS = 5;
+// Fallback only. The season's real cap arrives on the /api/teams payload as
+// `teamCap` (CC-DC-TEAM-CAP-FROM-CONFIG-1.0); /api/teams re-checks it on every
+// write, so this constant is never the enforcement point.
+const DEFAULT_ACCOUNT_TEAMS = 5;
 
 function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut, onHandleChange, onSignIn }) {
   const [editHandle, setEditHandle] = useState(handle || "");
@@ -1736,6 +1739,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [handleError, setHandleError] = useState("");
 
   const [myTeams, setMyTeams] = useState([]); // { team_id, team_name, pending }
+  const [maxAccountTeams, setMaxAccountTeams] = useState(DEFAULT_ACCOUNT_TEAMS); // season's cap
   const [myTeamsLoaded, setMyTeamsLoaded] = useState(false);
   const [availableTeams, setAvailableTeams] = useState([]);
   const [teamSearch, setTeamSearch] = useState("");
@@ -1757,12 +1761,12 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   // /api/season/active, never recomputed here (a client in another zone would
   // otherwise disagree about the boundary day).
   const isRosterFrozen = season?.roster_frozen === true;
-  // Players manage teams (join up to MAX_ACCOUNT_TEAMS, leave) any time unless the
+  // Players manage teams (join up to `maxAccountTeams`, leave) any time unless the
   // season is hard-locked or rosters are frozen for the playoffs. Joins are
   // immediate — the Free Agency deferral is retired. Hiding the picker is never
   // the enforcement point: /api/teams re-checks both server-side on every write.
   const canEditTeams = sessionToken && !isLocked && !isRosterFrozen;
-  const atMaxTeams = myTeams.length >= MAX_ACCOUNT_TEAMS;
+  const atMaxTeams = myTeams.length >= maxAccountTeams;
 
   useEffect(() => {
     (async () => {
@@ -1782,6 +1786,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         const r = await fetch(`/api/teams?scope=my&token=${encodeURIComponent(sessionToken)}`);
         const d = await r.json();
         setMyTeams(Array.isArray(d.teams) ? d.teams : []);
+        if (Number.isFinite(d?.teamCap)) setMaxAccountTeams(Number(d.teamCap));
       } catch {} finally {
         setTeamsLoading(false);
         setMyTeamsLoaded(true);
@@ -1829,7 +1834,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
     if (alreadyIn) {
       next = myTeams.filter(t => t.team_id !== teamId);
     } else {
-      if (myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+      if (myTeams.length >= maxAccountTeams) return;
       next = [...myTeams, { team_id: teamId, team_name: teamName }]; // immediate join
     }
     setMyTeams(next);
@@ -1852,7 +1857,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
 
   async function createTeam() {
     const name = newTeamName.trim();
-    if (!name || !canEditTeams || myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+    if (!name || !canEditTeams || myTeams.length >= maxAccountTeams) return;
     setCreateTeamSaving(true); setCreateTeamError("");
     try {
       const r = await fetch("/api/teams", {
@@ -1863,7 +1868,8 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
       const d = await r.json();
       if (!r.ok) {
         if (d.error === "team_name_taken") setCreateTeamError("A team with that name already exists — search to join it.");
-        else if (d.error === "team_limit_reached") setCreateTeamError("You're already in 5 teams.");
+        else if (d.error === "team_limit_reached") setCreateTeamError(d.message || `This season allows ${maxAccountTeams} teams — leave one to join another.`);
+        else if (d.error === "team_full") setCreateTeamError(d.message || "That team is full.");
         else setCreateTeamError(d.error || "Could not create team");
         return;
       }
@@ -2001,7 +2007,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           <div style={{ ...labelStyle, marginBottom:0 }}>Teams</div>
           <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
             <span style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.5)" }}>
-              {myTeams.length}/{MAX_ACCOUNT_TEAMS}
+              {myTeams.length}/{maxAccountTeams}
             </span>
             {teamsSaved && <span style={{ ...mono, fontSize:"11px", color:C.sage }}>Saved ✓</span>}
           </div>
@@ -2074,13 +2080,13 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
                 return joinable.map((t, i) => (
                   <button key={t.id} type="button"
                     onClick={() => toggleTeam(t.id, t.name)}
-                    disabled={myTeams.length >= MAX_ACCOUNT_TEAMS || teamSaving}
+                    disabled={myTeams.length >= maxAccountTeams || teamSaving}
                     style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
                       width:"100%", padding:"11px 16px", background:"none", border:"none",
                       borderBottom: i < joinable.length - 1 ? "1px solid rgba(28,52,36,0.06)" : "none",
                       textAlign:"left",
-                      cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
-                      opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                      cursor: myTeams.length >= maxAccountTeams ? "not-allowed" : "pointer",
+                      opacity: myTeams.length >= maxAccountTeams ? 0.45 : 1 }}>
                     <span style={{ ...mono, fontSize:"13px", color:C.forest }}>{t.name}</span>
                     <span style={{ ...mono, fontSize:"18px", color:C.forest, opacity:0.4, lineHeight:1 }}>+</span>
                   </button>
@@ -2090,18 +2096,18 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
 
             {atMaxTeams && (
               <div style={{ ...mono, fontSize:"11px", fontWeight:600, color:C.gold, marginBottom:"12px" }}>
-                Max teams reached, leave a team to join a new team.
+                This season allows {maxAccountTeams} {maxAccountTeams === 1 ? "team" : "teams"} — leave one to join another.
               </div>
             )}
 
             {/* Create a new team */}
             {!showCreateTeam ? (
               <button type="button" onClick={() => setShowCreateTeam(true)}
-                disabled={myTeams.length >= MAX_ACCOUNT_TEAMS}
+                disabled={myTeams.length >= maxAccountTeams}
                 style={{ ...mono, fontSize:"12px", color:C.forest, background:"none",
                   border:`1px solid rgba(28,52,36,0.2)`, borderRadius:"6px",
-                  padding:"8px 14px", cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
-                  opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                  padding:"8px 14px", cursor: myTeams.length >= maxAccountTeams ? "not-allowed" : "pointer",
+                  opacity: myTeams.length >= maxAccountTeams ? 0.45 : 1 }}>
                 + Create a new team
               </button>
             ) : (

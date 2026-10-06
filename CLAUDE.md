@@ -1,5 +1,59 @@
 @AGENTS.md
 
+## How many teams may a player join? (CC-DC-TEAM-CAP-FROM-CONFIG-1.0, claude/dc-team-cap, 2026-10-06)
+
+**The per-player team cap and the maximum team size come from the season's
+effective config — never a constant.** `src/lib/seasons/team-rules.ts` is the
+one server-side answer: `teamRulesFor(headers, seasonId)` reads
+`v_season_effective_config` (the ONLY authority on which config version is in
+force — reading `season_config` directly picks drafts and superseded rows) and
+returns `{ maxTeamsPerPlayer: max_teams_per_subscriber ?? 5, maxTeamSize:
+max_team_size ?? null }`. The decisions beside it are pure and tested:
+`canJoinAnotherTeam`, `isTeamSetAllowed`, `isTeamFull`, `teamLimitMessage`.
+`npm run test:team-rules` also greps `/api/teams` for a hardcoded 5.
+
+**Fail soft.** No key, no row, a draft-only season, a transport error — all
+return the historical default of 5 and no size limit. A rules read that went
+wrong must never lock players out.
+
+**Grandfathering.** Lowering a cap removes nothing. A player already above it
+keeps every membership and may still save their roster (to leave a team, or to
+re-confirm it unchanged); they simply may not grow — that is
+`isTeamSetAllowed`, which is why the upsert checks the desired count against
+`max(cap, current)` rather than the cap alone. The block is
+`team_limit_reached` + `teamCap` on the wire, copy: *"This season allows N
+teams — leave one to join another."*
+
+**`team_full` (400)** is new: a join into a team already holding `max_team_size`
+members this season. Members are `COUNT(DISTINCT subscriber_id)`, season-scoped,
+`pending = false`, `left_at IS NULL` — `memberCountsPath` + `tallyMemberCounts`,
+never a row count (CC-LO-TEAM-COUNTS-1.0).
+
+**The number travels with the data.** `/api/teams` (both GETs and the upsert)
+and `/api/account` return `teamCap` / `maxTeamSize`; `OTPGate.jsx`,
+`account/page.tsx`, `DailyChallenge.jsx` and the invite landing render it with a
+5 fallback. The unfiltered `/api/teams` listing carries the cap; the `?q=`
+search does not, because that branch is unauthenticated and re-queried per
+keystroke — every caller loads the unfiltered list first.
+
+**`min_team_size` stays `not_enforced`, deliberately.** There is no point in the
+lifecycle at which a team being too SMALL can be refused: blocking the join that
+would leave a team under-sized blocks the first member of every team, and
+dissolving under-sized teams at lock is a product decision nobody has made.
+
+**DEPLOY ORDER: app first, migration after.**
+`supabase/migrations/20261007030000_team_join_cap_from_config.sql` re-creates
+`team_join` from the deployed body (quoted in full in its header) with the cap
+read from the config and the same size check. **It is NOT applied by the PR that
+adds it.** Until someone runs it, `team_join` still allows 5 for RPC callers —
+i.e. the `/team-action` edge function only. Every first-party surface goes
+through `/api/teams`, which already honours the config. The migration carries a
+verification gate (signature, SECURITY INVOKER, `search_path`, volatility,
+return type, all four EXECUTE grants, the freeze/window guards, the
+`'group limit reached'` token the edge function's `DOMAIN_ERR` regex needs) and
+a rollback note. Diff `pg_get_functiondef('public.team_join'::regproc)` against
+the header before applying; if it has drifted, re-derive rather than apply.
+
 ## Is this setting a rule yet? (CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0, claude/lo-config-enforcement, 2026-10-06)
 
 **THE RULE: wiring a field up = flipping its `CONFIG_ENFORCEMENT` entry, IN THE

@@ -76,9 +76,9 @@ export const CONFIG_ENFORCEMENT: Record<string, EnforcementEntry> = {
 
   // ── rosters ────────────────────────────────────────────────────────────────
   max_teams_per_subscriber: {
-    status: "partial",
-    by: "season-write.ts countOverCap (warning only)",
-    note: "Lowering it warns you how many subscribers already exceed it, and no membership is ever removed. The join path in /api/teams still enforces a hardcoded 5, not this number.",
+    status: "enforced",
+    by: "/api/teams · seasons/team-rules.ts · team_join (DB)",
+    note: "A join is refused once a player holds this many teams this season. Lowering it never removes a membership — a player already above it keeps their teams but cannot add another.",
   },
   min_team_size: {
     status: "not_enforced",
@@ -86,9 +86,9 @@ export const CONFIG_ENFORCEMENT: Record<string, EnforcementEntry> = {
     note: "No join, lock or scoring path reads it — a team below this size is never flagged and never blocked.",
   },
   max_team_size: {
-    status: "not_enforced",
-    by: "—",
-    note: "No join path reads it — a team can grow past this size.",
+    status: "enforced",
+    by: "/api/teams · seasons/team-rules.ts · team_join (DB)",
+    note: "A join into a team already holding this many distinct confirmed members this season is refused with team_full. Empty means unlimited.",
   },
   allow_free_agency: {
     status: "enforced",
