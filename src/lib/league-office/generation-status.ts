@@ -9,7 +9,7 @@ import { ctToday } from "./data";
 import { loadConfigs, pickFocusConfig } from "./seasons";
 import {
   generationFindings, generationWarnings, computeTargets, isStalled,
-  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, seasonDayCount,
+  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, bankServeDays, seasonDayCount,
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
@@ -78,7 +78,10 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     // that a window is empty, without them.
     configId
       ? q<GenerationInput["slate"][number]>(
-          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count,difficulty_floor,difficulty_ceiling`)
+          // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — and the three calendar columns
+          // with them: without appears_on_days and the per-game window the
+          // checklist cannot say how many puzzles a game actually needs.
+          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count,difficulty_floor,difficulty_ceiling,appears_on_days,starts_on,ends_on`)
       : Promise.resolve([]),
     q<GenCatalogGame>(s, `game_catalog?select=id,game_key,display_name,lifecycle_state,runtime_key`),
     configId
@@ -122,6 +125,12 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve the generator will
     // actually place the bands along.
     difficultyCurve: focus?.difficulty_curve ?? null,
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the season's play days and its per-day
+    // cap. `play_days_of_week` decides how many puzzles every target in this
+    // panel is; `games_per_day` is validated against the calendar (D2) and
+    // never used to choose which games run.
+    playDaysOfWeek: focus?.play_days_of_week ?? null,
+    gamesPerDay: focus?.games_per_day ?? null,
   };
 
   // D5: project the cursor down to the three failure facts; the blob itself
@@ -192,7 +201,11 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     warnings: generationWarnings(input),
     runs: runViews,
     stalledRunId: stalled?.id ?? null,
-    bankAlarms: bankAlarmApplies(season) ? bankMinimumFindings(configuredKeys, coverage, window.required) : [],
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the bar is per game: a Mon–Fri season
+    // must not alarm for the weekend it never serves.
+    bankAlarms: bankAlarmApplies(season)
+      ? bankMinimumFindings(configuredKeys, coverage, window.required, bankServeDays(input, window.from, window.to))
+      : [],
     pilotPreview,
     latestPilotRunStatus: latestPilot?.status ?? null,
     draftCount: drafts.length,

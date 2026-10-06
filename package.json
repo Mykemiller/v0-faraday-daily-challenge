@@ -42,7 +42,8 @@
     "test:theme-allocation": "node --test src/lib/generation/theme-allocation.test.mjs",
     "test:playoffs": "node --test src/lib/league-playoffs/phase.test.ts src/lib/league-playoffs/bracket.test.ts src/lib/league-playoffs/banner.test.ts",
     "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",
-    "test:pricing": "node --test src/config/pricing.test.ts"
+    "test:pricing": "node --test src/config/pricing.test.ts",
+    "test:schedule": "node --test src/lib/seasons/schedule.test.ts"
   },
   "dependencies": {
     "next": "16.2.3",

@@ -25,6 +25,14 @@ import { unfillableThemeQuotas } from "../generation/theme-allocation.js";
 import {
   CANONICAL_BANDS, CURVE_CUSTOM_WARNING, effectiveTypeMix, mixVector, normalizeCurve,
 } from "../generation/difficulty.js";
+// CC-DC-GEN-SCHEDULE-FIELDS-1.0 — "which games play on which dates" has exactly
+// one definition, and this file asks it rather than multiplying a day count by
+// a game count. Validation, the generator and the serve path all read the same
+// module; the rule itself lives in src/lib/seasons/schedule.ts.
+import {
+  overScheduledDates, scheduledDayCount,
+  type ScheduleConfig, type ScheduleGame, type ScheduleSeason,
+} from "../seasons/schedule.ts";
 
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
@@ -60,6 +68,16 @@ export type GenSlateGame = {
    */
   difficulty_floor?: string | null;
   difficulty_ceiling?: string | null;
+  /**
+   * CC-DC-GEN-SCHEDULE-FIELDS-1.0 — `season_games.appears_on_days` (ISO
+   * 1=Mon…7=Sun, null/empty ⇒ every season play day) and `.starts_on` /
+   * `.ends_on` (a window inside the season; an absent bound is OPEN).
+   * Optional, and absent means "plays whenever the season plays", so a caller
+   * that does not supply them gets exactly the pre-SCHEDULE-FIELDS behaviour.
+   */
+  appears_on_days?: number[] | null;
+  starts_on?: string | null;
+  ends_on?: string | null;
 };
 
 export type GenThemeMixRow = {
@@ -156,27 +174,88 @@ export type GenerationInput = {
    * not supply it simply gets no curve warning.
    */
   difficultyCurve?: string | null;
+  /**
+   * CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the focus config's
+   * `play_days_of_week` (ISO 1=Mon…7=Sun). Optional: absent ⇒ every day, which
+   * is what `normalizeDayMask` makes of a null column and what every season but
+   * TEST SEASON 1 is configured with (measured 2026-10-06).
+   */
+  playDaysOfWeek?: number[] | null;
+  /**
+   * CC-DC-GEN-SCHEDULE-FIELDS-1.0 D2 — the focus config's `games_per_day`.
+   * A VALIDATION rule, never a selector: when more games are scheduled on a
+   * day than it allows, that is `games_per_day_below_scheduled` and the run is
+   * blocked. Nothing anywhere picks which game to drop.
+   */
+  gamesPerDay?: number | null;
 };
 
 const isHundred = (n: number) => Math.abs(n - 100) < 0.001;
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-/** Per-game generation targets. v1: exactly one puzzle per game per day (see the
- *  header note); requested surplus is reported so the UI can show the warning. */
+// ── the season calendar, as this module asks for it ─────────────────────────
+
+const scheduleSeason = (input: GenerationInput): ScheduleSeason => ({
+  starts_on: input.season.starts_on,
+  ends_on: input.season.ends_on,
+});
+
+const scheduleConfig = (input: GenerationInput): ScheduleConfig => ({
+  play_days_of_week: input.playDaysOfWeek ?? null,
+});
+
+/** A slate row as the schedule module reads it. Keyed by `game_id` — the
+ *  identifier this file joins on; the serve path keys the same shape by
+ *  `runtime_key`. */
+const scheduleGame = (row: GenSlateGame): ScheduleGame => ({
+  type: row.game_id,
+  appears_on_days: row.appears_on_days ?? null,
+  starts_on: row.starts_on ?? null,
+  ends_on: row.ends_on ?? null,
+});
+
+/**
+ * How many dates each ENABLED game actually plays, by `game_id`.
+ *
+ * THE denominator for every per-game count in this file. It replaces
+ * `seasonDayCount()` in the three places that used it as a stand-in for "days
+ * this game is generated on" — targets, the puzzle_count floor, and the
+ * difficulty weighting — and equals it exactly when no schedule field is set.
+ */
+export function scheduledDaysByGame(input: GenerationInput): Map<string, number> {
+  const season = scheduleSeason(input);
+  const config = scheduleConfig(input);
+  const out = new Map<string, number>();
+  for (const r of input.slate.filter((g) => g.is_enabled))
+    out.set(r.game_id, scheduledDayCount({ season, config, game: scheduleGame(r) }));
+  return out;
+}
+
+/** Per-game generation targets. v1: exactly one puzzle per game per SCHEDULED
+ *  day (see the header note); requested surplus is reported so the UI can show
+ *  the warning.
+ *
+ *  CC-DC-GEN-SCHEDULE-FIELDS-1.0 — `effective` is the game's own scheduled day
+ *  count, not the season's length. A Monday-only game in a 119-day season is a
+ *  17-puzzle target, and the panel, the confirm modal and the worker now all
+ *  say 17. `dayCount` stays the season window's length: it is what the panel
+ *  labels the season with, and it is the ceiling, not the target. */
 export function computeTargets(input: GenerationInput): {
   dayCount: number | null;
   perGame: { game: GenCatalogGame; requested: number; effective: number }[];
   total: number;
 } {
   const dayCount = seasonDayCount(input.season.starts_on, input.season.ends_on);
+  const scheduled = scheduledDaysByGame(input);
   const byId = new Map(input.catalog.map((g) => [g.id, g]));
   const perGame = input.slate
     .filter((r) => r.is_enabled)
     .flatMap((r) => {
       const game = byId.get(r.game_id);
       if (!game) return [];
-      const requested = r.puzzle_count ?? dayCount ?? 0;
-      return [{ game, requested, effective: dayCount ?? 0 }];
+      const days = scheduled.get(r.game_id) ?? 0;
+      const requested = r.puzzle_count ?? days;
+      return [{ game, requested, effective: days }];
     });
   return { dayCount, perGame, total: sum(perGame.map((g) => g.effective)) };
 }
@@ -200,6 +279,11 @@ export function computeTargets(input: GenerationInput): {
  * game whose window is empty carries no weight here; it is a blocking
  * `difficulty_window_empty` error, not a shift.
  *
+ * CC-DC-GEN-SCHEDULE-FIELDS-1.0 — "scheduled days" is now literally that
+ * (schedule.ts), not the season's length standing in for it. A game that plays
+ * two days a week pulls the season mix a fifth as hard as one that plays
+ * seven, and this is the number that says so.
+ *
  * Pure, and exported so the League Office panel, the confirm modal and the
  * tests all read one number.
  */
@@ -212,7 +296,7 @@ export function realizedDifficultyMix(input: GenerationInput): {
   maxDeviation: number;
   perGame: { game: GenCatalogGame; days: number; mix: number[] | null }[];
 } {
-  const dayCount = seasonDayCount(input.season.starts_on, input.season.ends_on) ?? 0;
+  const scheduled = scheduledDaysByGame(input);
   const byId = new Map(input.catalog.map((g) => [g.id, g]));
   const globalDiff = input.difficultyMix.filter((d) => !d.applies_to_game_id);
   // An open window over the season mix IS the configured mix, normalized the
@@ -230,7 +314,7 @@ export function realizedDifficultyMix(input: GenerationInput): {
         floor: r.difficulty_floor,
         ceiling: r.difficulty_ceiling,
       });
-      return [{ game, days: dayCount, mix: rows ? mixVector(rows) : null }];
+      return [{ game, days: scheduled.get(r.game_id) ?? 0, mix: rows ? mixVector(rows) : null }];
     });
 
   const weighted = perGame.filter((g): g is typeof g & { mix: number[] } => !!g.mix && g.days > 0);
@@ -305,16 +389,42 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
       err("game_not_live", `"${g.display_name}" is not a live game (lifecycle: ${g.lifecycle_state}).`);
   }
 
-  // 5 — puzzle_count covers the season (DEC-2; surplus handled as a warning)
+  // 5 — puzzle_count covers the game's SCHEDULED days (DEC-2; surplus handled
+  // as a warning). CC-DC-GEN-SCHEDULE-FIELDS-1.0: the floor is one per day the
+  // game actually plays, not one per day of the season — a Monday-only game
+  // asking for 17 puzzles in a 119-day season is correctly configured, and
+  // blocking it was the old rule's only possible answer.
+  const scheduledDays = scheduledDaysByGame(input);
   if (dayCount != null) {
     for (const r of enabled) {
       const g = byId.get(r.game_id);
-      if (r.puzzle_count != null && r.puzzle_count < dayCount)
+      const days = scheduledDays.get(r.game_id) ?? 0;
+      if (r.puzzle_count != null && days > 0 && r.puzzle_count < days)
         err(
           "puzzle_count_short",
-          `"${g?.display_name ?? r.game_id}" requests ${r.puzzle_count} puzzles for a ${dayCount}-day season — never below one per day.`
+          `"${g?.display_name ?? r.game_id}" requests ${r.puzzle_count} puzzles for ${days} scheduled day${days === 1 ? "" : "s"} — never below one per day.`
         );
     }
+  }
+
+  // 5b — CC-DC-GEN-SCHEDULE-FIELDS-1.0 D2: `games_per_day` is a VALIDATION
+  // rule, not a selector. When more games are scheduled on a day than the
+  // config allows, the commissioner is told WHICH days and fixes the slate or
+  // the cap. Nothing picks a game to drop: a season that silently serves four
+  // of five configured games is the failure mode this rule exists to prevent,
+  // and it would be invisible from every surface.
+  const over = overScheduledDates({
+    season: scheduleSeason(input),
+    config: scheduleConfig(input),
+    games: enabled.map(scheduleGame),
+    gamesPerDay: input.gamesPerDay ?? null,
+  });
+  if (over.length > 0) {
+    const first = over.slice(0, 3).map((d) => `${d.date} (${d.count})`).join(", ");
+    err(
+      "games_per_day_below_scheduled",
+      `Games per day is ${input.gamesPerDay}, but more games than that are scheduled on ${over.length} date${over.length === 1 ? "" : "s"} — ${first}${over.length > 3 ? ", …" : ""}. Raise the cap or narrow the slate; generation never drops a game to fit.`
+    );
   }
 
   // 6 — difficulty mix sums to exactly 100 (global rows; per-game overrides per game)
@@ -438,12 +548,25 @@ export function generationWarnings(input: GenerationInput): Finding[] {
   if (targets.total > RUN_SIZE_WARN)
     warn("large_run", `This run requests ${targets.total.toLocaleString()} puzzles in one go.`);
 
-  const dayCount = targets.dayCount;
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — measured against the game's own scheduled
+  // days (`effective`), which is what the worker will generate.
   for (const g of targets.perGame)
-    if (dayCount != null && g.requested > dayCount)
+    if (g.requested > g.effective)
       warn(
         "surplus_unsupported",
-        `"${g.game.display_name}" requests ${g.requested} puzzles but the bank stores one per game per day — generating ${dayCount}.`
+        `"${g.game.display_name}" requests ${g.requested} puzzles but the bank stores one per game per day — generating ${g.effective}.`
+      );
+
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — a game the calendar never reaches. Not an
+  // error: an ended per-game window, or a season whose play days fall outside
+  // the game's, is a legitimate (if usually accidental) configuration. It is
+  // the SILENCE that was the bug — the slate showed the game as enabled and
+  // the lobby served it anyway.
+  for (const g of targets.perGame)
+    if (targets.dayCount != null && g.effective === 0)
+      warn(
+        "game_never_scheduled",
+        `"${g.game.display_name}" is enabled but plays on no date in this season — check its appears-on days and its start/end dates.`
       );
 
   return out;
@@ -497,6 +620,38 @@ export function bankCoverageWindow(
   return required > 0 ? { from, to, required } : { from: null, to: null, required: 0 };
 }
 
+/**
+ * CC-DC-GEN-SCHEDULE-FIELDS-1.0 — how many days inside `[from, to]` each
+ * ENABLED game is actually scheduled to serve, keyed by `runtime_key`.
+ *
+ * This is the per-game bar for the bank-minimum alarm. The window itself is
+ * still bankCoverageWindow()'s; all this does is subtract, per game, the days
+ * that game does not play — because "Circuit has 10 of the 14 days covered" is
+ * a false alarm on a Mon–Fri season, and a weekly alarm nobody can clear is an
+ * alarm everybody learns to ignore.
+ *
+ * Returns {} when the window is empty. Games sharing a runtime_key (there are
+ * none; the catalog is unique on it) would take the larger bar.
+ */
+export function bankServeDays(
+  input: GenerationInput,
+  from: string | null,
+  to: string | null
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!from || !to || to < from) return out;
+  const season: ScheduleSeason = { starts_on: from, ends_on: to };
+  const config = scheduleConfig(input);
+  const byId = new Map(input.catalog.map((g) => [g.id, g]));
+  for (const r of input.slate.filter((g) => g.is_enabled)) {
+    const key = byId.get(r.game_id)?.runtime_key;
+    if (!key) continue;
+    const days = scheduledDayCount({ season, config, game: scheduleGame(r) });
+    out[key] = Math.max(out[key] ?? 0, days);
+  }
+  return out;
+}
+
 function addDays(iso: string, n: number): string {
   const t = new Date(iso + "T12:00:00Z");
   t.setUTCDate(t.getUTCDate() + n);
@@ -509,24 +664,33 @@ function addDays(iso: string, n: number): string {
  *  of DISTINCT serve dates in that window that are Published or Live for THIS
  *  season (its own rows, or platform rows — season_id NULL — which serve as
  *  the fallback per CC-LO-CONCURRENT-SEASONS D6). `requiredDays` is the
- *  window's length (default: the full 14-day minimum). */
+ *  window's length (default: the full 14-day minimum).
+ *
+ *  CC-DC-GEN-SCHEDULE-FIELDS-1.0 — `requiredByKey` overrides that length PER
+ *  GAME with the days that game is actually scheduled inside the window
+ *  (bankServeDays). Without it a Mon–Fri season alarmed every week for the two
+ *  days it never serves, and a Monday-only game alarmed permanently. Optional:
+ *  a key it does not mention keeps `requiredDays`. */
 export function bankMinimumFindings(
   configuredRuntimeKeys: string[],
   coverage: Record<string, number>,
-  requiredDays: number = BANK_MINIMUM_DAYS
+  requiredDays: number = BANK_MINIMUM_DAYS,
+  requiredByKey?: Record<string, number> | null
 ): Finding[] {
   const out: Finding[] = [];
   if (requiredDays <= 0) return out;
   for (const key of configuredRuntimeKeys) {
+    const required = requiredByKey && typeof requiredByKey[key] === "number" ? requiredByKey[key] : requiredDays;
+    if (required <= 0) continue;
     const days = coverage[key] ?? 0;
-    if (days < requiredDays)
+    if (days < required)
       out.push({
         severity: "warning",
         code: "bank_minimum",
         message:
-          requiredDays === BANK_MINIMUM_DAYS
+          required === BANK_MINIMUM_DAYS
             ? `${key} has ${days} day${days === 1 ? "" : "s"} of Published/Live coverage ahead — below the ${BANK_MINIMUM_DAYS}-day bank minimum.`
-            : `${key} has ${days} of the ${requiredDays} remaining serve day${requiredDays === 1 ? "" : "s"} covered (Published/Live) — the bank runs dry before the season ends.`,
+            : `${key} has ${days} of the ${required} remaining serve day${required === 1 ? "" : "s"} covered (Published/Live) — the bank runs dry before the season ends.`,
       });
   }
   return out;

@@ -31,6 +31,12 @@
 
 import type { Svc } from "@/lib/league-office/service";
 import { seasonDates } from "@/lib/league-office/generation-logic";
+// CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the generator no longer builds its slot list
+// as the `dates × types` product. It asks the one module that knows which game
+// plays on which date, so play_days_of_week, appears_on_days and the per-game
+// window are honoured here, in the League Office checklist and on the serve
+// path alike.
+import { scheduledDates, scheduledSlots, scheduledTypesOn, type ScheduleGame } from "@/lib/seasons/schedule";
 import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./corpus";
 import { systemPrompt, userPrompt } from "./prompts";
 import { effectiveTypeMix, planDifficulty, resolveRowDifficulty } from "./difficulty";
@@ -366,12 +372,14 @@ async function sliceBody(
   // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — `difficulty_curve` comes down with
   // it: the shape the commissioner previewed decides WHICH dates carry the
   // deeper bands, so the generator has to read it.
-  type FocusConfig = { id: string; difficulty_curve?: string | null };
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — `play_days_of_week` comes down with it:
+  // the season's play days decide how many slots there are at all.
+  type FocusConfig = { id: string; difficulty_curve?: string | null; play_days_of_week?: number[] | null };
   const configs = await sbGet<FocusConfig>(
     s,
-    `season_config?season_id=eq.${season.id}&select=id,state,version,difficulty_curve&state=eq.active&limit=1`
+    `season_config?season_id=eq.${season.id}&select=id,state,version,difficulty_curve,play_days_of_week&state=eq.active&limit=1`
   );
-  const cfg = configs[0] ?? (await sbGet<FocusConfig>(s, `season_config?season_id=eq.${season.id}&select=id,version,difficulty_curve&order=version.desc&limit=1`))[0];
+  const cfg = configs[0] ?? (await sbGet<FocusConfig>(s, `season_config?season_id=eq.${season.id}&select=id,version,difficulty_curve,play_days_of_week&order=version.desc&limit=1`))[0];
   if (!cfg) {
     await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { error: "no season_config" } });
     return { runId: run.id, status: "failed_short", note: "no season_config" };
@@ -381,8 +389,14 @@ async function sliceBody(
     // down with it. These two columns were configured and read by nothing, and
     // the Football season banked 167 rows below their own game's floor as a
     // direct result (measured 2026-10-06).
-    sbGet<{ game_id: string; is_enabled: boolean; difficulty_floor: string | null; difficulty_ceiling: string | null }>(
-      s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled,difficulty_floor,difficulty_ceiling`),
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — and the per-game calendar columns:
+    // `appears_on_days` plus the game's own [starts_on, ends_on] window.
+    sbGet<{
+      game_id: string; is_enabled: boolean;
+      difficulty_floor: string | null; difficulty_ceiling: string | null;
+      appears_on_days: number[] | null; starts_on: string | null; ends_on: string | null;
+    }>(
+      s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled,difficulty_floor,difficulty_ceiling,appears_on_days,starts_on,ends_on`),
     sbGet<{ id: string; runtime_key: string | null; lifecycle_state: string }>(s, `game_catalog?select=id,runtime_key,lifecycle_state`),
     sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; target_pct: number; is_excluded: boolean }>(
       s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,target_pct,is_excluded`),
@@ -406,6 +420,33 @@ async function sliceBody(
 
   const dates = seasonDates(season.starts_on, season.ends_on);
   const report: SliceReport = { runId: run.id, written: 0, failed: 0, themesInserted: 0 };
+
+  // ── the season calendar ───────────────────────────────────────────────────
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — THE slot list, from
+  // src/lib/seasons/schedule.ts. What it replaces: `for (type) for (date)` over
+  // the whole season, which generated a Monday-only game seven days a week and
+  // a Mon–Fri season on Saturdays, because play_days_of_week, appears_on_days
+  // and season_games.starts_on/.ends_on were read by nothing.
+  //
+  // `dates` (every day of the window) is still the THEME calendar: a theme row
+  // is a property of the date, not of a game, and dc_daily_theme is unique on
+  // (season_id, theme_date). A non-play day simply ends up with a theme row no
+  // puzzle uses — harmless, and it keeps the theme quotas the League Office
+  // validates against (dayCount) in agreement with what the worker inserts.
+  const scheduleSeason = { starts_on: season.starts_on, ends_on: season.ends_on };
+  const scheduleConfig = { play_days_of_week: cfg.play_days_of_week ?? null };
+  const scheduleGames: ScheduleGame[] = enabledGames.map(({ row, game }) => ({
+    type: game.runtime_key as string,
+    appears_on_days: row.appears_on_days ?? null,
+    starts_on: row.starts_on ?? null,
+    ends_on: row.ends_on ?? null,
+  }));
+  const datesByType = new Map<string, string[]>(
+    scheduleGames.map((game) => [
+      game.type,
+      scheduledDates({ season: scheduleSeason, config: scheduleConfig, game }),
+    ])
+  );
 
   // ── Phase A — season theme rows, allocated from the configured mix ────────
   // CC-DC-GEN-THEME-ALLOCATION-1.0 D8: `target_pct` is AUTHORITATIVE. The 500
@@ -507,11 +548,24 @@ async function sliceBody(
   );
   const occupied = new Set(rangeRows.map((r) => `${r.puzzle_type}|${r.go_live_date}`));
 
-  let slotDates = dates;
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — every (type, date) this season actually
+  // plays, type-major with dates ascending: deliberately the same order the
+  // old `for (type) for (date)` product produced, so nothing downstream
+  // reorders. On a season with no schedule fields set this IS that product.
+  let slots = scheduledSlots({ season: scheduleSeason, config: scheduleConfig, games: scheduleGames });
+
   if (run.run_kind === "pilot") {
     let pilotDate = typeof cursor.pilot_date === "string" ? cursor.pilot_date : null;
     if (!pilotDate) {
-      pilotDate = dates.find((d) => types.every((t) => !occupied.has(`${t}|${d}`))) ?? null;
+      // The first date on which every game SCHEDULED THAT DAY is free. A date
+      // the calendar skips entirely is not a candidate (it would be vacuously
+      // "all free" and produce a pilot of zero puzzles), and a game that does
+      // not play that day no longer disqualifies the date.
+      pilotDate =
+        dates.find((d) => {
+          const playing = scheduledTypesOn({ date: d, season: scheduleSeason, config: scheduleConfig, games: scheduleGames });
+          return playing.length > 0 && playing.every((t) => !occupied.has(`${t}|${d}`));
+        }) ?? null;
       if (!pilotDate) {
         await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { ...cursor, error: "no free date for a pilot" } });
         return { ...report, status: "failed_short", note: "no free date for a pilot — every season date already has bank rows" };
@@ -519,14 +573,12 @@ async function sliceBody(
       cursor.pilot_date = pilotDate;
       await checkpoint({ phase_cursor: cursor });
     }
-    slotDates = [pilotDate];
+    const on = pilotDate;
+    slots = slots.filter((slot) => slot.date === on);
   }
 
-  const pending: { type: string; date: string }[] = [];
-  for (const type of types)
-    for (const date of slotDates)
-      if (!occupied.has(`${type}|${date}`)) pending.push({ type, date });
-  report.skippedExisting = types.length * slotDates.length - pending.length;
+  const pending = slots.filter((slot) => !occupied.has(`${slot.type}|${slot.date}`));
+  report.skippedExisting = slots.length - pending.length;
 
   if (pending.length === 0) {
     const done = sliceOutcome({ runKind: run.run_kind, pendingCount: 0 }).status;
@@ -588,14 +640,28 @@ async function sliceBody(
     perTypeMix[game.runtime_key as string] = eff;
   }
 
-  const diffPlan = planDifficulty({
-    dates,
-    types,
-    mix: globalDiffMix,
-    perTypeMix,
-    curve: cfg.difficulty_curve ?? "flat",
-    seed: season.id,
-  });
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — each type's bands are apportioned over the
+  // dates THAT TYPE plays, not over the season. planDifficulty already treats
+  // types independently, so calling it once per type with that type's calendar
+  // is the same arithmetic on a correct denominator; with no schedule fields
+  // set every type's calendar IS the season and the result is byte-identical
+  // to the single call this replaces. The alternative — planning over all 119
+  // dates and reading back only the ~17 Mondays — hands a Monday-only game
+  // whatever seventh of its mix happens to land on a Monday.
+  const diffPlan = new Map<string, string>();
+  for (const type of types) {
+    const typeDates = datesByType.get(type) ?? [];
+    if (!typeDates.length) continue;
+    const plan = planDifficulty({
+      dates: typeDates,
+      types: [type],
+      mix: globalDiffMix,
+      perTypeMix,
+      curve: cfg.difficulty_curve ?? "flat",
+      seed: season.id,
+    });
+    for (const [key, band] of plan) diffPlan.set(key, band);
+  }
 
   const mineAtStart = await sbGet<{ id: string }>(s, `dc_puzzle_bank_staging?generation_batch_id=eq.${run.id}&select=id`);
   const baseWritten = mineAtStart.length;

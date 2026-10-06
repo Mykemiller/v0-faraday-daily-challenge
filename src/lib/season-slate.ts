@@ -79,3 +79,58 @@ export function servedGameList(
   void livePuzzles;
   return inOrder;
 }
+
+// ── CC-DC-GEN-SCHEDULE-FIELDS-1.0 — and the season CALENDAR ─────────────────
+//
+// The slate answers "which games does this season serve". It does not answer
+// "which of them serve TODAY", and until this pack nothing did: a season
+// configured Mon–Fri served Saturdays, and a Monday-only game served every
+// day, because play_days_of_week / appears_on_days / season_games.starts_on /
+// .ends_on reached no serving code at all.
+//
+// Narrowing happens AFTER filterToSlate, on the same result, for the same
+// reason the slate filter does: it is backend-agnostic and does not wait on
+// the DC_PUZZLE_SOURCE cutover.
+//
+// ── Which fail-safes carry over, and the one that deliberately does not ─────
+//   · `scheduled === null` → no narrowing. Same meaning as a null slate: no
+//     season, no active config, no enabled games, enforcement killed, any
+//     read failure — or simply nothing to narrow (every enabled game plays
+//     today), which is true of every production season but one.
+//   · scheduled keys that match NOTHING live → fall back, unchanged. A
+//     renamed runtime_key is a misconfiguration, not an instruction.
+//   · scheduled EMPTY → serve nothing, and mean it. This is the one case that
+//     must NOT fall back: "today is a Saturday in a Mon–Fri season" is a
+//     correct, fully-configured answer of zero games. The lobby renders it as
+//     the `no_puzzles` state (season present, nothing playable) — never as
+//     mocks, which CC-DC-LOBBY-EMPTY-STATE-1.0 forbids in production outright.
+
+/** `puzzles` narrowed to today's scheduled games, plus the slate the client
+ *  should render tiles from. The two always agree: a fallback returns BOTH
+ *  unchanged, so the lobby can never show a tile set its puzzle set
+ *  contradicts. */
+export function narrowToScheduled<T extends PuzzleMap>(
+  puzzles: T,
+  slate: string[] | null,
+  scheduled: string[] | null
+): { puzzles: T; slate: string[] | null } {
+  if (!puzzles || !Array.isArray(scheduled)) return { puzzles, slate };
+
+  // Nothing plays today. Honoured, not fallen back from — see above.
+  if (scheduled.length === 0) return { puzzles: {} as T, slate };
+
+  const allow = new Set(scheduled);
+  const out: PuzzleMap = {};
+  for (const [type, puzzle] of Object.entries(puzzles)) {
+    if (allow.has(type)) out[type] = puzzle;
+  }
+  // The scheduled set and the live set disagree entirely — a renamed
+  // runtime_key, or a bank that has not rotated. Same belt and braces as
+  // filterToSlate, and distinguishable from the case above precisely because
+  // `scheduled` is non-empty: the calendar says games play, the bank does not
+  // know their names, and blanking the lobby over that would be wrong.
+  if (Object.keys(out).length === 0) return { puzzles, slate };
+
+  const narrowedSlate = Array.isArray(slate) ? slate.filter((k) => allow.has(k)) : scheduled.slice();
+  return { puzzles: out as T, slate: narrowedSlate.length > 0 ? narrowedSlate : slate };
+}

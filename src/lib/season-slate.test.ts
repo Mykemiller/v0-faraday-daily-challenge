@@ -14,7 +14,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { filterToSlate, servedGameList } from "./season-slate.ts";
+import { filterToSlate, narrowToScheduled, servedGameList } from "./season-slate.ts";
+// CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the serve-path narrowing and the lobby's
+// reading of it are one guarantee, so they are asserted together: a season
+// that plays nothing today must land on `no_puzzles`, never on fixtures.
+import { lobbyModel } from "./lobby-model.ts";
 
 // CC-DC-GAME-REGISTRY-1.0 D10: generic names, and the count is derived. Slate
 // filtering has nothing to do with WHICH games exist — hardcoding the live seven
@@ -125,4 +129,126 @@ test("the slate resolver never throws and is kill-switchable", async () => {
   assert.match(src, /DC_SLATE_ENFORCEMENT/, "a kill switch must exist for rollback without a code change");
   assert.match(src, /state=eq\.active/, "only the ACTIVE config may gate serving — never a draft or scheduled one");
   assert.match(src, /runtime_key/, "must join on runtime_key (D3), not game_key, or it silently matches nothing");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the season CALENDAR, on the serve path
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Everything above stays true: the slate filter and its fail-safes are
+// untouched. What is added is a SECOND narrowing, applied to the same result,
+// for the games that are not scheduled TODAY — and it carries the same
+// fail-safes with exactly one deliberate exception, which is the first test
+// below.
+
+test("SCHEDULE: nothing scheduled today serves nothing — and MEANS it", () => {
+  // A Saturday in a Mon–Fri season. This is the one narrowing that must not
+  // fall back: it is a correct, fully-configured answer of zero games, and
+  // falling back would serve a slate the commissioner closed.
+  const out = narrowToScheduled(live(), ROSTER, []);
+  assert.deepEqual(Object.keys(out.puzzles), []);
+  assert.deepEqual(out.slate, ROSTER, "the slate still names the season's games");
+});
+
+test("SCHEDULE: a zero-game day reads as no_puzzles in the lobby, never as mocks", () => {
+  // The whole point of honouring the empty case. Season present, nothing
+  // playable → CC-DC-LOBBY-EMPTY-STATE-1.0's `no_puzzles`, with a full fixture
+  // map deliberately supplied and production asserted.
+  const out = narrowToScheduled(live(), ROSTER, []);
+  const model = lobbyModel({
+    apiOk: true,
+    isProd: true,
+    order: ROSTER,
+    mockPuzzles: Object.fromEntries(ROSTER.map((t) => [t, { mock: true }])),
+    data: { puzzles: out.puzzles, slate: out.slate, season: { id: "s1", name: "Football Season" } },
+  });
+  assert.equal(model.mode, "no_puzzles");
+  assert.equal(model.servedCount, 0);
+  assert.deepEqual(model.games, []);
+  assert.equal(model.games.some((g) => g.mock), false, "production must never serve a fixture");
+});
+
+test("FAIL-SAFE: a null schedule narrows nothing (no config, no play-day fields, any failure)", () => {
+  const out = narrowToScheduled(live(), ROSTER, null);
+  assert.deepEqual(Object.keys(out.puzzles).sort(), [...ROSTER].sort());
+  assert.deepEqual(out.slate, ROSTER);
+});
+
+test("FAIL-SAFE: a schedule matching nothing live falls back rather than blanking", () => {
+  // Non-empty, so it is NOT the "nothing plays today" answer: the calendar
+  // says games play and the bank does not know their names. A renamed
+  // runtime_key must not black out the lobby.
+  const out = narrowToScheduled(live(), ROSTER, ["Logo Match", "Some Retired Game"]);
+  assert.equal(Object.keys(out.puzzles).length, N);
+  assert.deepEqual(out.slate, ROSTER, "the slate falls back in lockstep with the puzzles");
+});
+
+test("SCHEDULE: a partial day drops exactly the games that do not play", () => {
+  // Three of seven play today (a per-game appears_on_days, say).
+  const today = ["Alpha", "Bravo", "Charlie"];
+  const out = narrowToScheduled(live(), ROSTER, today);
+  assert.deepEqual(Object.keys(out.puzzles).sort(), [...today].sort());
+  assert.deepEqual(out.slate, today, "the tile list narrows with the puzzle set, never apart from it");
+});
+
+test("SCHEDULE: the served puzzle objects are passed through untouched", () => {
+  const src = live();
+  const out = narrowToScheduled(src, ROSTER, ["Alpha"]);
+  assert.equal(out.puzzles.Alpha, src.Alpha, "narrowing must not clone or reshape");
+});
+
+test("SCHEDULE: narrowing composes with the slate filter and is stable", () => {
+  const slate = ROSTER.filter((t) => t !== "Echo");
+  const once = narrowToScheduled(filterToSlate(live(), slate), slate, ["Alpha", "Bravo"]);
+  const twice = narrowToScheduled(once.puzzles, once.slate, ["Alpha", "Bravo"]);
+  assert.deepEqual(Object.keys(once.puzzles).sort(), ["Alpha", "Bravo"]);
+  assert.deepEqual(Object.keys(twice.puzzles).sort(), ["Alpha", "Bravo"]);
+});
+
+test("SCHEDULE: narrowing can only REMOVE — it never invents a game", () => {
+  const partial = { Alpha: { puzzle: "Alpha" } };
+  const out = narrowToScheduled(partial, ["Alpha", "Bravo"], ["Alpha", "Bravo"]);
+  assert.deepEqual(Object.keys(out.puzzles), ["Alpha"]);
+});
+
+test("SCHEDULE: a schedule with no slate still narrows, and names itself", () => {
+  const out = narrowToScheduled(live(), null, ["Alpha", "Bravo"]);
+  assert.deepEqual(Object.keys(out.puzzles).sort(), ["Alpha", "Bravo"]);
+  assert.deepEqual(out.slate, ["Alpha", "Bravo"]);
+});
+
+// ── the structural half, extended ───────────────────────────────────────────
+
+test("the serving route DOES now consult the season CALENDAR", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const route = readFileSync(join(here, "../app/api/challenge/today/route.js"), "utf8");
+
+  assert.match(route, /resolveSeasonSchedule\(seasonId, todayCT\(\)\)/,
+    "the serve route must resolve TODAY's scheduled games for the caller's season");
+  assert.match(route, /narrowToScheduled\(/, "and apply the narrowing to the result");
+  // The CT serve day has one owner (CC-DC-SEASON-GOLIVE-1.0); the route must
+  // not re-derive it next to the slate.
+  assert.match(route, /import \{ todayCT \} from "@\/lib\/seasons\/golive"/);
+});
+
+test("the schedule resolver shares the slate's kill switch and never throws", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, "season-slate-server.ts"), "utf8");
+
+  assert.match(src, /export async function resolveSeasonSchedule/);
+  // One switch for both narrowings — two would be a rollback that half works.
+  assert.equal((src.match(/if \(enforcementDisabled\(\)\) return null;/g) ?? []).length, 2,
+    "both resolvers must honour DC_SLATE_ENFORCEMENT");
+  assert.match(src, /state=eq\.active/, "only the ACTIVE config may gate serving");
+  assert.match(src, /catch \{\s*return null;\s*\}/, "every failure path must fall back, never throw");
+  // The rule itself has ONE home; the serve path may not grow a second copy.
+  assert.match(src, /from "@\/lib\/seasons\/schedule"/);
+  assert.doesNotMatch(src, /play_days_of_week\.includes|getUTCDay|getDay\(/,
+    "weekday arithmetic belongs in lib/seasons/schedule.ts, not here");
 });
