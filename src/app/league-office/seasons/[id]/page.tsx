@@ -16,7 +16,7 @@ import { PlayoffPanel } from "@/components/league-office/season/PlayoffPanel";
 import { dayMaskLabel } from "@/lib/league-office/season-config-logic";
 // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D5) — the one line that stops a
 // commissioner believing a stored-only value is a live rule.
-import { notEnforcedFields, summarizeNotEnforced } from "@/lib/league-office/config-enforcement";
+import { hintPenaltySummary, notEnforcedFields, summarizeNotEnforced } from "@/lib/league-office/config-enforcement";
 
 function dnum(d: string | null): number | null {
   if (!d) return null;
@@ -208,7 +208,12 @@ function EffectiveNow({ effective }: { effective: Record<string, unknown> | null
     ["Scoring profile", fmt(v("scoring_profile"))],
     ["Team score method", fmt(v("team_score_method"))],
     ["Difficulty curve", fmt(v("difficulty_curve"))],
-    ["Hints", v("hints_enabled") ? `${fmt(v("max_hints_per_game"))} max · −${fmt(v("hint_penalty_pct"))}%` : "Off"],
+    ["Hints", v("hints_enabled") ? `${fmt(v("max_hints_per_game"))} max` : "Off"],
+    // The EFFECTIVE penalty, not the stored column: gated on hints_enabled,
+    // exactly as /api/score resolves it. This is a live scoring rule now, so
+    // the panel states what a hint actually costs rather than echoing a
+    // number that may not apply.
+    ["Hint penalty", hintPenaltySummary(effective)],
     ["Free agency", fmt(v("allow_free_agency"))],
     ["Late join", fmt(v("allow_late_join"))],
     ["Leaderboard", v("publish_leaderboard") ? fmt(v("leaderboard_visibility")) : "Not published"],

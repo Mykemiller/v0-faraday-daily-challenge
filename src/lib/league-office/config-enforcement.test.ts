@@ -135,10 +135,17 @@ test("the roster size caps read as enforced and name their reader", () => {
 // ── D7: the four fields this pack wired up ──────────────────────────────────
 
 test("the scoring fields wired in this PR read as enforced and name their reader", () => {
-  for (const f of ["hint_penalty_pct", "streak_bonus_enabled", "season_games.points_override"]) {
+  // The two the SERVER recomputes from its own reads.
+  for (const f of ["hint_penalty_pct", "season_games.points_override"]) {
     assert.equal(CONFIG_ENFORCEMENT[f].status, "enforced", f);
-    assert.match(CONFIG_ENFORCEMENT[f].by, /season-scoring|DailyChallenge/, f);
+    assert.match(CONFIG_ENFORCEMENT[f].by, /season-scoring/, f);
   }
+  // The one it cannot: calcScore folds the multiplier in before the POST, so
+  // a stale or hand-rolled client keeps the bonus. `partial` is the honest
+  // reading, and it is what makes the chip appear on the field.
+  assert.equal(CONFIG_ENFORCEMENT.streak_bonus_enabled.status, "partial");
+  assert.equal(enforcementChip("streak_bonus_enabled"), "Partly enforced");
+  assert.match(CONFIG_ENFORCEMENT.streak_bonus_enabled.by, /DailyChallenge/);
   // …and the ones D7 deliberately left alone did NOT drift.
   for (const f of [
     "drop_lowest_n_days", "team_score_method", "team_score_top_n", "signals_per_correct",

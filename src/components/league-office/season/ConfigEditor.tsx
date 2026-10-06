@@ -46,6 +46,7 @@ import {
 import {
   enforcementOf,
 } from "@/lib/league-office/config-enforcement";
+import { RAW_SCORE_MAX } from "@/lib/scoring/season-scoring.js";
 
 // ── local row shapes (client-side working copies) ────────────────────────────
 
@@ -1511,7 +1512,14 @@ function SlateRow({
       </div>
 
       <div><NumberInput disabled={disabled} step={0.001} min={0} value={row.weight} onChange={(v) => set({ weight: v ?? 0 })} /></div>
-      <div><NumberInput disabled={disabled} min={0} value={row.points_override} onChange={(v) => set({ points_override: v })} placeholder={String(game?.default_points ?? "")} /></div>
+      {/* min 1, not 0: a 0 override is accepted by the column and silently
+          zeroes EVERY completion for this game, which looks like a scoring
+          outage rather than a setting. Empty = no override = the platform
+          default. The placeholder is that default (RAW_SCORE_MAX), not
+          game_catalog.default_points — the catalog says 100 for all seven
+          games but the runtime awards 150, and the placeholder has to name
+          the number a player would actually get. */}
+      <div><NumberInput disabled={disabled} min={1} value={row.points_override} onChange={(v) => set({ points_override: v })} placeholder={String(RAW_SCORE_MAX)} /></div>
       <div><Select disabled={disabled} value={row.difficulty_floor ?? ""} onChange={(v) => set({ difficulty_floor: v || null })} options={bands} /></div>
       <div><Select disabled={disabled} value={row.difficulty_ceiling ?? ""} onChange={(v) => set({ difficulty_ceiling: v || null })} options={bands} /></div>
 

@@ -12,21 +12,41 @@
 // Server-only. Never trusts the client for score math. Requires env:
 //   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL (falls back to project URL).
 //
-// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — SCORING VERSIONS.
-//   `scoringVersion: 2`  the caller's season rules (season_games.points_override,
-//                        season_config.hint_penalty_pct) are resolved HERE, from
-//                        the season fn_season_for_subscriber_row gives for THIS
-//                        subscriber, and the resulting score is what gets written
-//                        to dc_completions (via complete-puzzle), score_events,
-//                        dc_daily_attempts and leaderboard_daily. The body may
-//                        not carry rules; resolveGameScoringRules reads the
-//                        columns itself. `hintsUsed` is the one client input and
-//                        is clamped 0..3 inside seasonScore.
-//   absent               EXACTLY today's behaviour, byte for byte. Clients cached
-//                        from before this deploy keep scoring the way they did,
-//                        and no stored score is ever recomputed: this route only
-//                        ever writes the completion in front of it. Nothing in
-//                        this pack rescores history.
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — SEASON SCORING, EVERY WRITE.
+//
+// The score this route writes is ALWAYS recomputed here, from rules it
+// resolves itself:
+//
+//   final = seasonScore({ rawScore: score, rules, hintsUsed })
+//   rules = resolveGameScoringRules(<the subscriber's season>, gameType)
+//         = { pointsMax: season_games.points_override ?? 150,
+//             hintPenaltyPct: hints_enabled ? season_config.hint_penalty_pct : 0 }
+//
+// `score` from the body is the RAW 0..150 roll-up the client has always sent.
+// The body carries no rules and none would be read if it did.
+//
+// NO VERSION BRANCH. An earlier revision scaled only when the body carried
+// `scoringVersion: 2`, so a browser on a cached bundle kept writing unscaled
+// scores. Myke ruled 2026-10-06 that leaderboard consistency wins: a table
+// whose rows mean different things depending on which bundle each player had
+// cached is worse than a stale client briefly SHOWING a smaller number than
+// was stored. The stale client's display self-heals on reload; a mixed
+// leaderboard does not.
+//
+// `scoringVersion` is still accepted and still echoed back, because it tells
+// us the caller is hint-aware. It decides nothing. `hintsUsed` stays opt-in
+// data: absent ⇒ 0 ⇒ no penalty. A client that did not report hints is not
+// charged for hints it might have taken.
+//
+// SAFETY: no client, stale or crafted, can write more than the configured
+// ceiling. `clamp(raw,0,150) × pointsMax/150` is at most `pointsMax` because
+// the clamp caps the raw at 150 first — a streak multiplier already folded
+// into `score` by calcScore, or an invented 10^9, both clamp to 150 — and the
+// hint factor is in [0,1], so the product is in [0, pointsMax].
+//
+// NOTHING IS RESCORED. This route only ever writes the completion in front of
+// it. Scores stored before this deploy keep the number they were written
+// with; there is no backfill here and there must not be one.
 
 import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — season scoring. `seasonScore` is
@@ -34,22 +54,20 @@ import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // card and the number in the database agree by construction. The RULES it is
 // fed are resolved here, by this route, from the subscriber's own season —
 // the request body carries no rules and none would be read if it did.
-import { seasonScore, scoringPathFor } from "@/lib/scoring/season-scoring.js";
+import { seasonScore } from "@/lib/scoring/season-scoring.js";
 import { resolveGameScoringRules } from "@/lib/scoring/season-rules-server";
+import { chicagoDay } from "@/lib/dc-day.js";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 const EDGE_FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
-const DC_TZ = "America/Chicago";
-
+// FIX B2 — ONE definition of the Central serve day, shared with the client.
+// The hint budget the penalty is computed from is keyed on this same day in
+// the browser (src/lib/dc-day.js), so the two cannot drift: a session at
+// 7:01pm CT used to read the NEXT UTC day's budget and evade the penalty.
 function centralDate(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: DC_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  return chicagoDay(d);
 }
 
 type Svc = { base: string; headers: Record<string, string> };
@@ -106,9 +124,14 @@ export async function POST(request: Request) {
   const result = body.result === "lose" ? "lose" : "win";
   const publicId =
     typeof body.publicId === "string" && body.publicId.trim() ? body.publicId.trim() : null;
-  // Analytics-only hint tier (0..3, FAR-198/FAR-287) — forwarded verbatim to
-  // complete-puzzle, which normalizes and writes dc_completions.hints_used.
-  // Never an input to score math here.
+  // Hint tier (0..3, FAR-198/FAR-287), forwarded verbatim to complete-puzzle,
+  // which normalizes and writes dc_completions.hints_used.
+  //
+  // NO LONGER ANALYTICS-ONLY. As of CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 this
+  // is the hint penalty's input — the one thing about scoring this route takes
+  // from the caller. Clamped 0..3 inside seasonScore. Opt-in by design: absent
+  // means 0 means no penalty, because a client that did not report hints must
+  // not be charged for hints it might have taken.
   // Under scoringVersion 2 it is ALSO the hint penalty's input — still the only
   // thing about scoring this route takes from the caller, and still clamped to
   // 0..3 by seasonScore. There is no server-side record of hints spent to check
@@ -116,9 +139,10 @@ export async function POST(request: Request) {
   // under-reports pays no penalty; that is unchanged from today, where the field
   // is written to dc_completions.hints_used verbatim.
   const hintsUsed = typeof body.hintsUsed === "number" ? body.hintsUsed : null;
-  // D7: the ONLY scoring input the body carries besides hintsUsed. Anything
-  // other than the literal 2 is the legacy path — see scoringPathFor.
-  const scoringPath = scoringPathFor(body);
+  // Vestigial for the scaling decision (every write is scaled). Kept because
+  // it still distinguishes a hint-aware client from a cached one, and echoed
+  // back so a caller can tell which contract the server understood.
+  const clientScoringVersion = body.scoringVersion === 2 ? 2 : null;
   // FAR-388: elapsed solve time in seconds (client-timed). Forwarded verbatim to
   // complete-puzzle, which normalizes (clamps/caps) and writes
   // dc_completions.solve_seconds. Analytics/presentation only — never score math.
@@ -164,18 +188,18 @@ export async function POST(request: Request) {
     }
   }
 
-  // The score that will be WRITTEN — resolved after the idempotency check,
-  // so a replay costs no extra reads. Legacy: the client's number, untouched.
-  // v2: recomputed here from server-resolved rules — the client's number is
-  // demoted to the raw input it always was (an accuracy/speed/streak roll-up
-  // capped at 150) and the season's ceiling and hint penalty are applied on
-  // top of it by the same pure function the score card rendered with.
-  let finalScore = score;
-  if (scoringPath === "v2") {
-    const season = await scorerSeason();
-    const rules = await resolveGameScoringRules(season?.id ?? null, gameType, s.headers);
-    finalScore = seasonScore({ rawScore: score, rules, hintsUsed: hintsUsed ?? 0 });
-  }
+  // The score that will be WRITTEN — resolved after the idempotency check, so
+  // a replay costs no extra reads. The client's number is demoted to the raw
+  // input it always was (an accuracy/speed/streak roll-up capped at 150); the
+  // season's ceiling and hint penalty are applied on top of it by the same
+  // pure function the score card renders with. Unconditional: see the version
+  // note in the header.
+  const scorerRules = await resolveGameScoringRules(
+    (await scorerSeason())?.id ?? null,
+    gameType,
+    s.headers
+  );
+  const finalScore = seasonScore({ rawScore: score, rules: scorerRules, hintsUsed: hintsUsed ?? 0 });
 
   // Delegate streak/badge logic to the existing complete-puzzle edge function.
   let completionResult: Record<string, unknown> = {};
@@ -266,10 +290,13 @@ export async function POST(request: Request) {
   return Response.json({
     ok: true,
     alreadyPlayed: false,
-    // D7: what was actually written. Under the legacy path it is the number
-    // the caller sent, so an old client reading it sees no change.
+    // What was actually written. A client that computed a different number
+    // should trust this one; the lobby reconciles its optimistic record to it.
     finalScore,
-    scoringVersion: scoringPath === "v2" ? 2 : 1,
+    // What the SERVER applied, and what the CALLER claimed. Always 2 and
+    // always scaled, whatever the caller said.
+    scoringVersion: 2,
+    clientScoringVersion,
     runningDailyTotal,
     playStreak: completionResult.playStreak ?? null,
     fullSetJustCompleted: completionResult.fullSetJustCompleted ?? false,

@@ -201,14 +201,28 @@ test("both hint surfaces spend a season budget, not a hard 3", () => {
 });
 
 test("the localStorage day key shape is untouched (FAR-198)", () => {
-  // The DAY portion of this key is owned by claude/lo-config-enforcement,
-  // which is moving it from UTC to the CT serve day. This pack changes the
-  // BUDGET and the ENABLED flag only; the key shape must survive both.
+  // The DAY portion of this key is owned by CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0,
+  // which moved it from UTC to the CT serve day (FIX B2). That landed, so the
+  // literal no longer lives in these two files — it is built once by
+  // hintBudgetKey() in src/lib/dc-day.js, whose own test pins the SHAPE
+  // (`faraday_hints_<yyyy-mm-dd>_<gameType>`) with both a literal and a regex.
+  //
+  // This pack still changes the BUDGET and the ENABLED flag only, so what this
+  // guard must now assert is that neither consumer rolls its own key. That is
+  // strictly stronger than the old literal check: it also forbids the two
+  // files drifting apart from each other.
   for (const rel of ["../../components/DailyChallenge.jsx", "../../app/challenge/hints/page.tsx"]) {
     const src = read(rel);
     assert.ok(
-      src.includes("`faraday_hints_${TODAY}_${gameType}`"),
-      `${rel} must keep the shared hint budget key`
+      src.includes("hintBudgetKey("),
+      `${rel} must take the hint budget key from the shared helper`
+    );
+    // Strip line comments first: both files legitimately DOCUMENT the key
+    // shape in prose, and that must not read as building it.
+    const code = src.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    assert.ok(
+      !/`faraday_hints_\$\{/.test(code),
+      `${rel} must not build the FAR-198 key itself — use hintBudgetKey()`
     );
   }
 });

@@ -785,6 +785,13 @@ function snapshot(b: {
   };
 }
 
+/** `intOrNull`, but a value below 1 is null rather than 0. See the
+ *  points_override note in normalizeGameRow. */
+function positiveIntOrNull(v: unknown): number | null {
+  const n = intOrNull(v);
+  return n !== null && n >= 1 ? n : null;
+}
+
 function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<string, unknown> | null {
   const gameId = String(g.game_id ?? "");
   if (!gameId) return null;
@@ -793,7 +800,11 @@ function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<
     game_id: gameId,
     is_enabled: g.is_enabled === true || g.is_enabled === "true",
     weight: clampNum(g.weight, 1, 0, 999.999),
-    points_override: intOrNull(g.points_override),
+    // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0: `points_override` is a score
+    // ceiling now, so a non-positive one is not a cap — it is every completion
+    // for this game scoring zero. Below 1 reads as "no override" (null = the
+    // platform default), matching the editor's min of 1. Never persisted as 0.
+    points_override: positiveIntOrNull(g.points_override),
     difficulty_floor: strOrNull(g.difficulty_floor),
     difficulty_ceiling: strOrNull(g.difficulty_ceiling),
     appears_on_days: g.appears_on_days == null ? null : normalizeDayMask(g.appears_on_days),

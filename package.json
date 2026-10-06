@@ -50,7 +50,7 @@
     "test:schedule": "node --test src/lib/seasons/schedule.test.ts",
     "test:regenerate": "node --test src/lib/league-office/regenerate-logic.test.ts",
     "test:config-enforcement": "node --test src/lib/league-office/config-enforcement.test.ts",
-    "test:season-scoring": "node --test src/lib/scoring/season-scoring.test.mjs"
+    "test:season-scoring": "node --test src/lib/scoring/season-scoring.test.mjs src/lib/dc-day.test.mjs"
   },
   "dependencies": {
     "next": "16.2.3",
