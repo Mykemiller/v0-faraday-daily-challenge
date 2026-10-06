@@ -200,6 +200,38 @@ test("condition 7 — theme mix totals 100 over non-excluded rows; unknown D-cod
   assert.ok(generationFindings(bad, false).some((f) => f.code === "unknown_domain_code"));
 });
 
+// CC-DC-GEN-THEME-ALLOCATION-1.0 D7 — target_pct now DRIVES the calendar, so a
+// share the corpus cannot serve has to block before the run is queued rather
+// than get quietly handed to a neighbouring Theater.
+test("condition 7 — an included theater the corpus cannot serve blocks as theme_quota_unfillable", () => {
+  const base = okInput();
+  base.themeMix = [
+    { theater_id: "T-002", sector_code: null, thread_code: null, target_pct: 60, is_excluded: false },
+    { theater_id: "T-007", sector_code: null, thread_code: null, target_pct: 40, is_excluded: false },
+    { theater_id: "T-001", sector_code: null, thread_code: null, target_pct: 0, is_excluded: true },
+  ];
+  base.corpusThemeCounts = [
+    { theater_id: "T-001", sector_code: "D2", count: 76 },
+    { theater_id: "T-002", sector_code: "D4", count: 40 },
+    { theater_id: "T-002", sector_code: "D7", count: 36 },
+    { theater_id: "T-007", sector_code: "D11", count: 45 },
+  ];
+  assert.equal(generationFindings(base, false).filter((f) => f.code === "theme_quota_unfillable").length, 0);
+
+  // T-007 holds only D11 rows, and D11 is excluded ⇒ nothing is left to serve it.
+  const starved = structuredClone(base);
+  starved.themeMix.push({ theater_id: "T-007", sector_code: "D11", thread_code: null, target_pct: 0, is_excluded: true });
+  const found = generationFindings(starved, false).filter((f) => f.code === "theme_quota_unfillable");
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, "error");
+  assert.match(found[0].message, /T-007/);
+
+  // Absent counts ⇒ the pre-flight is skipped; the worker stays the authority.
+  const noCounts = structuredClone(starved);
+  delete noCounts.corpusThemeCounts;
+  assert.equal(generationFindings(noCounts, false).filter((f) => f.code === "theme_quota_unfillable").length, 0);
+});
+
 test("conditions 8–9 — lock and an in-flight run each block", () => {
   const locked = okInput();
   locked.season.locked_at = "2026-08-02T00:00:00Z";
