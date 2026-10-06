@@ -75,7 +75,7 @@ export default async function SeasonDetailPage({
       </div>
 
       <div style={{ marginBottom: 20 }}>
-        <SeasonActionBar seasonId={s.id} locked={!!s.locked_at} status={s.status} />
+        <SeasonActionBar seasonId={s.id} locked={!!s.locked_at} status={s.status} generatedAt={s.generated_at} />
       </div>
 
       <div style={{ marginBottom: 16 }}>

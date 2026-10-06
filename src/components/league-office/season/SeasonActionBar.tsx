@@ -19,10 +19,17 @@ export function SeasonActionBar({
   seasonId,
   locked,
   status,
+  generatedAt = null,
 }: {
   seasonId: string;
   locked: boolean;
   status: string;
+  /** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D4 — `seasons.generated_at`. Non-null
+   *  changes only the Unlock copy: unlocking a generated season buys config
+   *  edits, NOT different puzzles, and saying so here is the cheapest place
+   *  to stop that expectation forming. The action itself is unchanged, and so
+   *  is its audit row. */
+  generatedAt?: string | null;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<Action | null>(null);
@@ -74,7 +81,9 @@ export function SeasonActionBar({
     },
     unlock: {
       title: "Unlock season",
-      description: "Allows configuration changes again.",
+      description: generatedAt
+        ? "Allows configuration changes again. This season's puzzles have already been generated, and editing the slate, theme mix, difficulty or schedule will NOT change them — those settings shape the next generation run. To replace puzzles that already exist, use \u201CRegenerate from date\u201D on the generation panel."
+        : "Allows configuration changes again.",
       confirm: "Unlock season",
     },
     close: {
