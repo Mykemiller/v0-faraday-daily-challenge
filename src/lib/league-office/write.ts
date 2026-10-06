@@ -25,6 +25,11 @@ import {
   startGenerationRun,
   approvePilot,
   approveSeasonPuzzles,
+  // CC-LO-REGENERATE-FROM-DATE-1.0 — the only two actions in this console that
+  // delete approved production content. Both DRY RUN BY DEFAULT: they execute
+  // only when the request carries `dryRun: false`.
+  regenerateFrom,
+  restoreSuperseded,
   type GenLogFn,
 } from "./generation-write";
 import {
@@ -200,6 +205,12 @@ export type ActionInput = {
   participantKind?: string;
   qualifierCount?: number;
   seedingSource?: string;
+  // Season regeneration (CC-LO-REGENERATE-FROM-DATE-1.0, domain 'seasons')
+  cutoffDate?: string;
+  fromDate?: string;
+  /** Absent, or anything other than literal `false`, means DRY RUN. The default
+   *  for an action that deletes approved puzzles is "tell me what you would do". */
+  dryRun?: boolean;
 };
 
 /** Cap on the CTA button label — it renders inside a single banner row. */
@@ -556,7 +567,13 @@ export async function executeAction(
     case "season.generate_pilot":
     case "season.generate_full":
     case "season.approve_pilot":
-    case "season.approve_puzzles": {
+    case "season.approve_puzzles":
+    // CC-LO-REGENERATE-FROM-DATE-1.0 D5 — production execution happens ONLY
+    // here, through the audited Tier 2 funnel, for the same reason every other
+    // destructive action does: the mandatory reason and the audit row are not
+    // optional extras bolted onto a direct database call.
+    case "season.regenerate_from":
+    case "season.restore_superseded": {
       const genLog: GenLogFn = (action, targetType, targetId, before, after, reversible) =>
         log("seasons", action, targetType, targetId, before, after, reversible);
 
@@ -567,6 +584,22 @@ export async function executeAction(
           return startGenerationRun(s, genLog, { seasonId: input.seasonId, kind: "full" });
         case "season.approve_pilot":
           return approvePilot(s, genLog, { seasonId: input.seasonId });
+        case "season.regenerate_from":
+          return regenerateFrom(s, genLog, staffEmail, {
+            seasonId: input.seasonId,
+            cutoffDate: input.cutoffDate,
+            reason,
+            // `=== false`, never `!!input.dryRun`: a request that forgets the
+            // flag, or sends a string, must dry-run rather than delete.
+            dryRun: input.dryRun !== false,
+          });
+        case "season.restore_superseded":
+          return restoreSuperseded(s, genLog, staffEmail, {
+            seasonId: input.seasonId,
+            fromDate: input.fromDate,
+            reason,
+            dryRun: input.dryRun !== false,
+          });
         default:
           return approveSeasonPuzzles(s, genLog, staffEmail, { seasonId: input.seasonId });
       }

@@ -1,5 +1,84 @@
 @AGENTS.md
 
+## Replacing an approved season from a date (CC-LO-REGENERATE-FROM-DATE-1.0, claude/lo-regenerate-from, 2026-10-06)
+
+**MIGRATION FIRST, THEN THE APP.** `supabase/migrations/20261006214500_dc_puzzle_bank_superseded.sql`
+creates `dc_puzzle_bank_superseded` and `dc_daily_theme_superseded` — `LIKE` the
+live tables plus `superseded_at / superseded_reason / superseded_by / audit_id`,
+RLS enabled with ZERO policies, `anon` and `authenticated` revoked BY NAME
+(Supabase's default ACL grants them everything on a new public table, and these
+rows carry `answer_key`). It ends in a DO block that refuses to commit unless
+every property holds. Deploying the app first is harmless but useless: the
+archive insert fails and `season.regenerate_from` aborts BEFORE deleting
+anything.
+
+**The feature.** Two Tier 2 actions on `/api/league-office/action`, both DRY RUN
+BY DEFAULT — only a literal `dryRun: false` executes, in the dispatcher
+(`dryRun: input.dryRun !== false`) and again in the action (`if (input.dryRun
+!== false) return <report>`):
+
+- `season.regenerate_from {seasonId, cutoffDate, reason, dryRun}` — archives and
+  removes this season's `Published`/`Unpublished` rows from the cutoff onward
+  plus its OWN theme days for the same range, then queues an ordinary full run.
+- `season.restore_superseded {seasonId, fromDate, reason, dryRun}` — the undo.
+
+**Every rule is pure and lives in `src/lib/league-office/regenerate-logic.ts`**
+(`regenerationPlan`, `restorePlan`, `projectedAllocation`), tested by
+`npm run test:regenerate`. The server action adds mechanics only.
+
+**The four safety properties, and how each is enforced:**
+1. *Cutoff ≥ today+2 CT.* `MIN_CUTOFF_LEAD_DAYS`; today+1 belongs to the
+   midnight rotation. `hoursUntilCutoff` is measured to 00:00 America/Chicago
+   with a two-pass offset so a DST Sunday is not an hour out.
+2. *Nothing Live or Retired is ever touched.* A single `Live`/`Retired` row
+   anywhere in `[cutoff, ends_on]` BLOCKS the whole operation — it is not
+   skipped, because its presence means the range is not what the commissioner
+   thinks it is. And the DELETE is issued by PRIMARY KEY against exactly the ids
+   that are already in the archive, so a row that turns Live mid-operation is
+   not in the list at all.
+3. *Archive before delete, verified by count.* Select full rows → insert into
+   the archive → **read the archive back** filtered on the operation's single
+   `superseded_at` batch key → abort if `archived ≠ selected`. A 200 on the
+   insert is not evidence. Themes are archived before any delete runs, so an
+   abort anywhere leaves a complete archive and an untouched bank. Delete order
+   is puzzles then themes (`dc_staging_theme_fk` points
+   `(season_id, theme_date)` at `dc_daily_theme`); restore order is the reverse.
+4. *Restore never overwrites.* `restorePlan` returns only slots that are EMPTY
+   and dated ≥ `todayCT()` (a `fromDate` in the past is clamped to today), and
+   the insert carries `Prefer: resolution=ignore-duplicates` — ON CONFLICT DO
+   NOTHING. `merge-duplicates` would be an upsert and a test forbids it.
+
+**`dc_daily_theme` is season-scoped on BOTH sides.** The table also holds the
+shared platform corpus (`season_id IS NULL`) that every season's Phase A draws
+from. Measured 2026-10-06 for Football: 114 season-scoped theme rows in
+`[2026-10-10, 2027-01-31]` and 114 platform rows on the same dates. Every query
+in this feature is `season_id=eq.<season>`; deleting the NULL rows would break
+generation for the whole league.
+
+**Why no `generated_at` bypass was needed.** `generationFindings` has no
+`generated_at` gate — the full-run conditions are lock, in-flight run and
+approved pilot, all of which a regenerating season already satisfies. And the
+worker derives its pending slots from the live bank, so the emptied range is
+exactly what it refills; `phase_cursor.regenerate_from` records WHY the run
+exists and changes nothing about how it behaves.
+
+**Restored rows keep their Public ID.** `dc_assign_public_id()` returns early
+when `new.public_id is not null` (verified against the live function
+2026-10-06), so a restored puzzle comes back under the ID already in players'
+share text rather than being minted a new one.
+
+**New rows arrive `Unpublished` and still need Approve Puzzles** — which on this
+stack also shows the CC-LO-GEN-CONFORMANCE-1.0 table, so the replacement is
+approved against the configuration that made it.
+
+**Football dry run, cutoff 2026-10-10 (SELECT-only + the pure planner,
+2026-10-06):** 570 Published / 0 Live / 0 Retired removable, 0 untouchable, 114
+season theme days, 114 days in range (114 x 5 enabled games = 570). Projected
+replacement under config `3bf84bc8-f202-4a2d-9a89-9dcc38f36711`: T-002 35.31%
+(40d) - T-005 29.41% (34d) - T-007 35.28% (40d); The Brief 0/40/74, Rackl
+0/0/114, Dark Fiber 0/0/114, Frequency 16/34/64, The Stack 0/40/74
+(foundational/practitioner/expert). Nothing was executed.
+
 ## Configured vs generated, on the panel that approves it (CC-LO-GEN-CONFORMANCE-1.0, claude/lo-gen-conformance, 2026-10-06)
 
 **A season is configured twice over — a theme mix and a difficulty mix, plus a

@@ -395,6 +395,18 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
         </MiniButton>
       </div>
 
+      {/* CC-LO-REGENERATE-FROM-DATE-1.0 D4 — replace an approved season from a
+          future date onward, and the undo for it. Deliberately below the
+          ordinary actions and behind its own disclosure: these are the only two
+          controls on this panel that delete approved puzzles. */}
+      <RegenerationControls
+        seasonId={seasonId}
+        endsOn={s.ends_on}
+        locked={!!s.locked_at}
+        inflight={!!inflight}
+        onDone={refresh}
+      />
+
       {/* run progress */}
       {status.runs.length > 0 ? (
         <div>
@@ -741,5 +753,220 @@ function StatusChip({ status }: { status: "ok" | "warn" | "fail" }) {
     >
       {status}
     </span>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-LO-REGENERATE-FROM-DATE-1.0 D4 — regenerate from a date, and put it back
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// THE SHAPE, and why it is this shape: date + reason → DRY RUN → read the
+// counts → tick a checkbox that repeats those counts → execute. The dry run is
+// not a nicety, it is the default on the server (`dryRun !== false` reports),
+// so this component cannot delete anything by forgetting a flag — it has to
+// send `dryRun: false` on purpose, and it only offers that button after a dry
+// run has come back.
+//
+// "Staff only" is already true of this whole tree twice over: StaffGate renders
+// it, and /api/league-office/action re-verifies the lo_session cookie against
+// the staff allowlist before executeAction() sees the request. The gating here
+// is about ACCIDENT, not authorization.
+
+type RegenMode = "regenerate" | "restore";
+
+const REGEN_COPY: Record<RegenMode, {
+  button: string; title: string; action: string; dateLabel: string; blurb: string; confirm: string;
+}> = {
+  regenerate: {
+    button: "Regenerate from date…",
+    title: "Regenerate from date",
+    action: "season.regenerate_from",
+    dateLabel: "Cutoff date (first day to replace)",
+    blurb:
+      "Archives and removes this season's Published and Unpublished puzzles from the cutoff date onward, plus the season's theme days for the same range, then queues a normal full run that rebuilds them under the CURRENT configuration. Nothing Live or Retired is touched, and the cutoff must be at least two days out. The replacement puzzles arrive Unpublished and still need Approve Puzzles.",
+    confirm: "Delete and regenerate",
+  },
+  restore: {
+    button: "Restore superseded…",
+    title: "Restore superseded puzzles",
+    action: "season.restore_superseded",
+    dateLabel: "Restore from date",
+    blurb:
+      "Puts archived puzzles back — with their original Public IDs and approvals — into slots that are still EMPTY and dated today or later. A slot that has already been refilled keeps its new puzzle; nothing is ever overwritten.",
+    confirm: "Restore",
+  },
+};
+
+function RegenerationControls({
+  seasonId, endsOn, locked, inflight, onDone,
+}: {
+  seasonId: string;
+  endsOn: string | null;
+  locked: boolean;
+  inflight: boolean;
+  onDone: () => void;
+}) {
+  const [mode, setMode] = useState<RegenMode | null>(null);
+  const [date, setDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [acked, setAcked] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const reset = () => { setMode(null); setDate(""); setReason(""); setPreview(null); setAcked(false); };
+
+  // Two days out, in the browser's idea of today. The SERVER re-derives this
+  // from todayCT() and refuses anything closer — this only stops the obvious
+  // mistake from costing a round trip.
+  const earliest = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+
+  const send = async (dryRun: boolean) => {
+    if (!mode) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/league-office/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: REGEN_COPY[mode].action,
+          reason,
+          seasonId,
+          ...(mode === "regenerate" ? { cutoffDate: date } : { fromDate: date }),
+          dryRun,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      const message = j?.message ?? (res.ok ? "Done." : "That did not work.");
+      if (dryRun) {
+        setPreview(res.ok ? message : null);
+        setAcked(false);
+        if (!res.ok) toast(message);
+      } else {
+        toast(message);
+        if (res.ok) reset();
+        onDone();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!mode)
+    return (
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <MiniButton
+          tone="danger"
+          onClick={() => setMode("regenerate")}
+          disabled={locked || inflight}
+          title={locked ? "The season is locked — unlock it first." : inflight ? "A generation run is in flight." : undefined}
+        >
+          {REGEN_COPY.regenerate.button}
+        </MiniButton>
+        <MiniButton onClick={() => setMode("restore")} disabled={inflight}>
+          {REGEN_COPY.restore.button}
+        </MiniButton>
+      </div>
+    );
+
+  const copy = REGEN_COPY[mode];
+  const canPreview = !busy && !!date && !!reason.trim();
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${mode === "regenerate" ? "rgba(156,59,46,.30)" : "var(--color-cream-border)"}`,
+        background: mode === "regenerate" ? "rgba(156,59,46,.05)" : "#fff",
+        borderRadius: 8,
+        padding: "12px 14px",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <SectionLabel>{copy.title}</SectionLabel>
+      <p style={{ fontSize: 12.5, color: "#6b6257", margin: 0, lineHeight: 1.55 }}>{copy.blurb}</p>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "#8d8375" }}>
+            {copy.dateLabel}
+          </span>
+          <input
+            type="date"
+            value={date}
+            disabled={busy}
+            min={mode === "regenerate" ? earliest : undefined}
+            max={endsOn ?? undefined}
+            onChange={(e) => { setDate(e.target.value); setPreview(null); setAcked(false); }}
+            style={{
+              padding: "7px 9px", border: "1px solid var(--color-cream-border)",
+              borderRadius: 6, fontSize: 13, fontFamily: "inherit", color: "#141210",
+            }}
+          />
+        </label>
+      </div>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "#8d8375" }}>
+          Reason (required)
+        </span>
+        <textarea
+          rows={2}
+          value={reason}
+          disabled={busy}
+          placeholder="Why is this season being regenerated?"
+          onChange={(e) => { setReason(e.target.value); setPreview(null); setAcked(false); }}
+          style={{
+            padding: "8px 10px", border: "1px solid var(--color-cream-border)", borderRadius: 6,
+            fontSize: 13, fontFamily: "inherit", resize: "vertical", color: "#141210",
+          }}
+        />
+      </label>
+
+      {preview ? (
+        <div
+          style={{
+            border: "1px solid rgba(156,59,46,.30)", background: "rgba(156,59,46,.08)",
+            borderRadius: 6, padding: "9px 11px", fontSize: 12.5, lineHeight: 1.5, color: "#8a3428",
+          }}
+        >
+          {preview}
+        </div>
+      ) : null}
+
+      {/* The confirm gate repeats the DRY RUN's own words, so the thing being
+          ticked is the thing the server measured — not a number this component
+          computed for itself. */}
+      {preview ? (
+        <label style={{ display: "flex", gap: 9, alignItems: "flex-start", fontSize: 12.5, color: "#8a3428", cursor: busy ? "not-allowed" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={acked}
+            disabled={busy}
+            onChange={(e) => setAcked(e.target.checked)}
+            style={{ marginTop: 2, accentColor: "#9c3b2e" }}
+          />
+          <span>
+            I have read the counts above and want to proceed. {mode === "regenerate"
+              ? "The removed puzzles stay recoverable through “Restore superseded”."
+              : "Only empty slots will be filled."}
+          </span>
+        </label>
+      ) : null}
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <MiniButton onClick={() => void send(true)} disabled={!canPreview}>
+          {busy && !preview ? "Checking…" : "Dry run"}
+        </MiniButton>
+        <MiniButton
+          tone="danger"
+          onClick={() => void send(false)}
+          disabled={busy || !preview || !acked}
+          title={preview ? undefined : "Run the dry run first."}
+        >
+          {busy && preview ? "Working…" : copy.confirm}
+        </MiniButton>
+        <MiniButton onClick={reset} disabled={busy}>Cancel</MiniButton>
+      </div>
+    </div>
   );
 }
