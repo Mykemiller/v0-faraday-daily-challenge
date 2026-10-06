@@ -1,5 +1,68 @@
 @AGENTS.md
 
+## Configured vs generated, on the panel that approves it (CC-LO-GEN-CONFORMANCE-1.0, claude/lo-gen-conformance, 2026-10-06)
+
+**A season is configured twice over — a theme mix and a difficulty mix, plus a
+slate that bounds each game to its own band window — and until now the only
+way to learn whether the bank that came out resembled the configuration that
+went in was to run the SQL yourself.** `src/lib/league-office/generation-conformance.ts`
+is that comparison, as ONE pure function over plain objects:
+`conformance({themeMix, difficultyMix, slate, themeRows, bankRows, seasonDates})`
+→ `{rows, worst}`. No React, no Next, no Supabase client, no I/O, no top-level
+side effects; its only imports are `theme-allocation.js` and `difficulty.js`,
+which are themselves import-free. A plain node script can call it directly, and
+a test asserts that stays true.
+
+**Six dimensions, one threshold.** `theater` and `sector` (share of days),
+`difficulty` (share of bank rows) are SHARE rows: |Δ| ≤ 5 pts `ok`, ≤ 10
+`warn`, > 10 `fail`, judged on the same one-decimal number that is displayed.
+`difficulty_window` (bank rows outside their game's floor/ceiling),
+`coverage` (enabled game × season date cells with no row) and `exclusion`
+(days using an excluded theater/sector/thread) are COUNT rows: any non-zero
+breach is a `fail`. Targets are not read raw — they go through
+`themeQuotas()`'s normalization, so theater targets are rescaled to 100 and
+sector targets to 100 *within their theater*, which is what the allocator
+actually laid the calendar out against.
+
+**The Football fixture is a real bank, and its failures are real.** Measured
+2026-10-06 against `02701ead-a03e-4489-adb9-24d3c6787eec` / config
+`3bf84bc8-f202-4a2d-9a89-9dcc38f36711`: theaters T-007 `fail` −16.8, T-005
+`fail` +10.9, T-002 `warn` +5.9; difficulty foundational `warn` +5.8, expert
+`warn` −5.9; `difficulty_window` `fail` 167 (Dark Fiber 60 · Rackl 59 · The
+Brief 24 · The Stack 24 — the two expert-only games plus two foundational-below-
+floor sets); `exclusion` and `coverage` `ok`. **Note for a REGENERATED bank:**
+only Frequency's window admits `foundational`, so a correctly-generated bank
+can reach ~2.88% foundational against a configured 14.41% and the `difficulty`
+rows will read `fail`. That is the configuration contradicting itself, not the
+generator misbehaving, and the thresholds must NOT be loosened to hide it.
+
+**Read-only, and the approval is never blocked (D5).** `getGenerationStatus()`
+returns `conformance` only once a run has written a row (before that every
+dimension would read 100% short), from two extra reads whose projections are
+four and three columns — `theme_date, theater_id, sector_code, thread_codes`
+and `puzzle_type, go_live_date, difficulty`. No `puzzle_content`, no hints, no
+`answer_key`, no `answer_explanation`: nothing here needs an answer to say
+whether a bank matches its configuration. Both reads are PAGED (`qPaged`), because
+a silently truncated PostgREST page would read as a coverage FAILURE for rows
+that are sitting right there.
+
+**The panel shows it; the Approve dialog makes you say it.** `GenerationPanel`
+renders a collapsible "Configured vs generated" table (dimension · target ·
+generated · Δ · status chip · note), collapsed when all `ok` and expanded when
+anything is not. When `worst === 'fail'`, Approve Puzzles lists the failing
+rows in the confirm dialog and `ReasonDialog`'s new optional `acknowledge` prop
+requires "I understand the bank does not match the configuration" before the
+button enables. Approval itself still proceeds; what changes is the record —
+`approveSeasonPuzzles` RE-DERIVES conformance server-side and writes
+`conformance_ack: true` plus `conformance_failures` (the `dimension:key` list)
+into the existing audit row's `after` payload. A checkbox in a browser is
+presentation, never enforcement.
+
+Tests: `npm run test:gen-conformance` (19). Unchanged: `test:generation`,
+`test:generation-readonly`, `test:season-config`, `test:theme-allocation`,
+`test:generation-difficulty`, `test:schedule`, `test:slate-enforced`,
+`test:generation-domain`.
+
 ## A puzzle's domain describes what it is about (CC-DC-GEN-DOMAIN-FIDELITY-1.0, claude/dc-domain-fidelity, 2026-10-06)
 
 **The day's theme sector is the editorial contract for what the puzzle is

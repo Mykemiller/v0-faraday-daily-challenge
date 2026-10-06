@@ -67,6 +67,37 @@ type Status = {
   // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — drafts the model reported as off their
   // day's sector. Optional so an older cached payload still renders.
   offDomain?: { date: string; game: string; reason: string | null }[] | null;
+  // CC-LO-GEN-CONFORMANCE-1.0 D4 — configured vs generated. Optional and
+  // nullable: null before any run has written a row, absent on an older
+  // cached payload.
+  conformance?: Conformance | null;
+};
+
+// CC-LO-GEN-CONFORMANCE-1.0 — mirrors generation-conformance.ts's return type.
+// The rules themselves are server-side and tested there; this component only
+// renders what it is handed.
+type ConformanceRow = {
+  dimension: string;
+  key: string;
+  target: number;
+  actual: number;
+  delta: number;
+  status: "ok" | "warn" | "fail";
+  note: string;
+};
+type Conformance = { rows: ConformanceRow[]; worst: "ok" | "warn" | "fail" };
+
+/** Percentage points for the share dimensions, a plain count for the rest —
+ *  "+10.9 pts" and "167" must not be rendered by the same formatter. */
+const SHARE_DIMENSIONS = new Set(["theater", "sector", "difficulty"]);
+
+const DIMENSION_LABELS: Record<string, string> = {
+  theater: "Theater",
+  sector: "Sector",
+  difficulty: "Difficulty",
+  difficulty_window: "Band window",
+  coverage: "Coverage",
+  exclusion: "Exclusions",
 };
 
 type Action = "pilot" | "full" | "approve_pilot" | "approve_puzzles" | "lock";
@@ -235,6 +266,10 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
   // D4 — a REVIEW queue, not a gate: the count and the reasons are shown here
   // and repeated in the Approve dialog, and Approve stays enabled either way.
   const offDomain = status.offDomain ?? [];
+  // D4 — the same report drives the table and the Approve gate, so the two can
+  // never disagree about what is failing.
+  const conf = status.conformance ?? null;
+  const confFailures = conf ? conf.rows.filter((r) => r.status === "fail") : [];
   const est = Math.max(1, Math.ceil((status.totalTarget / 10) * 1.2)); // ~1 min per 10-puzzle batch, padded
 
   const copy: Record<Action, { title: string; description: string; confirm: string; destructive?: boolean }> = {
@@ -317,6 +352,9 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
           Slate: {status.targets.map((t) => t.gameName).join(" · ")} — {status.totalTarget.toLocaleString()} puzzles over {status.dayCount ?? "?"} days.
         </p>
       ) : null}
+
+      {/* CC-LO-GEN-CONFORMANCE-1.0 D4 — configured vs generated */}
+      <ConformancePanel report={conf} />
 
       {/* actions */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -449,6 +487,16 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
         description={action ? copy[action].description : ""}
         confirmLabel={action ? copy[action].confirm : "Confirm"}
         destructive={action ? copy[action].destructive : false}
+        details={
+          action === "approve_puzzles" && confFailures.length ? (
+            <ConformanceFailureList rows={confFailures} />
+          ) : undefined
+        }
+        acknowledge={
+          action === "approve_puzzles" && conf?.worst === "fail"
+            ? "I understand the bank does not match the configuration"
+            : null
+        }
         onCancel={() => setAction(null)}
         onConfirm={run}
       />
@@ -537,6 +585,161 @@ function StatusDot({ status, stalled }: { status: string; stalled: boolean }) {
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
       <span style={{ width: 8, height: 8, borderRadius: 99, background: color }} />
       <span className="font-mono" style={{ fontSize: 10.5, color }}>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * CC-LO-GEN-CONFORMANCE-1.0 D4 — "Configured vs generated".
+ *
+ * Collapsed when every dimension is ok (there is nothing to read), expanded the
+ * moment one is not — and once the commissioner clicks the header, their choice
+ * wins over the default for the rest of the session.
+ *
+ * This table states a difference; it never explains one away. A slate whose
+ * per-game floors make a configured season mix unreachable will show a
+ * difficulty row in the red forever, and that is the correct reading: the
+ * configuration contradicts itself, and widening the threshold would only hide
+ * it.
+ */
+function ConformancePanel({ report }: { report: Conformance | null }) {
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  if (!report || !report.rows.length) return null;
+
+  const open = expanded ?? report.worst !== "ok";
+  const counts = {
+    warn: report.rows.filter((r) => r.status === "warn").length,
+    fail: report.rows.filter((r) => r.status === "fail").length,
+  };
+  const summary =
+    report.worst === "ok"
+      ? "every dimension within tolerance"
+      : [
+          counts.fail ? `${counts.fail} failing` : "",
+          counts.warn ? `${counts.warn} drifting` : "",
+        ].filter(Boolean).join(" · ");
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded(!open)}
+        aria-expanded={open}
+        style={{
+          display: "flex", gap: 8, alignItems: "center", width: "100%",
+          background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "#8d8375" }}>{open ? "▾" : "▸"}</span>
+        <SectionLabel>Configured vs generated</SectionLabel>
+        <StatusChip status={report.worst} />
+        <span style={{ fontSize: 11.5, color: "#8d8375" }}>{summary}</span>
+      </button>
+
+      {open ? (
+        <div style={{ overflowX: "auto", marginTop: 6 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+            <thead>
+              <tr>
+                {["Dimension", "Target", "Generated", "Δ", "Status", ""].map((h, k) => (
+                  <th
+                    key={h || `h${k}`}
+                    style={{
+                      textAlign: k >= 1 && k <= 3 ? "right" : "left",
+                      padding: "4px 10px 4px 0", color: "#8d8375", fontWeight: 600,
+                      borderBottom: "1px solid var(--color-cream-line)",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((r) => {
+                const share = SHARE_DIMENSIONS.has(r.dimension);
+                const unit = share ? "%" : "";
+                return (
+                  <tr key={`${r.dimension}|${r.key}`}>
+                    <td style={{ padding: "5px 10px 5px 0", whiteSpace: "nowrap" }}>
+                      <span style={{ color: "#8d8375" }}>{DIMENSION_LABELS[r.dimension] ?? r.dimension}</span>
+                      {share ? <> · <span style={{ color: "#141210" }}>{r.key}</span></> : null}
+                    </td>
+                    <td className="font-mono" style={{ padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11 }}>
+                      {r.target}{unit}
+                    </td>
+                    <td className="font-mono" style={{ padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11 }}>
+                      {r.actual}{unit}
+                    </td>
+                    <td
+                      className="font-mono"
+                      style={{
+                        padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11,
+                        color: r.delta === 0 ? "#8d8375" : STATUS_COLORS[r.status],
+                      }}
+                    >
+                      {r.delta > 0 ? "+" : ""}{r.delta}{unit}
+                    </td>
+                    <td style={{ padding: "5px 10px 5px 0" }}><StatusChip status={r.status} /></td>
+                    <td style={{ padding: "5px 0", color: "#6b6257" }}>{r.note}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** D4 — the failing rows, repeated inside the Approve dialog. The checkbox the
+ *  dialog then requires is only honest if what is being acknowledged is on the
+ *  screen next to it. */
+function ConformanceFailureList({ rows }: { rows: ConformanceRow[] }) {
+  return (
+    <div
+      style={{
+        padding: "9px 12px", borderRadius: 6,
+        border: "1px solid #9c3b2e", background: "rgba(156,59,46,.08)",
+      }}
+    >
+      <strong style={{ fontSize: 12.5, color: "#9c3b2e" }}>
+        This bank does not match its configuration:
+      </strong>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11.5, color: "#9c3b2e" }}>
+        {rows.map((r) => {
+          const share = SHARE_DIMENSIONS.has(r.dimension);
+          const label = `${DIMENSION_LABELS[r.dimension] ?? r.dimension}${share ? ` ${r.key}` : ""}`;
+          return (
+            <li key={`${r.dimension}|${r.key}`}>
+              {label} — {share
+                ? `configured ${r.target}%, generated ${r.actual}% (${r.delta > 0 ? "+" : ""}${r.delta} pts)`
+                : r.note}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+const STATUS_COLORS: Record<"ok" | "warn" | "fail", string> = {
+  ok: "#325638", warn: "#94560a", fail: "#9c3b2e",
+};
+
+function StatusChip({ status }: { status: "ok" | "warn" | "fail" }) {
+  const color = STATUS_COLORS[status];
+  return (
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5, letterSpacing: ".06em", textTransform: "uppercase",
+        padding: "1px 6px", borderRadius: 99,
+        border: `1px solid ${color}`, color, whiteSpace: "nowrap",
+      }}
+    >
+      {status}
     </span>
   );
 }

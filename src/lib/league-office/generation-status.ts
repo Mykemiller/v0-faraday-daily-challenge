@@ -9,7 +9,8 @@ import { ctToday } from "./data";
 import { loadConfigs, pickFocusConfig } from "./seasons";
 import {
   generationFindings, generationWarnings, computeTargets, isStalled,
-  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, bankServeDays, seasonDayCount,
+  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, bankServeDays,
+  seasonDayCount, seasonDates,
   // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the read side of the off-domain flag.
   offDomainFlags,
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
@@ -17,6 +18,9 @@ import {
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
 import { failuresFrom, lastFailureFrom, clampMessage } from "@/lib/generation/failure-reasons";
+// CC-LO-GEN-CONFORMANCE-1.0 D3 — "configured vs generated". A pure function
+// over plain rows; this module's only job is to hand it the right columns.
+import { conformance, type ConformanceReport } from "./generation-conformance";
 
 /**
  * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D5 — the run row as the PANEL sees it.
@@ -59,14 +63,45 @@ export type GenerationStatus = {
    *  reported as outside their day's sector. Date + game + a structural
    *  reason; never a name, an answer or any other puzzle content. */
   offDomain: OffDomainFlag[];
+  /**
+   * CC-LO-GEN-CONFORMANCE-1.0 D3 — configured vs generated, for a season that
+   * has actually generated something. `null` before the first run wrote a row:
+   * comparing a bank that does not exist yet against its configuration would
+   * report 100% short on every dimension, which is noise, not a finding.
+   */
+  conformance: ConformanceReport | null;
 };
+
+/**
+ * CC-LO-GEN-CONFORMANCE-1.0 D3 — a whole-season read, paged.
+ *
+ * A 7-game, 365-day season is 2,555 bank rows, and PostgREST caps any single
+ * response at the project's `max-rows`. A silently truncated page would be read
+ * by the conformance table as a coverage FAILURE for rows that are sitting
+ * right there, so the page size is re-derived from the first response rather
+ * than assumed. `path` must already carry a deterministic `order=`.
+ */
+async function qPaged<T>(s: Svc, path: string, page = 1000): Promise<T[]> {
+  const out: T[] = [];
+  let step = page;
+  for (let offset = 0; out.length < 50_000; offset += step) {
+    const rows = await q<T>(s, `${path}&limit=${step}&offset=${offset}`);
+    out.push(...rows);
+    if (!rows.length) break;
+    // A first page shorter than asked for is either the whole table or the
+    // server's cap; either way it is the real page size from here on.
+    if (offset === 0 && rows.length < step) step = rows.length;
+    if (rows.length < step) break;
+  }
+  return out;
+}
 
 export async function getGenerationStatus(s: Svc, seasonId: string): Promise<GenerationStatus> {
   const empty: GenerationStatus = {
     season: null, configId: null, dayCount: null, targets: [], totalTarget: 0,
     pilotFindings: [], fullFindings: [], warnings: [], runs: [], stalledRunId: null,
     bankAlarms: [], pilotPreview: [], latestPilotRunStatus: null, draftCount: 0, unapprovedDates: [],
-    offDomain: [],
+    offDomain: [], conformance: null,
   };
 
   const seasons = await q<GenSeason & { name: string; slug: string }>(
@@ -203,6 +238,45 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   );
   const unapprovedDates = [...new Set(drafts.map((r) => r.go_live_date))].sort();
 
+  // CC-LO-GEN-CONFORMANCE-1.0 D3 — configured vs generated, but only once a
+  // run has actually written something: before that there is no bank to
+  // compare and every dimension would read 100% short.
+  //
+  // The two reads below are the ENTIRE data cost of this feature, and their
+  // projections are three and four columns respectively. puzzle_content,
+  // hints, answer_key and answer_explanation are not among them and must never
+  // be: nothing on this panel needs a puzzle's answer to say whether the bank
+  // matches its configuration.
+  const hasGeneratedRows = runs.some((r) => (r.written_count ?? 0) > 0);
+  let conformanceReport: ConformanceReport | null = null;
+  if (hasGeneratedRows && season.starts_on && season.ends_on) {
+    const [themeRows, bankRows] = await Promise.all([
+      qPaged<{ theme_date: string; theater_id: string | null; sector_code: string | null; thread_codes: string[] | null }>(
+        s, `dc_daily_theme?season_id=eq.${seasonId}&select=theme_date,theater_id,sector_code,thread_codes&order=theme_date.asc`),
+      qPaged<{ puzzle_type: string | null; go_live_date: string | null; difficulty: string | null }>(
+        s, `dc_puzzle_bank_staging?season_id=eq.${seasonId}&select=puzzle_type,go_live_date,difficulty&order=go_live_date.asc,puzzle_type.asc`),
+    ]);
+    conformanceReport = conformance({
+      themeMix,
+      difficultyMix,
+      slate: slate.map((g) => {
+        const game = catalog.find((c) => c.id === g.game_id) ?? null;
+        return {
+          runtime_key: game?.runtime_key ?? null,
+          floor: g.difficulty_floor ?? null,
+          ceiling: g.difficulty_ceiling ?? null,
+          enabled: !!g.is_enabled,
+        };
+      }),
+      themeRows: themeRows.map((r) => ({
+        date: r.theme_date, theater_id: r.theater_id,
+        sector_code: r.sector_code, thread_codes: r.thread_codes,
+      })),
+      bankRows,
+      seasonDates: seasonDates(season.starts_on, season.ends_on),
+    });
+  }
+
   return {
     season,
     configId,
@@ -224,5 +298,6 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     draftCount: drafts.length,
     unapprovedDates,
     offDomain: offDomainFlags(drafts),
+    conformance: conformanceReport,
   };
 }
