@@ -12,9 +12,11 @@
 //   { puzzles: { "Rackl": {...}, "Signal Drop": {...}, ... }, tip: {...} | null }
 //
 // `puzzles` is keyed by puzzle type and contains only the types that have a
-// valid published puzzle in the Airtable Puzzle Bank. The component fills any
-// missing type from its built-in mock data, so a partial (or empty) response
-// still renders all 7 games.
+// valid published puzzle in the Puzzle Bank. A partial (or empty) response is a
+// FACT the lobby renders, not a hole it fills: as of
+// CC-DC-LOBBY-EMPTY-STATE-1.0 the component no longer substitutes mock puzzles
+// in production (B4 — a season stuck `upcoming` served {} for a day and the
+// lobby showed seven playable fakes on top of it). See lib/lobby-model.ts.
 //
 // If Airtable is unreachable or misconfigured, we respond 200 with empty
 // puzzles and tip:null rather than erroring — the lobby must never hard-fail.
@@ -39,6 +41,12 @@ import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
 import { filterToSlate } from "@/lib/season-slate";
 import { resolveSeasonSlate } from "@/lib/season-slate-server";
 import { resolveSeasonFor } from "@/lib/seasons/resolve";
+// CC-DC-LOBBY-EMPTY-STATE-1.0 (D8): `nextSeason` so a no-season lobby can say
+// WHEN the next one starts instead of just "No challenge today." `todayCT` is
+// imported rather than re-derived — the CT serve day has one owner
+// (CC-DC-SEASON-GOLIVE-1.0).
+import { todayCT } from "@/lib/seasons/golive";
+import { fetchNextSeason } from "@/lib/seasons/next-season";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -186,12 +194,16 @@ export async function GET(request) {
     const season = await resolveSeasonFor(h, subscriberId);
     const seasonId = season?.id ?? null;
 
-    const [livePuzzles, tip, takes, solveBands, slate] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate, nextSeason] = await Promise.all([
       getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
       fetchSolveBands(),
       resolveSeasonSlate(seasonId),
+      // Unconditional and parallel: it costs no added latency next to the five
+      // reads already in flight, and a field that is only populated in the one
+      // state that renders it is a field nobody can test from the outside.
+      fetchNextSeason(h, todayCT()),
     ]);
 
     // Narrow to the season's enabled games. A null slate leaves the set
@@ -216,11 +228,24 @@ export async function GET(request) {
     // `season` names the season these puzzles belong to (null = platform rows
     // only). Informational — the client keys nothing off it yet.
     return Response.json(
-      { puzzles, tip, solveBands, slate, season: season ? { id: season.id, name: season.name ?? null } : null },
+      {
+        puzzles,
+        tip,
+        solveBands,
+        slate,
+        season: season ? { id: season.id, name: season.name ?? null } : null,
+        // D8: { name, starts_on } | null — the earliest platform-scoped season
+        // that has not started yet. Additive; the client renders it ONLY in the
+        // no-season empty state (see lib/lobby-model.ts).
+        nextSeason,
+      },
       { headers: NO_STORE }
     );
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
-    return Response.json({ puzzles: {}, tip: null, solveBands: {}, slate: null, season: null }, { headers: NO_STORE });
+    return Response.json(
+      { puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null },
+      { headers: NO_STORE }
+    );
   }
 }
