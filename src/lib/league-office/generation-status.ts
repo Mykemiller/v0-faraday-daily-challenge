@@ -116,6 +116,9 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const input: GenerationInput = {
     season, slate, catalog, themeMix, difficultyMix, activeDomainCodes,
     corpusThemeCounts: [...pairCounts.values()], inflightRuns,
+    // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve the generator will
+    // actually place the bands along.
+    difficultyCurve: focus?.difficulty_curve ?? null,
   };
 
   // D5: project the cursor down to the three failure facts; the blob itself

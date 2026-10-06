@@ -22,6 +22,7 @@
 // Relative, with the extension: generation-logic.test.ts runs under plain
 // `node --test` (type stripping), which does not read tsconfig `paths`.
 import { unfillableThemeQuotas } from "../generation/theme-allocation.js";
+import { CURVE_CUSTOM_WARNING, normalizeCurve } from "../generation/difficulty.js";
 
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
@@ -132,6 +133,14 @@ export type GenerationInput = {
   corpusThemeCounts?: { theater_id: string; sector_code: string | null; count: number }[];
   /** Runs for this season that are neither completed nor superseded. */
   inflightRuns: GenRun[];
+  /**
+   * CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the focus config's
+   * `difficulty_curve`. The generator places the season's difficulty bands
+   * along this shape, so `custom` (which has no stored shape anywhere) has to
+   * be reported rather than silently flattened. Optional: a caller that does
+   * not supply it simply gets no curve warning.
+   */
+  difficultyCurve?: string | null;
 };
 
 const isHundred = (n: number) => Math.abs(n - 100) < 0.001;
@@ -294,6 +303,18 @@ export function generationWarnings(input: GenerationInput): Finding[] {
         `${t.sector_code === "D16" ? "Cyber & Physical Security" : "Community Opposition"} carries ${t.target_pct}% emphasis — its corpus is thin (floor_relaxed) and will under-produce.`
       );
   }
+
+  // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — `custom` is a selectable curve
+  // with nothing behind it: no per-day shape is stored for a season anywhere in
+  // the schema, so the allocator can only place the mix as an even spread. The
+  // totals are still exactly the configured mix; it is the SHAPE that is not
+  // honoured, and the commissioner is told so instead of inferring it from a
+  // sparkline that draws a flat line either way.
+  if (typeof input.difficultyCurve === "string" && normalizeCurve(input.difficultyCurve) === "custom")
+    warn(
+      CURVE_CUSTOM_WARNING,
+      'Difficulty curve is set to "custom", but no custom shape is stored — generation will spread the configured mix evenly across the season. The band totals still match the mix exactly.'
+    );
 
   const targets = computeTargets(input);
   if (targets.total > RUN_SIZE_WARN)

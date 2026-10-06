@@ -256,6 +256,31 @@ test("D16/D18 emphasis above 15% warns; excluded rows never warn", () => {
   assert.match(warns[0].message, /Community Opposition/);
 });
 
+// CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve now DECIDES which dates
+// carry the deeper bands, so the one curve with no shape behind it has to say
+// so out loud rather than drawing a flat sparkline and leaving the
+// commissioner to infer it.
+test('difficulty_curve "custom" warns that only the shape is unsupported', () => {
+  const input = okInput();
+  input.difficultyCurve = "custom";
+  const warns = generationWarnings(input).filter((f) => f.code === "difficulty_curve_custom_unsupported");
+  assert.equal(warns.length, 1);
+  assert.match(warns[0].message, /spread the configured mix evenly/);
+  // ...and it is a WARNING, never a blocker: the totals are still exactly the mix.
+  assert.ok(!generationFindings(input, false).some((f) => f.code === "difficulty_curve_custom_unsupported"));
+});
+
+test("the supported curves — and an absent one — raise no curve warning", () => {
+  for (const curve of ["flat", "ramp", "wave", " WAVE ", null, undefined]) {
+    const input = okInput();
+    input.difficultyCurve = curve;
+    assert.ok(
+      !generationWarnings(input).some((f) => f.code === "difficulty_curve_custom_unsupported"),
+      `curve ${String(curve)} must not warn`
+    );
+  }
+});
+
 test("runs above 2,000 puzzles warn", () => {
   const input = okInput();
   input.season.ends_on = "2027-08-03"; // 366 days × 7 games = 2,562
