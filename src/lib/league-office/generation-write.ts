@@ -13,6 +13,8 @@ import { GEN_MODEL } from "@/lib/generation/worker";
 // CC-DC-SEASON-GOLIVE-1.0 (D5/B2): approving puzzles dated TODAY has to put
 // them in front of players today, not at the next midnight rotation.
 import { approvalGoLivePlan, goLiveToday, todayCT } from "@/lib/seasons/golive";
+// CC-LO-GEN-CONFORMANCE-1.0 D4 — the failing dimensions, named in the audit row.
+import { failingKeys } from "./generation-conformance";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 
@@ -129,6 +131,19 @@ export async function approveSeasonPuzzles(
   const dates = [...new Set(drafts.map((r) => r.go_live_date))].sort();
   if (!dates.length) return { ok: false, message: "No unpublished generated puzzles for this season." };
 
+  // CC-LO-GEN-CONFORMANCE-1.0 D4 — approval is NEVER blocked by conformance
+  // (D5: this is a read-only feature). What changes is the record: when the
+  // bank fails its configuration the UI makes the commissioner tick "I
+  // understand the bank does not match the configuration", and the audit row
+  // says so, with the dimensions that were failing at the moment of approval.
+  //
+  // Re-derived server-side, before the write, for the same reason every other
+  // action in this file re-derives: a checkbox in a browser is presentation.
+  const conf = (await getGenerationStatus(s, input.seasonId)).conformance;
+  const ack = conf?.worst === "fail"
+    ? { conformance_ack: true, conformance_failures: failingKeys(conf) }
+    : {};
+
   // CC-LO-CONCURRENT-SEASONS-1.0 §3.6: approve THIS season's rows only — the
   // season-less fn_dc_approve_puzzles(dates, actor) would also publish another
   // season's drafts on the same dates.
@@ -143,6 +158,7 @@ export async function approveSeasonPuzzles(
   await log("season.approve_puzzles", "season", input.seasonId, null, {
     dates,
     approved,
+    ...ack,
   }, false);
 
   // CC-DC-SEASON-GOLIVE-1.0 (D5/B2). fn_dc_approve_season_puzzles leaves rows
