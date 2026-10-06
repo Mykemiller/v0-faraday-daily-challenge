@@ -96,11 +96,40 @@ test("every classifiable column has a system default to compare against", () => 
 
 test("the chip appears only where there is something to warn about", () => {
   assert.equal(enforcementChip("roster_lock_on"), null); // enforced → no chip
-  assert.equal(enforcementChip("max_teams_per_subscriber"), "Partly enforced");
+  // CC-DC-TEAM-CAP-FROM-CONFIG-1.0 turned the team cap into a real rule, so it
+  // lost its "Partly enforced" chip. No field is `partial` today; the mapping
+  // for that status is covered by the table-driven test below, so adding one
+  // back later still has a guard.
+  assert.equal(enforcementChip("max_teams_per_subscriber"), null);
+  assert.equal(enforcementChip("max_team_size"), null);
   assert.equal(enforcementChip("drop_lowest_n_days"), "Not enforced yet");
   assert.equal(enforcementChip("season_games.points_override"), null);
   assert.equal(enforcementChip("not_a_column"), null);
   assert.equal(enforcementOf("not_a_column"), null);
+});
+
+test("the chip text follows the status, for every classified field", () => {
+  const forStatus: Record<string, string | null> = {
+    enforced: null,
+    partial: "Partly enforced",
+    not_enforced: "Not enforced yet",
+  };
+  for (const [field, e] of Object.entries(CONFIG_ENFORCEMENT)) {
+    assert.equal(enforcementChip(field), forStatus[e.status], field);
+  }
+});
+
+// ── CC-DC-TEAM-CAP-FROM-CONFIG-1.0: the two roster-size fields ──────────────
+
+test("the roster size caps read as enforced and name their reader", () => {
+  for (const f of ["max_teams_per_subscriber", "max_team_size"]) {
+    assert.equal(CONFIG_ENFORCEMENT[f].status, "enforced", f);
+    assert.match(CONFIG_ENFORCEMENT[f].by, /team-rules\.ts/, f);
+    assert.match(CONFIG_ENFORCEMENT[f].by, /\/api\/teams/, f);
+  }
+  // min_team_size deliberately stays unenforced — there is no point in the
+  // lifecycle at which a team being too SMALL can be refused.
+  assert.equal(CONFIG_ENFORCEMENT.min_team_size.status, "not_enforced");
 });
 
 // ── D7: the four fields this pack wired up ──────────────────────────────────
@@ -176,8 +205,10 @@ test("Football: the fields it set that ARE rules stay off the list", () => {
   const found = new Set(notEnforcedFields(FOOTBALL).map((f) => f.field));
   for (const f of ["difficulty_curve", "hint_penalty_pct", "roster_lock_on", "registration_closes_on"])
     assert.ok(!found.has(f), `${f} is enforced and must not be listed`);
-  // partial is not "not enforced" — the cap gets a chip, not a line in the count.
+  // The cap is a real rule now (CC-DC-TEAM-CAP-FROM-CONFIG-1.0), so it is not
+  // a line in the "saved but does nothing" count either.
   assert.ok(!found.has("max_teams_per_subscriber"));
+  assert.ok(!found.has("max_team_size"));
 });
 
 test("a config sitting entirely on its defaults nags about nothing", () => {
