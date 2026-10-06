@@ -35,8 +35,9 @@ import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./co
 import { systemPrompt, userPrompt } from "./prompts";
 import { difficultyFor, resolveRowDifficulty } from "./difficulty";
 import {
-  parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry,
+  parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry, clampMessage,
 } from "./failure-reasons";
+import { allocateThemeCalendar, type ThemeAllocationError } from "./theme-allocation";
 import {
   createBudget, genMaxTokens, runBatchWithSplit, startingBatchSize,
 } from "./batching";
@@ -374,8 +375,8 @@ async function sliceBody(
   const [slate, catalog, themeMixRows, difficultyMixRows] = await Promise.all([
     sbGet<{ game_id: string; is_enabled: boolean }>(s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled`),
     sbGet<{ id: string; runtime_key: string | null; lifecycle_state: string }>(s, `game_catalog?select=id,runtime_key,lifecycle_state`),
-    sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; is_excluded: boolean }>(
-      s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,is_excluded`),
+    sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; target_pct: number; is_excluded: boolean }>(
+      s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,target_pct,is_excluded`),
     sbGet<{ difficulty_band: string; target_pct: number; applies_to_game_id: string | null }>(
       s, `season_difficulty_mix?season_config_id=eq.${cfg.id}&select=difficulty_band,target_pct,applies_to_game_id`),
   ]);
@@ -393,12 +394,25 @@ async function sliceBody(
   const dates = seasonDates(season.starts_on, season.ends_on);
   const report: SliceReport = { runId: run.id, written: 0, failed: 0, themesInserted: 0 };
 
-  // ── Phase A — season theme rows, derived from the corpus calendar ──────────
-  // The 500 corpus rows (season_id NULL) are the reusable well (DEC-1/DEC-3).
-  // Each season date gets its own row (season_id set); mix EXCLUSIONS are
-  // honored by substituting the nearest non-excluded corpus row; target
-  // percentages steer validation/warnings, not row-by-row re-derivation (v1 —
-  // documented in PART-D-REPORT.md).
+  // ── Phase A — season theme rows, allocated from the configured mix ────────
+  // CC-DC-GEN-THEME-ALLOCATION-1.0 D8: `target_pct` is AUTHORITATIVE. The 500
+  // corpus rows (season_id NULL) are the reusable well (DEC-1/DEC-3) and each
+  // season date gets its own row (season_id set), but WHICH well row a date
+  // draws is now decided by src/lib/generation/theme-allocation.js from the
+  // commissioner's mix — included Theater (and Sector) target percentages
+  // converted to whole days by largest remainder, exclusions applied on all
+  // three axes, spread interleaved on the season id.
+  //
+  // What this replaces: the old loop matched the corpus row whose theme_date
+  // EQUALLED the season date and substituted the nearest-dated row otherwise,
+  // so the calendar was a function of the corpus window rather than of the
+  // mix — and a season date past the end of that window (2027-12-13) exhausted
+  // the tail rows and threw. Corpus row dates are now read by nothing here.
+  //
+  // The plan is computed over the WHOLE season so the quotas are season-wide,
+  // and only the dates that have no row yet are inserted: a resumed run and a
+  // partially-built season both stay correct, and no existing theme row is
+  // modified or deleted (D8 — Football remediation is a separate issue).
   if (cursor.themes_done !== true) {
     report.phase = "themes";
     const existing = await sbGet<{ theme_date: string }>(s, `dc_daily_theme?season_id=eq.${season.id}&select=theme_date`);
@@ -407,26 +421,38 @@ async function sliceBody(
     if (missing.length) {
       const corpusRows = await sbGet<ThemeRow & Record<string, unknown>>(
         s,
-        `dc_daily_theme?season_id=is.null&select=*&order=theme_date.asc&limit=600`
+        // `order=id.asc` only so the 600-row window is a stable SET — the
+        // allocator re-orders by its own seed and never reads theme_date.
+        `dc_daily_theme?season_id=is.null&select=*&order=id.asc&limit=600`
       );
-      const exTheater = new Set(themeMixRows.filter((r) => r.is_excluded && !r.sector_code && !r.thread_code).map((r) => r.theater_id));
-      const exSector = new Set(themeMixRows.filter((r) => r.is_excluded && r.sector_code && !r.thread_code).map((r) => r.sector_code as string));
-      const exThread = new Set(themeMixRows.filter((r) => r.is_excluded && r.thread_code).map((r) => r.thread_code as string));
-      const passes = (row: ThemeRow) =>
-        !exTheater.has(row.theater_id) && !exSector.has(row.sector_code) &&
-        !(row.thread_codes || []).some((c) => exThread.has(c));
-      const byDate = new Map(corpusRows.map((r) => [r.theme_date, r]));
-      const usedSources = new Set<string>();
+      let plan: ReturnType<typeof allocateThemeCalendar>;
+      try {
+        plan = allocateThemeCalendar({ dates, corpusRows, mixRows: themeMixRows, seed: season.id });
+      } catch (e) {
+        // D7 — an included Theater/Sector the corpus cannot serve is a
+        // configuration fault. Fail the run and NAME it; never redistribute the
+        // share onto whichever theaters happen to have rows.
+        const err = e as ThemeAllocationError;
+        const keys: string[] = Array.isArray(err?.failureKeys) && err.failureKeys.length
+          ? err.failureKeys
+          : [err?.failureKey || "theme:unfillable:-"];
+        for (const k of keys) countFailure(k);
+        noteFailure(keys[0], err?.message ?? String(e));
+        await checkpoint({
+          status: "failed_short",
+          completed_at: nowIso(),
+          phase_cursor: { ...cursor, error: clampMessage(err?.message ?? String(e)) },
+        });
+        return { ...report, status: "failed_short", note: clampMessage(err?.message ?? String(e)) };
+      }
+      const byId = new Map(corpusRows.map((r) => [String(r.id), r]));
+      const needed = new Set(missing);
       const toInsert: Record<string, unknown>[] = [];
-      for (const date of missing) {
-        let source = byDate.get(date);
-        if (!source || !passes(source) || usedSources.has(source.id)) {
-          source = corpusRows
-            .filter((r) => passes(r) && !usedSources.has(r.id))
-            .sort((a, b) => Math.abs(Date.parse(a.theme_date) - Date.parse(date)) - Math.abs(Date.parse(b.theme_date) - Date.parse(date)))[0];
-        }
-        if (!source) throw new Error(`no corpus theme row available for ${date} under the configured exclusions`);
-        usedSources.add(source.id);
+      for (const slot of plan) {
+        if (!needed.has(slot.date)) continue;
+        const source = byId.get(slot.sourceId);
+        if (!source) continue; // unreachable: the plan only names rows it was given
+        const date = slot.date;
         toInsert.push({
           theme_date: date,
           season_id: season.id,

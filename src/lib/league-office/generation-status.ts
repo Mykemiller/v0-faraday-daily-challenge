@@ -90,7 +90,11 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
       s,
       `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,season_id,run_kind,status,target_count,written_count,failed_count,started_at,completed_at,superseded_at,last_heartbeat_at,phase_cursor&order=started_at.desc&limit=10`
     ),
-    q<{ sector_code: string }>(s, `dc_daily_theme?season_id=is.null&select=sector_code`),
+    // CC-DC-GEN-THEME-ALLOCATION-1.0 D7 — theater_id + sector_code only. The
+    // checklist needs to know which (theater, sector) pairs the corpus can
+    // serve; it never needs a theme's title, blurb or threads to say so.
+    q<{ theater_id: string; sector_code: string }>(
+      s, `dc_daily_theme?season_id=is.null&select=theater_id,sector_code`),
   ]);
 
   // Condition 7's D-code set: live Domain Registry, fail-soft to the corpus-
@@ -98,9 +102,20 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const liveCodes = await fetchActiveDomainCodes();
   const activeDomainCodes = liveCodes ?? [...new Set(corpusSectors.map((r) => r.sector_code))];
 
+  // ...and the same rows counted per (theater, sector) — the shape condition
+  // 7's quota-fillability pre-flight reads (D7).
+  const pairCounts = new Map<string, { theater_id: string; sector_code: string | null; count: number }>();
+  for (const r of corpusSectors) {
+    const key = `${r.theater_id}|${r.sector_code ?? ""}`;
+    const hit = pairCounts.get(key);
+    if (hit) hit.count += 1;
+    else pairCounts.set(key, { theater_id: r.theater_id, sector_code: r.sector_code ?? null, count: 1 });
+  }
+
   const inflightRuns = runs.filter((r) => !r.completed_at && !r.superseded_at);
   const input: GenerationInput = {
-    season, slate, catalog, themeMix, difficultyMix, activeDomainCodes, inflightRuns,
+    season, slate, catalog, themeMix, difficultyMix, activeDomainCodes,
+    corpusThemeCounts: [...pairCounts.values()], inflightRuns,
   };
 
   // D5: project the cursor down to the three failure facts; the blob itself

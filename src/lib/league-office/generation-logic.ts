@@ -19,6 +19,10 @@
 // until that constraint becomes league-aware, so puzzle_count above the day
 // count WARNS (and the worker generates exactly one per day); below it ERRORS.
 
+// Relative, with the extension: generation-logic.test.ts runs under plain
+// `node --test` (type stripping), which does not read tsconfig `paths`.
+import { unfillableThemeQuotas } from "../generation/theme-allocation.js";
+
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
 export type GenSeason = {
@@ -116,6 +120,16 @@ export type GenerationInput = {
   difficultyMix: GenDifficultyRow[];
   /** Live Active D-codes from the Domain Registry (or the corpus fallback). */
   activeDomainCodes: string[];
+  /**
+   * CC-DC-GEN-THEME-ALLOCATION-1.0 D7 — corpus theme-row counts per
+   * (theater, sector): `SELECT theater_id, sector_code, count(*) FROM
+   * dc_daily_theme WHERE season_id IS NULL GROUP BY 1,2`. Condition 7 uses them
+   * to say BEFORE a run is queued that an included Theater/Sector carries a
+   * share no corpus row can serve. Optional: when the caller does not supply
+   * them the pre-flight is skipped — the worker still refuses to redistribute
+   * and fails the run with `theme:unfillable:<theater>`.
+   */
+  corpusThemeCounts?: { theater_id: string; sector_code: string | null; count: number }[];
   /** Runs for this season that are neither completed nor superseded. */
   inflightRuns: GenRun[];
 };
@@ -232,6 +246,20 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
     if (t.sector_code && active.size > 0 && !active.has(t.sector_code))
       err("unknown_domain_code", `Theme mix references "${t.sector_code}", which is not an Active domain in the live registry.`);
   }
+  // CC-DC-GEN-THEME-ALLOCATION-1.0 D7 — target_pct is authoritative for the
+  // calendar, so an included share the corpus cannot serve is a BLOCKING fault,
+  // not something the allocator quietly hands to a neighbouring Theater.
+  for (const u of unfillableThemeQuotas({
+    mixRows: input.themeMix,
+    corpusCounts: input.corpusThemeCounts ?? [],
+    dayCount: dayCount ?? 0,
+  }))
+    err(
+      "theme_quota_unfillable",
+      u.sector_code
+        ? `Theme mix gives ${u.theater_id} / ${u.sector_code} a share of the season, but no corpus theme row matches it under the configured exclusions.`
+        : `Theme mix gives ${u.theater_id} a share of the season, but no corpus theme row matches it under the configured exclusions.`
+    );
 
   // 8 — lock
   if (s.locked_at) err("season_locked", "The season is locked — unlock it to change or generate anything.");

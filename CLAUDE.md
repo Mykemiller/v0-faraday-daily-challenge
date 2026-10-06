@@ -1,5 +1,48 @@
 @AGENTS.md
 
+## The theme calendar obeys the mix, not the corpus dates (CC-DC-GEN-THEME-ALLOCATION-1.0, claude/gen-theme-allocation, 2026-10-06)
+
+**`target_pct` is AUTHORITATIVE for which theme each season day carries, and
+`src/lib/generation/theme-allocation.js` is the only module that decides it.**
+Phase A of the worker used to build the calendar out of the CORPUS's own dates:
+it matched the corpus row whose `theme_date` equalled the season date,
+substituted the nearest-dated non-excluded row otherwise, and never read
+`target_pct` at all — it did not even SELECT the column. So Football's configured
+mix (T-002 35.31 / T-005 29.41 / T-007 35.28, T-001/003/004/006 excluded) was
+decorative, and because only 45 of the 500 corpus rows are T-007, a 35% emphasis
+could not have been met by date-matching however the exclusions fell. The same
+fallback made the calendar a function of the corpus WINDOW: a season date past
+2027-12-13 drew the tail rows repeatedly and then threw `no corpus theme row
+available for <date>`.
+
+`allocateThemeCalendar({ dates, corpusRows, mixRows, seed })` is pure — no I/O,
+no clock, seeded on the season id — and returns one `{date, sourceId}` per season
+date. Included Theater-level rows (sector and thread null, not excluded) are
+normalized to 100 and converted to whole days by **largest remainder** over
+`dates.length`; a Theater that also carries included Sector-level rows splits its
+own quota the same way, otherwise its sectors are free. Exclusions apply on all
+three axes exactly as the old `passes` did. **Corpus row date is read by
+nothing**: inside a quota, sectors rotate least-used-first, unused rows are
+preferred, and an exhausted pool reuses least-recently-used — which is what
+removes the corpus-window gap and the 2027-12-13 failure. Spread is a
+deterministic interleave: no Theater runs more than 2 consecutive days and no
+sector repeats back to back whenever the quotas admit it (a Theater holding more
+than two thirds of the season cannot be spread that way by any arrangement, and
+the allocator takes the unavoidable run rather than failing).
+
+**An included Theater or Sector with zero eligible corpus rows is an ERROR, never
+a silent redistribution onto its neighbours.** The League Office checklist blocks
+it as `theme_quota_unfillable` (condition 7, fed by `corpusThemeCounts` — a
+`theater_id, sector_code, count(*)` projection assembled in
+`generation-status.ts`; that pre-flight cannot see thread exclusions, so it is
+conservative and the worker is the authority), and the worker fails the run with
+`theme:unfillable:<theater>`. Phase A computes the plan over the WHOLE season so
+the quotas are season-wide but inserts only dates that have no row yet: the
+`dc_daily_theme` row shape is unchanged, resume stays correct, and no existing
+theme row is ever modified or deleted. `normalizeTo100` is mirrored from
+`season-config-logic.ts` and `npm run test:theme-allocation` pins the mirror
+alongside the Football fixture (119 days ⇒ T-002 42 · T-005 35 · T-007 42).
+
 ## An empty lobby says it is empty (CC-DC-LOBBY-EMPTY-STATE-1.0, claude/lobby-empty-state, 2026-10-05)
 
 **In production the Daily Challenge lobby NEVER substitutes `MOCK_PUZZLES` for a
