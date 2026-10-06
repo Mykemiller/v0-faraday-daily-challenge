@@ -614,6 +614,29 @@ test("a staggered slate sits under a cap the headcount would bust", () => {
   assert.equal(computeTargets(input).total, 35);
 });
 
+// ── CC-DC-HINTS-FROM-CONFIG-1.0 D1: the hint budget cannot exceed the bank ──
+
+test("max_hints_per_game above the bank's three tiers BLOCKS the run", () => {
+  const input = okInput();
+  input.maxHintsPerGame = 4; // Football and HOT SUMMER, SELECTed 2026-10-06
+  const f = generationFindings(input, false).filter((c) => c.code === "max_hints_exceeds_bank");
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, "error");
+  assert.match(f[0].message, /no fourth hint to generate/);
+});
+
+test("a servable hint budget, or none supplied, is silent", () => {
+  const input = okInput();
+  for (const n of [0, 1, 2, 3]) {
+    input.maxHintsPerGame = n;
+    assert.deepEqual(generationFindings(input, false), [], `${n} is servable`);
+  }
+  input.maxHintsPerGame = null;
+  assert.deepEqual(generationFindings(input, false), []);
+  delete input.maxHintsPerGame;
+  assert.deepEqual(generationFindings(input, false), []);
+});
+
 // ── the difficulty weighting follows the calendar ───────────────────────────
 
 test("a game that plays one day a week pulls the season mix a seventh as hard", () => {

@@ -240,11 +240,23 @@ function hintsForQuestion(q) {
   return out.filter(Boolean).slice(0, HINT_MAX);
 }
 
+// CC-DC-HINTS-FROM-CONFIG-1.0 D3 — the season's hint rules from
+// /api/challenge/today (`rules.hintsEnabled` / `rules.maxHints`). Context for
+// the same reason SeasonScoringContext is: HintControl is rendered from all 7
+// game components, so a prop would mean editing every call site to pass one
+// object. The default is the pre-pack behaviour (hints on, HINT_MAX of them),
+// which is also what a control rendered before the fetch lands shows.
+const HintRulesContext = createContext({ hintsEnabled: true, maxHints: HINT_MAX });
+
 // Shared Hint control. Reveals `hints` one at a time, spending from a per-game
-// daily budget of HINT_MAX shared across every press (persisted). Renders nothing
-// when there are no hints to give.
+// daily budget shared across every press (persisted). The budget is the
+// SEASON's `max_hints_per_game`, already min'd against the bank's three tiers
+// by the server. Renders nothing when there are no hints to give, and a single
+// line of copy instead of a button when the season has hints switched off.
 function HintControl({ gameType, hints }) {
   const list = Array.isArray(hints) ? hints.filter(Boolean) : [];
+  const { hintsEnabled, maxHints } = useContext(HintRulesContext);
+  const budget = Math.max(0, Math.min(HINT_MAX, Number(maxHints) || 0));
   const storageKey = `faraday_hints_${TODAY}_${gameType}`;
   const [usedTotal, setUsedTotal] = useState(0);   // budget spent across the game today
   const [localShown, setLocalShown] = useState(0); // revealed within this instance
@@ -258,7 +270,16 @@ function HintControl({ gameType, hints }) {
 
   if (list.length === 0) return null;
 
-  const remaining = Math.max(0, HINT_MAX - usedTotal);
+  // Hints off for the season: no button, no budget, one line saying why — so
+  // the absence reads as a rule rather than as a bug.
+  if (!hintsEnabled)
+    return (
+      <div style={{ fontSize:"12px", color:C.muted, ...mono, textAlign:"center" }}>
+        Hints are off this season.
+      </div>
+    );
+
+  const remaining = Math.max(0, budget - usedTotal);
   const canReveal = remaining > 0 && localShown < list.length;
 
   function reveal() {
@@ -2822,6 +2843,10 @@ function DailyChallengeInner() {
   // D7: `rules.scoring` from /api/challenge/today. null until it lands, which
   // reads as the platform default (150 / no penalty / streak on).
   const [scoringRules, setScoringRules] = useState(null);
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D3: `rules.hintsEnabled` / `rules.maxHints`
+  // from /api/challenge/today. Seeded with the pre-pack behaviour so a control
+  // rendered before the fetch lands offers exactly what it always did.
+  const [hintRules,    setHintRules]    = useState({ hintsEnabled: true, maxHints: HINT_MAX });
   // The season's enabled games (game_catalog.runtime_key list), from
   // /api/challenge/today. null = no slate configured → show them all.
   const [slate,        setSlate]        = useState(null);
@@ -2881,6 +2906,14 @@ function DailyChallengeInner() {
         if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
         if (data.rules && data.rules.scoring && typeof data.rules.scoring === "object")
           setScoringRules(data.rules.scoring);
+        // ASSIGNED, not merged, and only from a payload that carries the
+        // fields: an older response (no `hintsEnabled`) must keep the default
+        // rather than switch hints off for everyone.
+        if (data.rules && typeof data.rules.maxHints === "number")
+          setHintRules({
+            hintsEnabled: data.rules.hintsEnabled !== false,
+            maxHints: data.rules.maxHints,
+          });
         // Season slate (D4 retired): the list of games THIS season serves.
         // null/absent → show every game, which is the pre-enforcement behaviour
         // and what an older payload produces.
@@ -3598,9 +3631,11 @@ function DailyChallengeInner() {
                 // puzzle. Falls back to a per-game key when there is no publicId.
                 <SolveBandsContext.Provider value={solveBands}>
                   <SeasonScoringContext.Provider value={scoringRules}>
-                    <PlayoffPhaseContext.Provider value={playoffsLive}>
-                      <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
-                    </PlayoffPhaseContext.Provider>
+                    <HintRulesContext.Provider value={hintRules}>
+                      <PlayoffPhaseContext.Provider value={playoffsLive}>
+                        <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                      </PlayoffPhaseContext.Provider>
+                    </HintRulesContext.Provider>
                   </SeasonScoringContext.Provider>
                 </SolveBandsContext.Provider>
               )}

@@ -174,6 +174,9 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     // never used to choose which games run.
     playDaysOfWeek: focus?.play_days_of_week ?? null,
     gamesPerDay: focus?.games_per_day ?? null,
+    // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — validated against the bank's three
+    // hint tiers; never used to pick anything.
+    maxHintsPerGame: focus?.max_hints_per_game ?? null,
   };
 
   // D5: project the cursor down to the three failure facts; the blob itself

@@ -199,6 +199,9 @@ export default function ConfigEditor({
         themeMix,
         difficultyMix,
         gamesPerDay: config.games_per_day == null ? null : Number(config.games_per_day),
+        // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — `max_hints_exceeds_bank`.
+        maxHintsPerGame:
+          config.max_hints_per_game == null ? null : Number(config.max_hints_per_game),
         teamScoreMethod: String(config.team_score_method ?? "sum"),
         teamScoreTopN: config.team_score_top_n == null ? null : Number(config.team_score_top_n),
       }),

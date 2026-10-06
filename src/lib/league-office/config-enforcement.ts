@@ -135,14 +135,14 @@ export const CONFIG_ENFORCEMENT: Record<string, EnforcementEntry> = {
 
   // ── hints ──────────────────────────────────────────────────────────────────
   hints_enabled: {
-    status: "not_enforced",
-    by: "—",
-    note: "Hints stay available to players whatever this says — no serve path or client reads it.",
+    status: "enforced",
+    by: "seasons/hint-rules.ts · /api/challenge/today rules.hintsEnabled · DailyChallenge HintControl · /challenge/hints",
+    note: "Off hides the in-game Hint button and the Hints Today entries, both replaced by a one-line note.",
   },
   max_hints_per_game: {
-    status: "not_enforced",
-    by: "—",
-    note: "The hint budget comes from game_catalog.max_hints and a hard client ceiling of 3; this number changes neither.",
+    status: "enforced",
+    by: "seasons/hint-rules.ts · /api/challenge/today rules.maxHints · DailyChallenge HintControl · /challenge/hints",
+    note: "The daily hint budget per game, capped at the 3 hint tiers the puzzle bank stores — a higher number still serves 3.",
   },
   hint_penalty_pct: {
     status: "enforced",
