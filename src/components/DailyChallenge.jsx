@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { GameRegistryProvider, useGameRegistry } from "@/components/GameRegistryContext";
 import { accentOf, heroGame, hidesPuzzleName, keyOf } from "@/lib/game-registry";
+// CC-DC-LOBBY-EMPTY-STATE-1.0 (B4): the fixture set is still imported, but it
+// is now handed to `lobbyModel`, which is the ONE place allowed to decide
+// whether it may be used — and in production the answer is always no.
 import { MOCK_PUZZLES } from "@/lib/mock-puzzles";
+import { LOBBY_COPY, lobbyModel, servedKeys } from "@/lib/lobby-model";
 import ShareButton from "@/components/ShareButton";
 
 import {
@@ -2150,36 +2154,81 @@ function tileConfig(game) {
 }
 
 
-// Which of the 7 games the active season actually serves. A null/empty slate
-// means no season config gates serving, so every game shows — that is the
-// pre-D4-retirement behaviour and the fail-safe the whole feature rests on.
-// Membership is by `type`, which IS game_catalog.runtime_key (D3).
-function seasonGames(slate, allKeys) {
-  const all = Array.isArray(allKeys) ? allKeys : [];
-  if (!Array.isArray(slate) || slate.length === 0) return new Set(all);
-  const allow = new Set(slate);
-  const known = all.filter(k => allow.has(k));
-  // A slate matching none of the known games is a misconfiguration, not an
-  // instruction to show an empty lobby.
-  return known.length > 0 ? new Set(known) : new Set(all);
+// NOTE: `seasonGames` used to live here. The slate narrowing (and its two
+// fail-safes) moved into `slateGames` in lib/lobby-model.ts, which is where the
+// whole lobby decision now lives and is tested — three call sites each deriving
+// the served set independently is how a disabled game kept its tile
+// (CC-DC-LOBBY-EMPTY-STATE-1.0). Everything downstream takes `servedKeys`.
+
+// CC-DC-LOBBY-EMPTY-STATE-1.0 (D9) — the lobby with nothing to play.
+//
+// ONE card for all four non-live modes (loading / error / no_season /
+// no_puzzles): same white-on-cream card, border and radius as a game tile, so
+// an empty lobby reads as the same product rather than as a broken page. The
+// copy and the Retry affordance are decided by lobbyModel, never here.
+function LobbyNotice({ model, onRetry }) {
+  return (
+    <div style={{ padding:"28px 0 8px" }}>
+      <div role="status" style={{
+        background:C.white, border:`1px solid ${C.gray}`, borderRadius:"12px",
+        padding:"44px 28px", textAlign:"center", maxWidth:"520px", margin:"0 auto",
+      }}>
+        <p style={{ ...serif, fontWeight:700, fontSize:"22px", lineHeight:1.35,
+          color:C.black, margin:0 }}>
+          {model.headline}
+        </p>
+        {model.body && (
+          <p style={{ ...mono, fontSize:"13px", lineHeight:1.7,
+            color:"rgba(20,18,16,0.62)", margin:"14px 0 0" }}>
+            {model.body}
+          </p>
+        )}
+        {model.retry && (
+          <button onClick={onRetry} style={{ ...sans, fontWeight:700, fontSize:"14px",
+            color:C.cream, background:C.forest, border:"none", borderRadius:"9px",
+            padding:"11px 24px", marginTop:"22px", cursor:"pointer",
+            letterSpacing:"0.01em" }}>
+            {LOBBY_COPY.retry}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
 // the tile turns forest green with a gold border and a "✓ Played" badge.
-function GameTile({ config, onPlay, played, priorScore }) {
+//
+// `available === false` → this season serves the game but today has no puzzle
+// for it, so the tile is dimmed, not clickable, and says so. It is NOT hidden:
+// the game is part of the season. `mock === true` → the puzzle is fixture
+// content, which only ever happens outside production, and the badge says that
+// too (CC-DC-LOBBY-EMPTY-STATE-1.0).
+function GameTile({ config, onPlay, played, priorScore, available = true, mock = false }) {
   const glow = config.glow || "rgba(196,146,42,.3)";
   return (
-    <button type="button" onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
+    <button type="button" onClick={available ? onPlay : undefined} disabled={!available}
+      aria-disabled={!available ? "true" : undefined}
+      className={(played || !available) ? undefined : "fdc-game"} style={{
       "--glow": glow,
       position: "relative",
       background: played ? C.forest : C.white,
       border: played ? `1px solid rgba(196,146,42,0.5)` : `1px solid ${C.gray}`,
       borderRadius:"12px",
-      padding:"16px", cursor:"pointer", textAlign:"left",
+      padding:"16px", cursor: available ? "pointer" : "default", textAlign:"left",
+      opacity: available ? 1 : 0.55,
       display:"flex", gap:"16px", alignItems:"center",
       transition:"transform .12s, border-color .12s",
     }}>
+      {mock && !played && (
+        <span style={{
+          position:"absolute", top:"8px", right:"10px",
+          fontSize:"10px", letterSpacing:"0.08em", color:C.deepAmber,
+          background:"rgba(196,146,42,0.12)", border:`1px solid rgba(196,146,42,0.4)`,
+          borderRadius:"20px", padding:"2px 8px", ...mono,
+        }}>{LOBBY_COPY.mockBadge}</span>
+      )}
       {played && (
         <span style={{
           position:"absolute", top:"8px", right:"10px",
@@ -2197,7 +2246,7 @@ function GameTile({ config, onPlay, played, priorScore }) {
             {priorScore} pts
           </span>
         ) : (
-          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
+          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color: available ? "#4F6B4D" : "rgba(20,18,16,0.55)", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{available ? config.format : LOBBY_COPY.unavailable}</span>
         )}
       </span>
       <span style={{ fontSize:"11px", color: played ? "rgba(238,230,218,0.5)" : "rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
@@ -2210,11 +2259,13 @@ function GameTile({ config, onPlay, played, priorScore }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Renders the other six games as their homepage neon icons (GameIcon).
 // Tapping requests a switch; the parent confirms before discarding in-progress play.
-function GameSwitcher({ current, onSwitch, slate }) {
-  // Only the games this season serves (D4 retired). null slate → all of them.
+function GameSwitcher({ current, onSwitch, servedKeys: served }) {
+  // Only the games actually PLAYABLE today, from the lobby model — so the
+  // switcher can never route a player into a game with no puzzle today
+  // (CC-DC-LOBBY-EMPTY-STATE-1.0 D9).
   const reg = useGameRegistry();
-  const inSeason = seasonGames(slate, reg.keys);
-  const others = reg.games.map(tileConfig).filter(c => c.type !== current && inSeason.has(c.type));
+  const allowed = new Set(Array.isArray(served) ? served : []);
+  const others = reg.games.map(tileConfig).filter(c => c.type !== current && allowed.has(c.type));
   return (
     <div role="group" aria-label="Switch to another game"
       style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap",
@@ -2462,13 +2513,13 @@ function NavGlyph({ name }) {
 //   { heading:"…" }      → a small uppercase group label (like the menu title)
 // The Account menu is auth-conditional (see the `email` branch).
 // Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
-function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, slate, gameKeys }) {
-  const inSeason = seasonGames(slate, gameKeys);
+function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, servedKeys: served }) {
   return [
-    // The season's games, in locked lobby order (game_catalog orders them; the
-    // slate decides membership — D4 retired, the slate now gates serving).
+    // The games actually PLAYABLE today, in locked lobby order — the lobby
+    // model already applied the slate and today's set, so "All Games" cannot
+    // offer a game that has no puzzle (CC-DC-LOBBY-EMPTY-STATE-1.0 D9).
     { id: "games", icon: "grid", label: "All Games", items:
-      (gameKeys || []).filter(k => inSeason.has(k)).map(k => ({ label: k, onClick: () => onGame(k), current: k === activeGame })),
+      (served || []).map(k => ({ label: k, onClick: () => onGame(k), current: k === activeGame })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
@@ -2689,6 +2740,26 @@ function DailyChallengeInner() {
   // /api/challenge/today. null = no slate configured → show them all.
   const [slate,        setSlate]        = useState(null);
 
+  // ── CC-DC-LOBBY-EMPTY-STATE-1.0 (B4) ──────────────────────────────────────
+  // The lobby renders the SERVER's answer, including "there isn't one". Before
+  // this, an empty response was quietly papered over with MOCK_PUZZLES and a
+  // day-long outage looked like a healthy seven-game lobby.
+  //   todayStatus: null = the fetch is in flight, false = it failed, true = a
+  //   200 body is in hand (which may legitimately be empty).
+  const [todayStatus,  setTodayStatus]  = useState(null);
+  const [todaySeason,  setTodaySeason]  = useState(null);  // {id,name} | null
+  const [nextSeason,   setNextSeason]   = useState(null);  // {name,starts_on} | null
+  const [todayReload,  setTodayReload]  = useState(0);     // the Retry button bumps this
+  // `?mock=1` is the ONLY way fixture content reaches a production browser, and
+  // it is read in an effect rather than during render so SSR and the first
+  // paint default to the safe answer (no mocks).
+  const [mockOverride, setMockOverride] = useState(false);
+  useEffect(() => {
+    try {
+      setMockOverride(new URLSearchParams(window.location.search).get("mock") === "1");
+    } catch { /* no window / malformed query — stay safe */ }
+  }, []);
+
   // Show the welcome splash once per browser. Runs on mount only, so it is
   // SSR-safe (localStorage is never touched during render).
   useEffect(() => {
@@ -2707,24 +2778,46 @@ function DailyChallengeInner() {
   // The first (anonymous) fetch still paints the lobby before hydration.
   useEffect(() => {
     let cancelled = false;
+    setTodayStatus(null);
     const todayUrl = sessionToken
       ? `/api/challenge/today?token=${encodeURIComponent(sessionToken)}`
       : "/api/challenge/today";
     fetch(todayUrl)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(data => {
-        if (cancelled || !data) return;
-        if (data.puzzles && typeof data.puzzles === "object") setLivePuzzles(data.puzzles);
+        if (cancelled) return;
+        if (!data) { setTodayStatus(false); return; }
+        // ASSIGNED, not merged: signing in/out re-fetches against a different
+        // season, so a stale puzzle set or slate surviving the swap would make
+        // the model describe the previous caller's lobby.
+        setLivePuzzles(data.puzzles && typeof data.puzzles === "object" ? data.puzzles : {});
         if (data.tip) setTipOfTheDay(data.tip);
         if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
         // Season slate (D4 retired): the list of games THIS season serves.
         // null/absent → show every game, which is the pre-enforcement behaviour
         // and what an older payload produces.
-        if (Array.isArray(data.slate)) setSlate(data.slate);
+        setSlate(Array.isArray(data.slate) ? data.slate : null);
+        setTodaySeason(data.season ?? null);
+        setNextSeason(data.nextSeason ?? null);
+        setTodayStatus(true);
       })
-      .catch(() => { /* keep mock fallback */ });
+      .catch(() => { if (!cancelled) setTodayStatus(false); });
     return () => { cancelled = true; };
-  }, [sessionToken]);
+  }, [sessionToken, todayReload]);
+
+  // THE lobby decision, computed once per render and branched on by `mode`.
+  // Every rule lives in lib/lobby-model.ts and is pinned by
+  // `npm run test:lobby-model` — including "production never serves a mock".
+  const isProdLobby = process.env.NODE_ENV === "production" && !mockOverride;
+  const lobby = useMemo(() => lobbyModel({
+    apiOk: todayStatus,
+    data: { puzzles: livePuzzles, slate, season: todaySeason, nextSeason },
+    isProd: isProdLobby,
+    order: registry.keys,
+    mockPuzzles: MOCK_PUZZLES,
+  }), [todayStatus, livePuzzles, slate, todaySeason, nextSeason, isProdLobby, registry.keys]);
+  // What the header menus and the in-game switcher may navigate to.
+  const lobbyServedKeys = useMemo(() => servedKeys(lobby), [lobby]);
 
   // Hydrate the subscriber's real state (play streak, today's
   // completions) from Supabase when a verified session exists in storage.
@@ -3081,8 +3174,7 @@ function DailyChallengeInner() {
   // switcher: picking another game mid-puzzle asks first instead of losing progress.
   const headerMenus = buildHeaderMenus({
     email,
-    slate,
-    gameKeys: registry.keys,
+    servedKeys: lobbyServedKeys,
     activeGame: screen === "game" ? activeGame : null,
     onGame: (type) => {
       const inLiveGame = screen === "game" && activeGame && !dailyResults[activeGame] && !todayCompletions[activeGame];
@@ -3215,29 +3307,55 @@ function DailyChallengeInner() {
                 the AI data center economy. Pick any 2-minute challenge, or complete the daily suite in
                 10&ndash;15 minutes.
               </p>
-              <button
-                onClick={() => { const h = heroGame(registry.games); if (h) startGame(keyOf(h)); }}
-                style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
-                  background:C.forest, border:"none", borderRadius:"9px",
-                  padding:"13px 28px", marginTop:"22px", cursor:"pointer",
-                  letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
-                Start now &rarr;
-              </button>
+              {/* No tiles, no Start now: the button is only honest when there
+                  is something to start (CC-DC-LOBBY-EMPTY-STATE-1.0 D9). It
+                  also routes to a SERVED game — the hero when it is playable
+                  today, otherwise the first game that is. */}
+              {lobby.mode === "live" && (
+                <button
+                  onClick={() => {
+                    const h = heroGame(registry.games);
+                    const heroKey = h ? keyOf(h) : null;
+                    const key = heroKey && lobbyServedKeys.includes(heroKey) ? heroKey : lobbyServedKeys[0];
+                    if (key) startGame(key);
+                  }}
+                  style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
+                    background:C.forest, border:"none", borderRadius:"9px",
+                    padding:"13px 28px", marginTop:"22px", cursor:"pointer",
+                    letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
+                  Start now &rarr;
+                </button>
+              )}
             </div>
 
-            {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
-              gap:"14px", padding:"28px 0 8px" }}>
-              {registry.games.map(tileConfig).filter(c => seasonGames(slate, registry.keys).has(c.type)).map(config => {
-                const attempt = todayCompletions[config.type] || dailyResults[config.type];
-                return (
-                  <GameTile key={config.type} config={config}
-                    played={!!attempt}
-                    priorScore={attempt?.score || 0}
-                    onPlay={() => startGame(config.type)} />
-                );
-              })}
-            </div>
+            {/* Loading / failed / no season / no puzzles — one centered card. */}
+            {lobby.mode !== "live" && (
+              <LobbyNotice model={lobby} onRetry={() => setTodayReload(n => n + 1)} />
+            )}
+
+            {/* Game tiles — neon pictograms on forest tiles, white card on cream.
+                The SET comes from the lobby model (slate ∩ what is actually
+                served today), never from the registry directly: a game this
+                season serves but today does not is a DISABLED tile, and a game
+                with no season is no tile at all. */}
+            {lobby.mode === "live" && (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
+                gap:"14px", padding:"28px 0 8px" }}>
+                {lobby.games.map(g => {
+                  const row = registry.byKey[g.key];
+                  if (!row) return null;
+                  const attempt = todayCompletions[g.key] || dailyResults[g.key];
+                  return (
+                    <GameTile key={g.key} config={tileConfig(row)}
+                      played={!!attempt}
+                      priorScore={attempt?.score || 0}
+                      available={g.available}
+                      mock={g.mock}
+                      onPlay={() => startGame(g.key)} />
+                  );
+                })}
+              </div>
+            )}
 
             {/* Subscriber stat line — real Supabase results only (no mock
                 engagement stats): play streak and today's completion count
@@ -3246,7 +3364,7 @@ function DailyChallengeInner() {
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
                 {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day Readiness · Score: {lastDailyTotal}
-                · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
+                · {Object.keys(todayCompletions).length}/{lobby.servedCount} puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
             )}
@@ -3289,8 +3407,14 @@ function DailyChallengeInner() {
         {/* GAME */}
         {screen === "game" && activeGame && (() => {
           const GameComponent = GAME_COMPONENTS[activeGame];
-          // Prefer the live puzzle from Airtable; fall back to mock per-game.
-          const puzzle = livePuzzles[activeGame] || MOCK_PUZZLES[activeGame];
+          // THE puzzle comes from the lobby model, which is the only thing
+          // allowed to decide whether a fixture may stand in for it — and in
+          // production it never may (CC-DC-LOBBY-EMPTY-STATE-1.0 B4). The
+          // `livePuzzles` fallback covers a model momentarily rebuilt mid-game
+          // (signing in re-fetches against a different season); it is SERVER
+          // content, so it cannot reintroduce a mock.
+          const servedEntry = lobby.games.find(g => g.key === activeGame);
+          const puzzle = (servedEntry ? servedEntry.puzzle : null) || livePuzzles[activeGame] || null;
           const activeRow = registry.byKey[activeGame];
           const config = activeRow ? tileConfig(activeRow) : null;
           if (!GameComponent || !puzzle) return <div style={{ color:C.red }}>Puzzle not found</div>;
@@ -3337,7 +3461,7 @@ function DailyChallengeInner() {
                 </div>
 
                 {/* Game switcher — only show in live game, not replay */}
-                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} slate={slate} />}
+                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} servedKeys={lobbyServedKeys} />}
               </div>
 
               {/* In-progress switch confirm */}

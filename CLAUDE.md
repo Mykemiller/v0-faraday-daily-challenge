@@ -1,5 +1,25 @@
 @AGENTS.md
 
+## An empty lobby says it is empty (CC-DC-LOBBY-EMPTY-STATE-1.0, claude/lobby-empty-state, 2026-10-05)
+
+**In production the Daily Challenge lobby NEVER substitutes `MOCK_PUZZLES` for a
+missing puzzle — not on a failed fetch, not on a missing season, not for one
+absent game.** Football Season sat at `upcoming` with 595 `Published` and 0
+`Live` rows, so `/api/challenge/today` returned
+`{"puzzles":{},…,"season":null}` while the lobby rendered a full, playable
+seven-game suite of FIXTURES on top of it — a day-long outage that was invisible
+precisely because the fake lobby looked healthy (FDY-43/46 B4). The whole
+decision is now one pure function, `lobbyModel()` in **`src/lib/lobby-model.ts`**
+(`loading | error | no_season | no_puzzles | live`), pinned by
+`npm run test:lobby-model`; `DailyChallenge.jsx` computes it once and branches on
+`mode`, header menus and the in-game switcher take its `servedKeys` so neither
+can route into a game with no puzzle, and the "n/N puzzles today" denominator is
+its `servedCount`, never a hardcoded 7. Outside production the fixture fallback
+survives for developer convenience, labelled `MOCK` on every tile;
+`/api/challenge/today` also ships `nextSeason: {name, starts_on} | null`
+(`src/lib/seasons/next-season.ts` — earliest platform-scoped `upcoming` season
+after `todayCT()`) so the empty card can say when the next one starts.
+
 ## A season that starts today serves today (CC-DC-SEASON-GOLIVE-1.0, claude/season-golive, 2026-10-05)
 
 **One module owns "make today correct": `src/lib/seasons/golive.ts`.** Before it,
