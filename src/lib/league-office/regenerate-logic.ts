@@ -154,6 +154,21 @@ export type RegenerationPlanInput = {
   themeRows?: { theme_date: string }[];
   /** Every run row for the season; in-flight is derived here, once. */
   runs?: RegenRun[];
+  /**
+   * F4 — did the run read actually SUCCEED?
+   *
+   * `service.q()` returns `[]` on any failure, so a transient PostgREST error
+   * on the runs query is indistinguishable from "no runs" at the call site.
+   * Every other read in this feature degrades SAFELY when it fails — fewer
+   * rows means fewer deletions, and the archive-count check aborts. This one
+   * degrades OPEN: an empty `runs` array silently disables the in-flight guard
+   * and permits a delete concurrent with a running worker.
+   *
+   * So the caller must state whether the read worked, and `undefined` is
+   * treated as "did not read" — a caller that forgets this flag gets the
+   * blocking answer, not the permissive one.
+   */
+  runsRead?: boolean;
 };
 
 export function regenerationPlan(input: RegenerationPlanInput): RegenerationPlan {
@@ -196,6 +211,17 @@ export function regenerationPlan(input: RegenerationPlanInput): RegenerationPlan
   if (season?.locked_at) block("season_locked", "The season is locked — unlock it before regenerating.");
 
   // 7 — one run at a time, the same rule generate_full obeys.
+  //
+  // F4: the ABSENCE of runs only means "nothing in flight" if the read that
+  // produced it succeeded. `runsRead === true` is the only value that lets this
+  // gate pass on an empty list; anything else (false, undefined, a caller that
+  // never heard of the flag) blocks. A failed read must never be mistaken for a
+  // quiet season.
+  if (input?.runsRead !== true && !runs.length)
+    block(
+      "runs_unreadable",
+      "Could not read this season's generation runs, so it is not possible to tell whether one is in flight. Nothing was changed — try again."
+    );
   const inflight = runs.filter((r) => r && !r.completed_at && !r.superseded_at);
   if (inflight.length) block("run_in_flight", "A generation run is already in flight for this season — wait for it to finish.");
 
@@ -219,8 +245,20 @@ export function regenerationPlan(input: RegenerationPlanInput): RegenerationPlan
 
   // 9 — a cutoff that removes nothing is a no-op worth saying out loud rather
   // than a successful delete of zero rows.
+  //
+  // F3: but there are TWO ways to remove nothing, and they need different
+  // advice. If the puzzles are gone and the theme days are still there, a
+  // previous regenerate_from deleted the children and failed on the parents —
+  // re-running this action cannot fix that (the range is already empty), and
+  // the recovery is an ordinary full run, which refills empty slots and writes
+  // a theme row for every date that lacks one.
   if (!blocks.length && removableRows.length === 0)
-    block("nothing_to_regenerate", `No Published or Unpublished puzzles exist on or after ${cutoff} for this season.`);
+    block(
+      themes.length > 0 ? "range_already_emptied" : "nothing_to_regenerate",
+      themes.length > 0
+        ? `No Published or Unpublished puzzles exist on or after ${cutoff}, but ${themes.length} theme day${themes.length === 1 ? "" : "s"} in that range do. The range has already been emptied — press "Generate puzzles" to refill it; the worker fills only empty slots and writes a theme row for any date that has none.`
+        : `No Published or Unpublished puzzles exist on or after ${cutoff} for this season.`
+    );
 
   const perTypeMap = new Map<string, number>();
   for (const r of removableRows) perTypeMap.set(r.puzzle_type, (perTypeMap.get(r.puzzle_type) ?? 0) + 1);
@@ -468,4 +506,40 @@ export function restorePlan(input: {
     slots: rows.map((r) => ({ puzzle_type: r.puzzle_type, go_live_date: r.go_live_date })),
     skipped,
   };
+}
+
+// ── the archive check ────────────────────────────────────────────────────────
+
+/**
+ * F1 — the archive check, by IDENTITY rather than cardinality.
+ *
+ * Two lists of the same length are not the same list. The ids are in hand on
+ * both sides, so compare the sets: every id that is about to be deleted must be
+ * present in the archive, and the archive must hold no more than those. A
+ * length-only check passes on a duplicated-plus-omitted page; this does not.
+ *
+ * The concrete failure this exists for: `archivedIds` reads the archive back
+ * through an OFFSET-paged query. Over an UNORDERED result that is formally
+ * undefined in Postgres — past one page, under concurrent writes, a row can be
+ * returned twice while another is omitted. The lengths still match, the caller
+ * proceeds, and the next statement is an irreversible delete of rows that are
+ * not in the archive. `order=id.asc` makes the pages disjoint and this makes
+ * the check notice if they ever are not.
+ *
+ * Returns the ids that are MISSING from the archive — ids only. Puzzle content
+ * never leaves the server and must never reach an error message.
+ */
+export function missingFromArchive(selectedIds: string[], archived: string[]): {
+  ok: boolean;
+  missing: string[];
+  extra: number;
+} {
+  const have = new Set(archived);
+  const missing = selectedIds.filter((id) => !have.has(id));
+  // `extra` catches the other half of a bad page: the archive holding rows this
+  // operation did not select. Non-zero means the batch key is not unique and
+  // the whole premise of the verification is wrong, so it aborts too.
+  const want = new Set(selectedIds);
+  const extra = archived.filter((id) => !want.has(id)).length;
+  return { ok: missing.length === 0 && extra === 0 && have.size === want.size, missing, extra };
 }

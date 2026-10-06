@@ -33,16 +33,26 @@ BY DEFAULT — only a literal `dryRun: false` executes, in the dispatcher
 2. *Nothing Live or Retired is ever touched.* A single `Live`/`Retired` row
    anywhere in `[cutoff, ends_on]` BLOCKS the whole operation — it is not
    skipped, because its presence means the range is not what the commissioner
-   thinks it is. And the DELETE is issued by PRIMARY KEY against exactly the ids
-   that are already in the archive, so a row that turns Live mid-operation is
-   not in the list at all.
-3. *Archive before delete, verified by count.* Select full rows → insert into
-   the archive → **read the archive back** filtered on the operation's single
-   `superseded_at` batch key → abort if `archived ≠ selected`. A 200 on the
-   insert is not evidence. Themes are archived before any delete runs, so an
-   abort anywhere leaves a complete archive and an untouched bank. Delete order
-   is puzzles then themes (`dc_staging_theme_fk` points
-   `(season_id, theme_date)` at `dc_daily_theme`); restore order is the reverse.
+   thinks it is. The DELETE is issued by PRIMARY KEY against exactly the ids the
+   verification proved are in the archive, so the archive and the delete are
+   provably the same set. **The protection against a row turning Live
+   mid-operation is NOT delete-by-id** (the id list is snapshotted before the
+   archive): it is the clock. `fn_dc_rotate_live_set` promotes only rows whose
+   `go_live_date = p_today`, and property 1 forces every row in range to be
+   dated today+2 or later. That guarantee is entirely a function of
+   `MIN_CUTOFF_LEAD_DAYS >= 2` — shortening it breaks this, not a UX nicety.
+3. *Archive before delete, verified by IDENTITY.* Select full rows → insert
+   into the archive → **read the archive back** (`order=id.asc`, filtered on
+   the operation's single `superseded_at` batch key) → `missingFromArchive()`
+   compares the two id SETS and aborts unless they are equal. A 200 on the
+   insert is not evidence, and neither is a matching count: `qAll` pages with
+   limit/offset, and OFFSET paging over an unordered result is undefined in
+   Postgres — a page can repeat one row and drop another, leaving the lengths
+   equal and the archive incomplete, after which the delete is irreversible.
+   Themes are archived before any delete runs, so an abort anywhere leaves a
+   complete archive and an untouched bank. Delete order is puzzles then themes
+   (`dc_staging_theme_fk` points `(season_id, theme_date)` at `dc_daily_theme`);
+   restore order is the reverse.
 4. *Restore never overwrites.* `restorePlan` returns only slots that are EMPTY
    and dated ≥ `todayCT()` (a `fromDate` in the past is clamped to today), and
    the insert carries `Prefer: resolution=ignore-duplicates` — ON CONFLICT DO
@@ -54,6 +64,16 @@ from. Measured 2026-10-06 for Football: 114 season-scoped theme rows in
 `[2026-10-10, 2027-01-31]` and 114 platform rows on the same dates. Every query
 in this feature is `season_id=eq.<season>`; deleting the NULL rows would break
 generation for the whole league.
+
+**Two blocks that exist because a read can lie.** `runs_unreadable` — `q()`
+returns `[]` on any failure, so an empty runs list is ambiguous and the
+in-flight guard would degrade OPEN; `readRuns()` reports whether it read, and
+only `runsRead === true` lets an empty list pass (a caller that omits the flag
+gets the blocking answer). `range_already_emptied` — puzzles gone but theme
+days still present is what a partial delete leaves behind; re-running
+`regenerate_from` would be refused (the range holds nothing removable), so the
+block names the recovery that works: press "Generate puzzles", and the worker
+fills only empty slots and writes a theme row for any date lacking one.
 
 **Why no `generated_at` bypass was needed.** `generationFindings` has no
 `generated_at` gate — the full-run conditions are lock, in-flight run and

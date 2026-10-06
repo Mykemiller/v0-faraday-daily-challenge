@@ -15,6 +15,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  // F1 — the archive check is identity, not cardinality. It is a pure function
+  // and it lives with the other pure rules, so it is tested like one.
+  missingFromArchive,
   MIN_CUTOFF_LEAD_DAYS,
   REMOVABLE_STATES,
   UNTOUCHABLE_STATES,
@@ -60,6 +63,9 @@ const plan = (over: Partial<Parameters<typeof regenerationPlan>[0]> = {}) =>
     rows: published("2026-10-10", 5),
     themeRows: [{ theme_date: "2026-10-10" }, { theme_date: "2026-10-11" }],
     runs: [{ id: "r1", status: "complete", completed_at: "2026-10-05T00:00:00Z", superseded_at: null }],
+    // F4 — the fixture states that the runs read SUCCEEDED. Every happy-path
+    // assertion below therefore proves the gate passes for the right reason.
+    runsRead: true,
     ...over,
   });
 
@@ -174,9 +180,62 @@ test("the cutoff has to be inside the season window", () => {
 });
 
 test("a cutoff that would remove nothing is refused rather than silently succeeding", () => {
-  const p = plan({ rows: [] });
+  const p = plan({ rows: [], themeRows: [] });
   assert.equal(p.ok, false);
-  assert.ok(codes(p).includes("nothing_to_regenerate"));
+  assert.deepEqual(codes(p), ["nothing_to_regenerate"]);
+});
+
+// ── F3: an already-emptied range is a DIFFERENT fault with a different cure ──
+
+test("puzzles gone but theme days left reads as range_already_emptied, not nothing_to_regenerate", () => {
+  // The state a partial delete leaves behind: the children were removed, the
+  // parents were not. Re-running this action cannot fix it — the range holds
+  // nothing removable — so the block has to name the step that does.
+  const p = plan({ rows: [], themeRows: [{ theme_date: "2026-10-10" }, { theme_date: "2026-10-11" }] });
+  assert.equal(p.ok, false);
+  assert.deepEqual(codes(p), ["range_already_emptied"]);
+  const m = p.blocks[0].message;
+  assert.match(m, /already been emptied/i);
+  assert.match(m, /Generate puzzles/, "the message must name the recovery that actually works");
+  assert.doesNotMatch(m, /[Rr]e-run/, "re-running regenerate_from is exactly what will NOT work");
+});
+
+test("an already-emptied range is never reported when something IS removable", () => {
+  const p = plan({ rows: published("2026-10-10", 2), themeRows: [{ theme_date: "2026-10-10" }] });
+  assert.equal(p.ok, true, JSON.stringify(p.blocks));
+  assert.ok(!codes(p).includes("range_already_emptied"));
+});
+
+// ── F4: a failed runs read must not read as "nothing in flight" ──────────────
+
+test("an unreadable runs query BLOCKS — a failed read is not a quiet season", () => {
+  // q() returns [] on any failure, so [] alone is ambiguous. Only
+  // runsRead === true resolves it in the permissive direction.
+  const failed = plan({ runs: [], runsRead: false });
+  assert.equal(failed.ok, false);
+  assert.ok(codes(failed).includes("runs_unreadable"));
+  assert.match(failed.blocks.find((b) => b.code === "runs_unreadable")!.message, /Nothing was changed/);
+});
+
+test("a caller that omits runsRead gets the blocking answer, not the permissive one", () => {
+  const omitted = regenerationPlan({
+    today: TODAY, now: "2026-10-06T21:00:00Z", cutoff: "2026-10-10", reason: "x",
+    season: SEASON, rows: published("2026-10-10", 3), themeRows: [], runs: [],
+  });
+  assert.equal(omitted.ok, false);
+  assert.ok(codes(omitted).includes("runs_unreadable"));
+});
+
+test("a successful read that genuinely found no runs passes", () => {
+  const empty = plan({ runs: [], runsRead: true });
+  assert.equal(empty.ok, true, JSON.stringify(empty.blocks));
+});
+
+test("runs_unreadable never fires when rows came back, whatever the flag says", () => {
+  // A non-empty list is self-evidently a successful read.
+  const p = plan({ runs: [{ id: "r", status: "complete", completed_at: "2026-10-05T00:00:00Z", superseded_at: null }], runsRead: false });
+  assert.ok(!codes(p).includes("runs_unreadable"));
+  assert.equal(p.ok, true, JSON.stringify(p.blocks));
 });
 
 test("a missing season is a block, not a throw", () => {
@@ -457,4 +516,72 @@ test("restore inserts with ignore-duplicates — PostgREST can never upsert over
   assert.match(restore, /resolution=ignore-duplicates/);
   assert.doesNotMatch(restore, /resolution=merge-duplicates/, "merge-duplicates is an overwrite");
   assert.doesNotMatch(restore, /method: "(PATCH|PUT)"/, "restore never updates an existing row");
+});
+
+// ── F1: the archive check compares SETS, not lengths ─────────────────────────
+
+test("missingFromArchive passes only when the archive holds exactly the selected ids", () => {
+  assert.deepEqual(missingFromArchive(["a", "b", "c"], ["c", "a", "b"]), { ok: true, missing: [], extra: 0 });
+  assert.deepEqual(missingFromArchive([], []), { ok: true, missing: [], extra: 0 });
+});
+
+test("missingFromArchive catches the duplicated-page failure a length check lets through", () => {
+  // THE bug F1 exists for: an unordered OFFSET-paged read returns "a" twice and
+  // drops "c". Same length, different set — and the next statement is an
+  // irreversible delete.
+  const r = missingFromArchive(["a", "b", "c"], ["a", "b", "a"]);
+  assert.equal(r.ok, false, "three ids and three rows is NOT proof the archive is complete");
+  assert.deepEqual(r.missing, ["c"]);
+});
+
+test("missingFromArchive names what is missing, and nothing else", () => {
+  const r = missingFromArchive(["a", "b", "c", "d"], ["a"]);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.missing, ["b", "c", "d"]);
+  assert.equal(r.extra, 0);
+});
+
+test("missingFromArchive refuses an archive holding rows this operation never selected", () => {
+  // Non-zero `extra` means the superseded_at batch key is not unique to this
+  // operation, which invalidates the whole verification — so it aborts too.
+  const r = missingFromArchive(["a"], ["a", "stranger"]);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.missing, []);
+  assert.equal(r.extra, 1);
+});
+
+test("the archive read-back is ORDERED — OFFSET paging over an unordered result is undefined", () => {
+  const src = readFileSync(join(HERE, "generation-write.ts"), "utf8");
+  const fn = src.slice(src.indexOf("async function archivedIds"), src.indexOf("export function missingFromArchive"));
+  assert.match(fn, /order=id\.asc/, "qAll pages with limit/offset; without a total order the pages are not disjoint");
+});
+
+test("both archive verifications go through missingFromArchive, never a length comparison", () => {
+  const src = readFileSync(join(HERE, "generation-write.ts"), "utf8");
+  const body = src.slice(
+    src.indexOf("export async function regenerateFrom"),
+    src.indexOf("export async function restoreSuperseded")
+  );
+  assert.equal((body.match(/missingFromArchive\(/g) ?? []).length, 2, "puzzles and themes both");
+  assert.doesNotMatch(body, /archivedPuzzleIds\.length !== /);
+  assert.doesNotMatch(body, /archivedThemeIds\.length !== /);
+});
+
+// ── F4 + F5: the call site honours what the planner now demands ──────────────
+
+test("the runs read reports whether it succeeded, and q() is left alone", () => {
+  const src = readFileSync(join(HERE, "generation-write.ts"), "utf8");
+  assert.match(src, /async function readRuns\([\s\S]*?ok: false, rows: \[\]/);
+  assert.match(src, /runsRead: runs\.ok/, "the planner must be told whether the read worked");
+  // The fail-soft q() is right for every other reader in the console; this fix
+  // is scoped to the one gate that degrades open.
+  const svc = readFileSync(join(HERE, "service.ts"), "utf8");
+  assert.match(svc, /if \(!r\.ok\) return \[\];/, "service.q() must keep its fail-soft contract");
+});
+
+test("every season_id that reaches a PostgREST filter is encoded", () => {
+  const src = readFileSync(join(HERE, "generation-write.ts"), "utf8");
+  const feature = src.slice(src.indexOf("CC-LO-REGENERATE-FROM-DATE-1.0 — replace an approved season"));
+  assert.doesNotMatch(feature, /season_id=eq\.\$\{seasonId\}/, "use the encoded `sid`/`esid`, not the raw id");
+  assert.doesNotMatch(src, /seasons\?id=eq\.\$\{seasonId\}/);
 });

@@ -21,6 +21,7 @@ import { failingKeys } from "./generation-conformance";
 // one; this file supplies only the archive → verify → delete mechanics.
 import {
   REMOVABLE_STATES,
+  missingFromArchive,
   projectedAllocation,
   regenerationPlan,
   restorePlan,
@@ -304,13 +305,51 @@ async function deleteByIds(s: Svc, table: string, ids: string[]): Promise<boolea
 }
 
 /** The rows the archive actually holds for one operation — read BACK from the
- *  archive table, never inferred from "the insert returned 200". */
+ *  archive table, never inferred from "the insert returned 200".
+ *
+ *  F1: `order=id.asc` is load-bearing, not tidiness. `qAll` pages with
+ *  limit/offset, and OFFSET paging over an UNORDERED result is formally
+ *  undefined in Postgres — past one page, with concurrent writes, a row can
+ *  come back twice while another is omitted. That would leave the cardinality
+ *  check below passing over an INCOMPLETE archive, after which the delete is
+ *  irreversible. A total order on the paging key makes the pages disjoint. */
 async function archivedIds(s: Svc, table: string, supersededAt: string): Promise<string[]> {
   const rows = await qAll<{ id: string }>(
     s,
-    `${table}?superseded_at=eq.${encodeURIComponent(supersededAt)}&select=id`
+    `${table}?superseded_at=eq.${encodeURIComponent(supersededAt)}&select=id&order=id.asc`
   );
   return rows.map((r) => r.id);
+}
+
+/** At most 5 ids, so a failure message names the problem without becoming one. */
+const sampleIds = (ids: string[]) =>
+  ids.slice(0, 5).join(", ") + (ids.length > 5 ? `, +${ids.length - 5} more` : "");
+
+/**
+ * F4 — the runs read, with the failure distinguished from the empty result.
+ *
+ * `service.q()` is deliberately fail-soft: a bad read degrades the console to
+ * an empty state rather than throwing a whole screen away. That is right for
+ * every READER, and wrong for exactly one gate — "is a generation run in
+ * flight?" — where an empty answer is the PERMISSIVE one. So this call site
+ * does its own fetch and reports `ok: false` on any non-2xx, network error or
+ * non-array body. `q()` itself is untouched; nothing else in the console
+ * changes behaviour.
+ */
+async function readRuns(s: Svc, sid: string): Promise<{ ok: boolean; rows: RegenRun[] }> {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/dc_puzzle_generation_runs?season_id=eq.${sid}` +
+        `&select=id,status,completed_at,superseded_at&order=started_at.desc&limit=20`,
+      { headers: s.headers, cache: "no-store" }
+    );
+    if (!r.ok) return { ok: false, rows: [] };
+    const body = await r.json().catch(() => null);
+    if (!Array.isArray(body)) return { ok: false, rows: [] };
+    return { ok: true, rows: body as RegenRun[] };
+  } catch {
+    return { ok: false, rows: [] };
+  }
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -320,7 +359,7 @@ type SeasonRow = RegenSeason & { name: string | null; slug: string | null };
 async function loadSeason(s: Svc, seasonId: string): Promise<SeasonRow | null> {
   const rows = await q<SeasonRow>(
     s,
-    `seasons?id=eq.${seasonId}&select=id,name,slug,starts_on,ends_on,locked_at&limit=1`
+    `seasons?id=eq.${encodeURIComponent(seasonId)}&select=id,name,slug,starts_on,ends_on,locked_at&limit=1`
   );
   return rows[0] ?? null;
 }
@@ -404,12 +443,16 @@ export async function regenerateFrom(
   // that interpolates it runs.
   const cutoff = typeof input.cutoffDate === "string" ? input.cutoffDate.slice(0, 10) : "";
   const safeCutoff = /^\d{4}-\d{2}-\d{2}$/.test(cutoff) ? cutoff : null;
+  // F5 — the season id comes from a JSON body. It is a uuid in every real call
+  // and the reviewer could not construct a widening filter from it, but an
+  // identifier that reaches a PostgREST query string gets encoded, full stop.
+  const sid = encodeURIComponent(seasonId);
 
   const [rows, themeRows, runs] = safeCutoff
     ? await Promise.all([
         qAll<RegenBankRow>(
           s,
-          `dc_puzzle_bank_staging?season_id=eq.${seasonId}&go_live_date=gte.${safeCutoff}` +
+          `dc_puzzle_bank_staging?season_id=eq.${sid}&go_live_date=gte.${safeCutoff}` +
             `&select=puzzle_type,go_live_date,published&order=go_live_date.asc`
         ),
         // season_id=eq.<this season> and nothing else. dc_daily_theme ALSO holds
@@ -418,18 +461,21 @@ export async function regenerateFrom(
         // the whole league.
         qAll<{ theme_date: string }>(
           s,
-          `dc_daily_theme?season_id=eq.${seasonId}&theme_date=gte.${safeCutoff}&select=theme_date&order=theme_date.asc`
+          `dc_daily_theme?season_id=eq.${sid}&theme_date=gte.${safeCutoff}&select=theme_date&order=theme_date.asc`
         ),
-        q<RegenRun>(
-          s,
-          `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,status,completed_at,superseded_at&order=started_at.desc&limit=20`
-        ),
+        // F4 — `q()` returns [] on a transient failure, and an empty runs list
+        // is exactly what "nothing is in flight" looks like. Every other read
+        // here degrades safely (fewer rows → abort); this one would degrade
+        // OPEN, so it goes through a reader that reports WHETHER it read.
+        readRuns(s, sid),
       ])
-    : [[], [], []];
+    : [[], [], { ok: false, rows: [] as RegenRun[] }];
 
   const plan = regenerationPlan({
     today, now: Date.now(), cutoff: safeCutoff, reason: input.reason,
-    season, rows, themeRows, runs,
+    season, rows, themeRows,
+    runs: runs.rows,
+    runsRead: runs.ok,
   });
 
   if (!plan.ok || !plan.cutoffDate || !season)
@@ -482,7 +528,7 @@ export async function regenerateFrom(
   //     server: it goes straight into the archive insert.
   const doomed = await qAll<Record<string, unknown>>(
     s,
-    `dc_puzzle_bank_staging?season_id=eq.${seasonId}&go_live_date=gte.${cutoffDate}&${removableFilter}&select=*&order=go_live_date.asc`
+    `dc_puzzle_bank_staging?season_id=eq.${sid}&go_live_date=gte.${cutoffDate}&${removableFilter}&select=*&order=go_live_date.asc`
   );
   if (doomed.length !== plan.removable)
     return {
@@ -500,13 +546,22 @@ export async function regenerateFrom(
   if (!archivedOk)
     return { ok: false, message: "The archive write failed — NOTHING was deleted. Check that the dc_puzzle_bank_superseded migration has been applied." };
 
-  // (3) VERIFY the archive by reading it back. A 200 on the insert is not
-  //     evidence that the rows are there; the row count is.
+  // (3) VERIFY the archive by reading it back, BY IDENTITY. A 200 on the insert
+  //     is not evidence that the rows are there — and neither is a matching
+  //     count (F1): the read is paged, and two lists of the same length are not
+  //     the same list. Every id about to be deleted must be in the archive, and
+  //     the archive must hold nothing else under this batch key.
+  const doomedIds = doomed.map((r) => String(r.id));
   const archivedPuzzleIds = await archivedIds(s, "dc_puzzle_bank_superseded", supersededAt);
-  if (archivedPuzzleIds.length !== doomed.length)
+  const puzzleCheck = missingFromArchive(doomedIds, archivedPuzzleIds);
+  if (!puzzleCheck.ok)
     return {
       ok: false,
-      message: `Archive verification FAILED (${doomed.length} selected, ${archivedPuzzleIds.length} archived). Nothing was deleted. The partial archive is tagged superseded_at=${supersededAt}.`,
+      message:
+        `Archive verification FAILED (${doomed.length} selected, ${archivedPuzzleIds.length} archived, ` +
+        `${puzzleCheck.missing.length} missing${puzzleCheck.extra ? `, ${puzzleCheck.extra} unexpected` : ""}). ` +
+        `NOTHING was deleted. The partial archive is tagged superseded_at=${supersededAt}` +
+        (puzzleCheck.missing.length ? `; missing ids: ${sampleIds(puzzleCheck.missing)}` : "") + ".",
     };
 
   // (4) the same for the theme days. Archived before the puzzles are deleted so
@@ -514,8 +569,9 @@ export async function regenerateFrom(
   //     archive and an untouched bank.
   const doomedThemes = await qAll<Record<string, unknown>>(
     s,
-    `dc_daily_theme?season_id=eq.${seasonId}&theme_date=gte.${cutoffDate}&select=*&order=theme_date.asc`
+    `dc_daily_theme?season_id=eq.${sid}&theme_date=gte.${cutoffDate}&select=*&order=theme_date.asc`
   );
+  const doomedThemeIds = doomedThemes.map((r) => String(r.id));
   let archivedThemeIds: string[] = [];
   if (doomedThemes.length) {
     const themesOk = await insertChunked(
@@ -524,22 +580,42 @@ export async function regenerateFrom(
     if (!themesOk)
       return { ok: false, message: "The theme archive write failed — NOTHING was deleted." };
     archivedThemeIds = await archivedIds(s, "dc_daily_theme_superseded", supersededAt);
-    if (archivedThemeIds.length !== doomedThemes.length)
+    const themeCheck = missingFromArchive(doomedThemeIds, archivedThemeIds);
+    if (!themeCheck.ok)
       return {
         ok: false,
-        message: `Theme archive verification FAILED (${doomedThemes.length} selected, ${archivedThemeIds.length} archived). Nothing was deleted. superseded_at=${supersededAt}.`,
+        message:
+          `Theme archive verification FAILED (${doomedThemes.length} selected, ${archivedThemeIds.length} archived, ` +
+          `${themeCheck.missing.length} missing${themeCheck.extra ? `, ${themeCheck.extra} unexpected` : ""}). ` +
+          `NOTHING was deleted. superseded_at=${supersededAt}` +
+          (themeCheck.missing.length ? `; missing ids: ${sampleIds(themeCheck.missing)}` : "") + ".",
       };
   }
 
-  // (5) delete — BY PRIMARY KEY, using exactly the ids that are now in the
-  //     archive. Not by the original filter: a row that turned Live in the last
-  //     few seconds is not in this list, so it cannot be caught by a re-run of
-  //     a predicate. Puzzles first, then themes — dc_staging_theme_fk points
+  // (5) delete — BY PRIMARY KEY, using exactly the ids that step (3) proved are
+  //     in the archive. The point of deleting by id rather than by re-running
+  //     the predicate is that the archive and the delete are provably the SAME
+  //     SET: a predicate evaluated twice can match rows the archive never saw.
+  //
+  //     F2 — what delete-by-id does NOT do is protect against a row turning
+  //     Live mid-operation. `doomedIds` is snapshotted at step (1), before the
+  //     archive, so a row that flips afterwards is still in the list and would
+  //     still be deleted. The real guarantee is upstream and comes from the
+  //     clock: `fn_dc_rotate_live_set` only ever promotes rows whose
+  //     `go_live_date = p_today`, and MIN_CUTOFF_LEAD_DAYS forces every row in
+  //     this range to be dated today + 2 or later. Nothing in the range can
+  //     become Live while this function runs.
+  //
+  //     ⚠️ That property is ENTIRELY a function of MIN_CUTOFF_LEAD_DAYS >= 2.
+  //     Shorten the lead to 1 and the rotation can reach the top of the range
+  //     during the operation; shorten it to 0 and it certainly will. Whoever
+  //     changes that constant is changing this guarantee, not a UX nicety.
+  //
+  //     Puzzles first, then themes — dc_staging_theme_fk points
   //     (season_id, theme_date) at dc_daily_theme, so the child goes first.
-  const doomedIds = doomed.map((r) => String(r.id));
   const deletedPuzzles = await deleteByIds(s, "dc_puzzle_bank_staging", doomedIds);
   const deletedThemes = deletedPuzzles
-    ? await deleteByIds(s, "dc_daily_theme", doomedThemes.map((r) => String(r.id)))
+    ? await deleteByIds(s, "dc_daily_theme", doomedThemeIds)
     : false;
 
   // (6) ONE audit row (domain 'seasons', reversible = false — the reversal is
@@ -578,10 +654,25 @@ export async function regenerateFrom(
       await write(s, `dc_daily_theme_superseded?${batch}`, "PATCH", { audit_id: auditId });
   }
 
-  if (!deletedPuzzles || (doomedThemes.length && !deletedThemes))
+  // F3 — a partial delete needs an ACCURATE recovery, not a cheerful one. The
+  //     two halves fail differently and this action cannot repair either of
+  //     them by being run again, so say what actually happened and name the
+  //     step that does work.
+  if (!deletedPuzzles)
     return {
       ok: false,
-      message: `The archive is complete (superseded_at=${supersededAt}) but the delete did not finish. Re-run this action — the archive is idempotent by batch and the remaining rows will be removed.`,
+      message:
+        `The archive is complete (superseded_at=${supersededAt}) but the puzzle delete did not finish, so some rows in this range are still in the bank. ` +
+        `Nothing is lost. Re-run "Regenerate from date" with the same cutoff: the rows that survived are still Published, so the planner will see them and archive-and-delete them on the second pass.`,
+    };
+  if (doomedThemes.length && !deletedThemes)
+    return {
+      ok: false,
+      message:
+        `The ${plural(doomed.length, "puzzle")} from ${cutoffDate} were archived (superseded_at=${supersededAt}) and removed, but the theme days for that range were NOT removed — they are archived and still live. ` +
+        `Re-running "Regenerate from date" will be REFUSED, because the range now holds no Published or Unpublished puzzles to remove. ` +
+        `The recovery is to press "Generate puzzles": a normal full run fills only the slots that are empty and writes a theme row for any date that lacks one, so the leftover theme days are simply reused. ` +
+        `No replacement run was queued by this action.`,
     };
 
   // (8) queue the replacement through the EXISTING generate_full path, so the
@@ -628,6 +719,9 @@ export async function restoreSuperseded(
 ): Promise<Result> {
   if (!input.seasonId) return { ok: false, message: "Missing season." };
   const seasonId = input.seasonId;
+  // F5 — same rule as regenerateFrom: an identifier off the wire is encoded
+  // before it reaches a PostgREST filter.
+  const sid = encodeURIComponent(seasonId);
   const season = await loadSeason(s, seasonId);
   if (!season) return { ok: false, message: "Season not found." };
 
@@ -643,21 +737,21 @@ export async function restoreSuperseded(
     ? await Promise.all([
         qAll<ArchivedBankRow>(
           s,
-          `dc_puzzle_bank_superseded?season_id=eq.${seasonId}&go_live_date=gte.${floor}` +
+          `dc_puzzle_bank_superseded?season_id=eq.${sid}&go_live_date=gte.${floor}` +
             `&select=id,puzzle_type,go_live_date,theme_date,superseded_at&order=go_live_date.asc`
         ),
         qAll<ArchivedThemeRow>(
           s,
-          `dc_daily_theme_superseded?season_id=eq.${seasonId}&theme_date=gte.${floor}` +
+          `dc_daily_theme_superseded?season_id=eq.${sid}&theme_date=gte.${floor}` +
             `&select=id,theme_date,superseded_at&order=theme_date.asc`
         ),
         qAll<{ puzzle_type: string; go_live_date: string }>(
           s,
-          `dc_puzzle_bank_staging?season_id=eq.${seasonId}&go_live_date=gte.${floor}&select=puzzle_type,go_live_date`
+          `dc_puzzle_bank_staging?season_id=eq.${sid}&go_live_date=gte.${floor}&select=puzzle_type,go_live_date`
         ),
         qAll<{ theme_date: string }>(
           s,
-          `dc_daily_theme?season_id=eq.${seasonId}&theme_date=gte.${floor}&select=theme_date`
+          `dc_daily_theme?season_id=eq.${sid}&theme_date=gte.${floor}&select=theme_date`
         ),
       ])
     : [[], [], [], []];
