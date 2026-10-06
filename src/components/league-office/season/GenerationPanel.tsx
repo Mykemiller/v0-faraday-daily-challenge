@@ -64,6 +64,9 @@ type Status = {
   latestPilotRunStatus: string | null;
   draftCount: number;
   unapprovedDates: string[];
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — drafts the model reported as off their
+  // day's sector. Optional so an older cached payload still renders.
+  offDomain?: { date: string; game: string; reason: string | null }[] | null;
 };
 
 type Action = "pilot" | "full" | "approve_pilot" | "approve_puzzles" | "lock";
@@ -229,6 +232,9 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
   const pilotReady = status.pilotFindings.length === 0;
   const fullReady = status.fullFindings.length === 0;
   const pilotDone = status.latestPilotRunStatus === "pilot_complete";
+  // D4 — a REVIEW queue, not a gate: the count and the reasons are shown here
+  // and repeated in the Approve dialog, and Approve stays enabled either way.
+  const offDomain = status.offDomain ?? [];
   const est = Math.max(1, Math.ceil((status.totalTarget / 10) * 1.2)); // ~1 min per 10-puzzle batch, padded
 
   const copy: Record<Action, { title: string; description: string; confirm: string; destructive?: boolean }> = {
@@ -254,7 +260,12 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       title: "Approve puzzles",
       // CC-DC-SEASON-GOLIVE-1.0 (D5): approving no longer means "wait for the
       // nightly rotation" for today. Rows dated today go live on approval.
-      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned. Any puzzle dated today goes live immediately; later dates go live at midnight CT on their own date.`,
+      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned. Any puzzle dated today goes live immediately; later dates go live at midnight CT on their own date.` +
+        // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the count follows the commissioner
+        // into the confirm step. It informs the decision; it never blocks it.
+        (offDomain.length
+          ? ` ${offDomain.length} of them ${offDomain.length === 1 ? "is" : "are"} flagged off-domain and will publish as-is.`
+          : ""),
       confirm: "Approve & publish",
       destructive: true,
     },
@@ -277,6 +288,7 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       {status.bankAlarms.map((a) => (
         <Banner key={a.message} tone="amber">{a.message}</Banner>
       ))}
+      <OffDomainNotice flags={offDomain} />
 
       {/* checklist */}
       <div>
@@ -469,6 +481,31 @@ function FailureNote({ run }: { run: Run }) {
     <span style={{ fontSize: 11.5, color: "#9c3b2e", wordBreak: "break-word" }}>
       {parts.join(" · ")}
     </span>
+  );
+}
+
+/**
+ * CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — "N puzzles flagged off-domain", with the
+ * (date, game, reason) of each. The reason is the model's own structural note,
+ * clamped and screened server-side; no puzzle name, hint or answer is in this
+ * payload at all. Approval is NOT blocked — the commissioner is told, and then
+ * decides.
+ */
+function OffDomainNotice({ flags }: { flags: { date: string; game: string; reason: string | null }[] }) {
+  if (!flags.length) return null;
+  return (
+    <Banner tone="amber">
+      <strong>{flags.length} puzzle{flags.length === 1 ? "" : "s"} flagged off-domain</strong> — the generator
+      reported {flags.length === 1 ? "it" : "them"} as outside the day&rsquo;s sector. Approval is not blocked.
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+        {flags.map((f) => (
+          <li key={`${f.date}|${f.game}`} style={{ fontSize: 11.5 }}>
+            <span className="font-mono">{f.date}</span> · {f.game}
+            {f.reason ? ` — ${f.reason}` : ""}
+          </li>
+        ))}
+      </ul>
+    </Banner>
   );
 }
 

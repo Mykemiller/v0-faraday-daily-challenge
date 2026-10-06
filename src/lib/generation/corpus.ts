@@ -126,6 +126,10 @@ export type ThemedDay = {
   thread_codes: string[];
   thread_names: string[];
   jpas_tier_code: string;
+  /** CC-DC-GEN-DOMAIN-FIDELITY-1.0 — the day's one-line statement of what the
+   *  sector covers. dc_daily_theme carries it; the no-theme fallback does not,
+   *  which is why it is optional. */
+  theme_blurb?: string | null;
 };
 
 /** Pure: ordered candidate subjects for a themed day, most fact-anchored first

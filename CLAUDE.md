@@ -1,5 +1,69 @@
 @AGENTS.md
 
+## A puzzle's domain describes what it is about (CC-DC-GEN-DOMAIN-FIDELITY-1.0, claude/dc-domain-fidelity, 2026-10-06)
+
+**The day's theme sector is the editorial contract for what the puzzle is
+ABOUT, and a puzzle that drifts off it is flagged for the commissioner before
+approval — never silently refiled and never silently shipped.** `domain` was,
+and remains, `dc_daily_theme.sector_code`: measured 2026-10-06 against the live
+Football season (`02701ead-a03e-4489-adb9-24d3c6787eec`), 0 of 595 bank rows
+carried a `domain` differing from their day's sector, because nothing ever
+chose it per puzzle. The gap was never the column — it was that nothing checked
+whether the puzzle the model wrote actually belonged under it.
+
+**The prompt states the boundary and asks for a self-report.** Both copies of
+`prompts.js` (`src/lib/generation/` and `scripts/far287/lib/`, twins) now carry
+the sector's NAME and its one-line scope per ITEM — `dc_daily_theme` has no
+sector-definition column, so `theme_blurb`, the row's own statement of what the
+day covers, is that line — and require the puzzle's PRIMARY subject to sit
+inside it. Each array element gains two keys beside `difficulty`:
+`domain_fit` (`"on"|"adjacent"|"off"`) and `domain_fit_reason` (≤ 120 chars,
+never answer content).
+
+**The self-report is ADVISORY and can never cost a slot.** `puzzle-schema`'s
+`normalizeDomainFit()` reads a missing, misspelled, junk or nested value as
+`"unknown"`; `validateContent()` is untouched and still ignores extra keys. A
+model that forgets to self-report loses nothing — the slot is the expensive
+thing, the self-report is the cheap one.
+
+**`deriveValidation()` is the one writer of the verdict**, called by both the
+worker and the FAR-287 CLI. `on` / `adjacent` / `unknown` ⇒ `validation_status
+= 'passed'` and no note, exactly as before. `off` ⇒ `'review'` plus ONE entry,
+`{ key: "domain_fit_off", reason }`. The reason is clamped to 120 characters
+and WITHHELD outright if it repeats the answer key or any distinctive token of
+it — `validation_errors` carries structural notes and never puzzle content,
+which is the same property CC-DC-GEN-FAILURE-VISIBILITY-1.0 relies on.
+`validation_status` has no CHECK (verified 2026-10-06), so `'review'` is a
+legal new value; existing rows are NOT backfilled and serving is unchanged.
+
+**The commissioner is told, not blocked.** `getGenerationStatus()` returns
+`offDomain: {date, game, reason}[]` from `offDomainFlags()`, derived from the
+SAME draft query that already produced the approve count — projected to exactly
+four columns (`go_live_date, puzzle_type, validation_status,
+validation_errors`), so there is no puzzle content in the payload to leak. The
+panel renders an amber "N puzzles flagged off-domain" banner with the list, and
+the Approve dialog repeats the count. Approve stays enabled: a season may ship
+off-domain puzzles knowingly, it may not ship them unknowingly.
+
+**Batch sizing is unmoved.** The two keys add a fixed ≈40 output tokens per
+puzzle. Against CC-DC-GEN-BATCH-HARDENING-1.0's worst case (The Brief, ~662
+tokens/puzzle, started at 5) that is 3,310 → 3,510 of a 16,000 cap — 20.7% →
+21.9%. No `TYPE_BATCH_SIZE` entry changed.
+
+**Editorial follow-up, out of scope here:** D22 *Industry Media & Analyst
+Coverage* is the joint most-used Football sector (14 of 119 days, 11.8%, tied
+with D1 *Chips & Density*, measured 2026-10-06). Whether a sector that is
+coverage ABOUT the buildout should be a playable puzzle sector at all is a
+commissioner's call, not a generator fix.
+
+Tests: `npm run test:generation-domain` (new, 26) — prompt twin equality,
+tolerance of a missing/junk/nested self-report, the reason clamp, the
+answer-leak withholding, `deriveValidation` across on/adjacent/off/unknown, the
+panel's read side, and source guards that neither insert path hardcodes
+`validation_status: "passed"` and that the draft projection names no content
+column. `test:generation` and the rest of the generation suite are unchanged
+and still green.
+
 ## One calendar decides which games play on which dates (CC-DC-GEN-SCHEDULE-FIELDS-1.0, claude/dc-schedule-fields, 2026-10-06)
 
 **`src/lib/seasons/schedule.ts` is THE definition of "which games play on which

@@ -10,7 +10,10 @@ import { loadConfigs, pickFocusConfig } from "./seasons";
 import {
   generationFindings, generationWarnings, computeTargets, isStalled,
   bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, bankServeDays, seasonDayCount,
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the read side of the off-domain flag.
+  offDomainFlags,
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
+  type DomainFlagRow, type OffDomainFlag,
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
 import { failuresFrom, lastFailureFrom, clampMessage } from "@/lib/generation/failure-reasons";
@@ -52,6 +55,10 @@ export type GenerationStatus = {
   latestPilotRunStatus: string | null;
   draftCount: number;
   unapprovedDates: string[];
+  /** CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — unapproved drafts the model itself
+   *  reported as outside their day's sector. Date + game + a structural
+   *  reason; never a name, an answer or any other puzzle content. */
+  offDomain: OffDomainFlag[];
 };
 
 export async function getGenerationStatus(s: Svc, seasonId: string): Promise<GenerationStatus> {
@@ -59,6 +66,7 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     season: null, configId: null, dayCount: null, targets: [], totalTarget: 0,
     pilotFindings: [], fullFindings: [], warnings: [], runs: [], stalledRunId: null,
     bankAlarms: [], pilotPreview: [], latestPilotRunStatus: null, draftCount: 0, unapprovedDates: [],
+    offDomain: [],
   };
 
   const seasons = await q<GenSeason & { name: string; slug: string }>(
@@ -184,9 +192,14 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
       )
     : [];
 
-  const drafts = await q<{ go_live_date: string }>(
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the SAME draft query answers the
+  // approve count and the off-domain list, and its projection is exactly four
+  // columns: go_live_date, puzzle_type, validation_status, validation_errors.
+  // No puzzle_content, no hints, no answer_key — there is nothing here to leak.
+  const drafts = await q<DomainFlagRow>(
     s,
-    `dc_puzzle_bank_staging?season_id=eq.${seasonId}&published=eq.Unpublished&select=go_live_date`
+    `dc_puzzle_bank_staging?season_id=eq.${seasonId}&published=eq.Unpublished` +
+      `&select=go_live_date,puzzle_type,validation_status,validation_errors`
   );
   const unapprovedDates = [...new Set(drafts.map((r) => r.go_live_date))].sort();
 
@@ -210,5 +223,6 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     latestPilotRunStatus: latestPilot?.status ?? null,
     draftCount: drafts.length,
     unapprovedDates,
+    offDomain: offDomainFlags(drafts),
   };
 }

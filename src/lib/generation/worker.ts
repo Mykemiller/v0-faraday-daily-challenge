@@ -54,6 +54,7 @@ import { isBenignSlotConflict, sliceOutcome } from "./slots";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
+  deriveValidation, readDomainFit,
 } from "./puzzle-schema";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -703,6 +704,12 @@ async function sliceBody(
           theme: {
             theater_name: day.theater_name,
             sector_name: day.sector_name,
+            // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D1 — the sector's one-line scope,
+            // so "stay inside this sector" names a boundary instead of a label.
+            // dc_daily_theme has no sector-definition column; its `theme_blurb`
+            // IS the day's one-line statement of what the sector covers, and
+            // the worker already reads the row with `select=*`.
+            sector_scope: day.theme_blurb ?? null,
             thread_names: day.thread_names,
             tier_name: corpus.tier_names[day.jpas_tier_code] || day.jpas_tier_code,
           },
@@ -757,7 +764,12 @@ async function sliceBody(
           console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, key, error: outcome.failure.message }));
           continue;
         }
-        const el = outcome.object as { puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string } | undefined;
+        const el = outcome.object as {
+          puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string;
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 — advisory self-report, read through
+          // readDomainFit() because a model sometimes nests it in `puzzle`.
+          domain_fit?: unknown; domain_fit_reason?: unknown;
+        } | undefined;
         const content = el?.puzzle;
         const hints = el?.hints || [];
         // D4: the structured log line keeps its shape and gains `key`. The
@@ -786,6 +798,12 @@ async function sliceBody(
         if (fpSet.has(fp)) { fail("subject-repeat", "subject repeat within the bank"); continue; }
 
         const day = it.day;
+        // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — decided BEFORE the insert and by a
+        // pure function, so `fit` (a report field, not a column) can never
+        // reach the row: only the two columns below are spread into it.
+        const fitVerdict = deriveValidation({ ...readDomainFit(el), answerKey });
+        if (fitVerdict.fit === "off")
+          console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, step: "domain-fit-off" }));
         try {
           // DEC-6: Draft/Unpublished, public_id NULL (the trigger is the only minter)
           await sbInsert(s, `dc_puzzle_bank_staging`, [{
@@ -813,7 +831,14 @@ async function sliceBody(
             content_hash: contentHash(content, answerKey),
             generation_batch_id: run.id,
             generator_model: GEN_MODEL,
-            validation_status: "passed",
+            // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — `domain` stays the DAY's
+            // sector above: the theme is the editorial contract and the puzzle
+            // is filed under it either way. What an honest "off" changes is
+            // that the row lands as `review` with one STRUCTURAL note, so the
+            // commissioner sees it before Approve. "on"/"adjacent"/unknown are
+            // `passed`, exactly as before.
+            validation_status: fitVerdict.validation_status,
+            validation_errors: fitVerdict.validation_errors,
           }]);
           fpSet.add(fp);
           written++;
