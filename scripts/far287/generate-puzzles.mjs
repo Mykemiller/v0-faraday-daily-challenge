@@ -28,6 +28,7 @@ import { systemPrompt, userPrompt } from "./lib/prompts.mjs";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
+  deriveValidation, readDomainFit,
 } from "./lib/puzzle-schema.mjs";
 import { liveGameTypes } from "./lib/game-roster.mjs";
 import { buildCorpus, buildSubjectPool, CORPUS_PATH } from "./lib/corpus.mjs";
@@ -158,6 +159,8 @@ async function main() {
       const subject = pool.length ? pool[(di + types.indexOf(type)) % pool.length] : day.sector_name;
       items.push({ day, di, subject,
         theme: { theater_name: day.theater_name, sector_name: day.sector_name, thread_names: day.thread_names,
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D1 — the sector's one-line scope.
+          sector_scope: day.theme_blurb ?? null,
           tier_name: (corpus.tier_names || {})[day.jpas_tier_code] || day.jpas_tier_code },
         difficulty: difficultyFor(di, types.indexOf(type)),
         threadScope: day.thread_names.join("; ") });
@@ -191,6 +194,7 @@ async function main() {
         const hash = contentHash(content, answerKey);
         if (seenHash.has(hash)) { fail("content_hash collision"); continue; }
         fpSet.add(fp); seenHash.add(hash);
+        const fitVerdict = deriveValidation({ ...readDomainFit(el), answerKey });
 
         const row = {
           theme_date: it.day.theme_date, puzzle_type: type,
@@ -205,7 +209,10 @@ async function main() {
           ...resolveRowDifficulty(it.difficulty, el?.difficulty), subject_fingerprint: fp,
           source_refs: { subject: it.subject, thread_codes: it.day.thread_codes },
           content_hash: hash, generation_batch_id: runId, generator_model: GEN_MODEL,
-          validation_status: "passed",
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — same verdict as the worker's,
+          // from the same pure function. `domain` above stays the day's sector.
+          validation_status: fitVerdict.validation_status,
+          validation_errors: fitVerdict.validation_errors,
         };
         if (DRY) { if (samples.length < 7) samples.push(row); written++; }
         else { try { await sbInsert("dc_puzzle_bank_staging", [row], "on_conflict=content_hash"); written++; }

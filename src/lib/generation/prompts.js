@@ -53,15 +53,30 @@ const HINT_RULES = `HINTS: each puzzle object is accompanied by three escalating
 - h2: materially narrows the solution space (a concrete constraint or partial fact).
 - h3: near-answer / mechanical (all but gives it away). Three must be distinct and increasingly revealing.`;
 
+// CC-DC-GEN-DOMAIN-FIDELITY-1.0 — the Sector named with an ITEM is the editorial
+// contract for what that puzzle is ABOUT, and the model self-reports how the
+// finished puzzle landed against it. The self-report is advisory: it routes a
+// drifted puzzle to the commissioner, it never costs the slot (puzzle-schema
+// treats a missing or junk `domain_fit` as "unknown", which passes).
+const FIDELITY_RULES = `SUBJECT FIDELITY (HARD): the puzzle's PRIMARY subject must sit INSIDE the Sector named with its ITEM. Each ITEM gives that Sector's name and a one-line scope; everything the puzzle is mainly about has to fall within it. Neighbouring material may appear as supporting context — never as the subject.
+Then self-report, honestly, where the FINISHED puzzle landed:
+- "domain_fit": "on" = the primary subject is squarely inside the Sector; "adjacent" = it sits just outside but is still recognisably about the Sector; "off" = it ended up mainly about something else.
+- "domain_fit_reason": <= 120 characters, naming WHY in general terms (e.g. "subject is chip packaging, sector is site power"). NEVER include an answer, a hint, a group label, a ranked item, a term/definition pair, or any other puzzle content.
+Say "off" when it is true. An honest "off" is routed to an editor before approval; a dishonest "on" files a puzzle under the wrong subject and nobody catches it.`;
+
 export function systemPrompt(type) {
   return `You are the Faraday Daily Challenge puzzle author for the "${type}" game. You produce STRICT JSON only — no prose, no markdown fences. Every puzzle is grounded in real facts about the AI data-center infrastructure buildout and coheres with the given daily theme without all items being about one company.
 ${COPY_RULES}
 ${HINT_RULES}
 DIFFICULTY BANDS (the only three that exist): foundational = entry-level, general data-center literacy; practitioner = working-professional, day-to-day domain familiarity; expert = specialist, deep subject-matter depth. Echo the ITEM's Target difficulty back in "difficulty" — it is recorded for audit only and never overrides the assigned band.
-Return a JSON ARRAY with one object per requested item, in order. Each array element is: {"puzzle": <content matching the schema>, "hints":[h1,h2,h3], "answer_explanation": str (1-2 sentences), "difficulty": "foundational|practitioner|expert"}.`;
+${FIDELITY_RULES}
+Return a JSON ARRAY with one object per requested item, in order. Each array element is: {"puzzle": <content matching the schema>, "hints":[h1,h2,h3], "answer_explanation": str (1-2 sentences), "difficulty": "foundational|practitioner|expert", "domain_fit": "on|adjacent|off", "domain_fit_reason": str}.`;
 }
 
-// items: [{ theme: {theater_name, sector_name, thread_names[], tier_name}, subject, difficulty, threadScope }]
+/** Collapses a scope line to one tidy line the prompt can carry. */
+const oneLine = (v) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+
+// items: [{ theme: {theater_name, sector_name, sector_scope?, thread_names[], tier_name}, subject, difficulty, threadScope }]
 export function userPrompt(type, items) {
   // Per-game prompt spec: a registry keyed on runtime_key. A type with no spec
   // returns null so the caller skips it rather than prompting the model with a
@@ -70,8 +85,10 @@ export function userPrompt(type, items) {
   if (!s) return null;
   const lines = items.map((it, i) => {
     const t = it.theme;
+    const scope = oneLine(t.sector_scope) || (t.thread_names || []).join(", ");
     return `ITEM ${i + 1}:
   Theater: ${t.theater_name}  |  Sector: ${t.sector_name}  |  Thread(s): ${t.thread_names.join(", ")}
+  Sector scope — the puzzle's PRIMARY subject must sit inside this: ${t.sector_name}${scope ? ` — ${scope}` : ""}
   Angle (internal constraint lens, do NOT name it): ${t.tier_name}
   Subject to build this puzzle around: ${it.subject}
   Target difficulty: ${it.difficulty}
@@ -83,7 +100,7 @@ ${s.palette ? "\n" + s.palette + "\n" : ""}
 EXEMPLAR (shape only — do not copy content):
 ${s.ex}
 
-Author ${items.length} DISTINCT "${type}" puzzles, one per ITEM below. Each must legibly connect to its ITEM's Theater/Sector/Thread(s) and be built around its Subject, at its target difficulty. Vary the angle across items — do not reuse the same companies or facts.
+Author ${items.length} DISTINCT "${type}" puzzles, one per ITEM below. Each must legibly connect to its ITEM's Theater/Sector/Thread(s) and be built around its Subject, at its target difficulty. Its PRIMARY subject must sit inside that ITEM's Sector scope, and you must report where it landed in "domain_fit"/"domain_fit_reason". Vary the angle across items — do not reuse the same companies or facts.
 
 ${lines}
 

@@ -695,3 +695,56 @@ export function bankMinimumFindings(
   }
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-DC-GEN-DOMAIN-FIDELITY-1.0 — off-domain drafts, as the panel reads them
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The worker files a drifted puzzle as `validation_status = 'review'` with ONE
+// structural note, `{ key: "domain_fit_off", reason }` (puzzle-schema's
+// deriveValidation is the only writer). This is the read side: it turns those
+// rows into the list the commissioner sees, and it is DELIBERATELY blind —
+// its input carries a date, a game and a jsonb note, and no puzzle content
+// exists in the projection for it to leak. Approval is never blocked; a season
+// may ship off-domain puzzles knowingly, it may not ship them unknowingly.
+
+/** A draft the model itself reported as outside its day's sector. */
+export type OffDomainFlag = { date: string; game: string; reason: string | null };
+
+/** The content-free row shape generation-status projects for this. */
+export type DomainFlagRow = {
+  go_live_date: string;
+  puzzle_type: string;
+  validation_status?: string | null;
+  validation_errors?: unknown;
+};
+
+const DOMAIN_FIT_OFF_KEY = "domain_fit_off";
+/** The panel's own clamp. The writer already clamps to 120; a row written by
+ *  anything else (a backfill, a hand edit) does not get to overflow the UI. */
+const FLAG_REASON_MAX = 160;
+
+/**
+ * The `domain_fit_off` notes on `rows`, in date order then game order.
+ * Tolerant by design: a null/!array `validation_errors`, an entry without the
+ * key, or a non-string reason all read as "flagged, no reason given" rather
+ * than throwing — the FLAG is the signal and must survive a malformed note.
+ */
+export function offDomainFlags(rows: DomainFlagRow[]): OffDomainFlag[] {
+  const out: OffDomainFlag[] = [];
+  for (const r of rows || []) {
+    if (r?.validation_status !== "review") continue;
+    const errors = Array.isArray(r.validation_errors) ? r.validation_errors : [];
+    const hit = errors.find(
+      (e) => e && typeof e === "object" && (e as { key?: unknown }).key === DOMAIN_FIT_OFF_KEY
+    ) as { reason?: unknown } | undefined;
+    if (!hit) continue;
+    const raw = typeof hit.reason === "string" ? hit.reason.replace(/\s+/g, " ").trim() : "";
+    out.push({
+      date: r.go_live_date,
+      game: r.puzzle_type,
+      reason: raw ? raw.slice(0, FLAG_REASON_MAX) : null,
+    });
+  }
+  return out.sort((a, b) => (a.date === b.date ? a.game.localeCompare(b.game) : a.date < b.date ? -1 : 1));
+}
