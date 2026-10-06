@@ -1,5 +1,59 @@
 @AGENTS.md
 
+## Each game is generated inside its own difficulty window (CC-DC-GEN-DIFFICULTY-PERGAME-1.0, claude/gen-difficulty-pergame, 2026-10-06)
+
+**`season_games.difficulty_floor` / `.difficulty_ceiling` and the per-game rows
+of `season_difficulty_mix` are AUTHORITATIVE for that game's mix, and the
+commissioner sees what they do to the season before generating.** Both were
+configured and read by nothing. The Football slate (config
+`3bf84bc8-f202-4a2d-9a89-9dcc38f36711`) pins Rackl and Dark Fiber
+expert–expert and The Brief and The Stack practitioner–expert, and the season
+banked **167 rows below their own game's floor** anyway — Dark Fiber 60, Rackl
+59, The Brief 24, The Stack 24 (measured 2026-10-06 15:38 CT). The worker
+SELECTed `season_games` as `game_id,is_enabled` only, and filtered every
+`applies_to_game_id` mix row out before allocating.
+
+`effectiveTypeMix({ seasonMix, perGameRows, floor, ceiling })` in
+**`src/lib/generation/difficulty.js`** (CLI twin
+`scripts/far287/lib/difficulty.mjs`) is the one place that resolves this. Pure.
+It starts from the game's OWN mix rows when any of them names a band we know,
+else the season mix; **drops** every band outside `[floor, ceiling]` (canonical
+order `foundational < practitioner < expert`; a null, absent or unrecognised
+bound is OPEN on that side, so a stale enum cannot stop a season); and
+renormalizes what is left with `normalizeTo100`'s exact semantics — scale,
+round to 2dp, residual onto the largest share. Clipping never clamps onto the
+nearest in-window band, which would invent a mix nobody configured. A floor
+DEEPER than the ceiling returns **null**: there is nothing to generate and
+guessing would be worse than stopping.
+
+The worker now loads `difficulty_floor,difficulty_ceiling` with the slate,
+keyes the per-game override rows by `runtime_key` through `game_catalog`, and
+passes the result to `planDifficulty` through the `perTypeMix` seam
+CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D5 reserved — so the largest-remainder
+totals and the curve placement are untouched. Rackl is now 100% expert over
+119 days; The Brief is 0 / 34.84 / 65.16 → 0 / 42 / 78 puzzles. A null window
+fails the run short with `difficulty_window_empty: <type>`.
+
+League Office (`generation-logic.ts`): a null window is the blocking error
+**`difficulty_window_empty`**, named per game. `realizedDifficultyMix(input)`
+weights each enabled game's effective mix by its scheduled days and, when any
+band moves more than **`DIFFICULTY_SHIFT_WARN_PTS` = 5 points**, warns
+**`difficulty_mix_shifted_by_game_rules`** — on Football, *"Per-game floors
+shift the season mix from 14/30/56 to 3/20/77"* (realized 2.88 / 19.90 /
+77.22; expert is 21.4 points off its configured 55.77). `generation-status.ts`
+SELECTs the two columns so the checklist can say it. ConfigEditor's slate table
+gains a read-only **Effective mix** cell per game (`— / 35 / 65`; a dropped
+band is an em dash, not a 0), computed client-side with the same helper via the
+`season-config-logic.ts` re-export, so the preview cannot drift from the run.
+No new inputs.
+
+Tests: `npm run test:generation-difficulty` (60) pins the helper, the twin and
+the perTypeMix integration; `npm run test:generation` (35) pins the Football
+shift and the empty window. CC-DC-GEN-DIFFICULTY-CANON-1.0 and
+CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 are untouched. **Existing staging rows were
+not modified** — the 167 floor violations are remediated by the separate
+regenerate-from-date issue, not here.
+
 ## Generated difficulty matches the mix and follows the curve (CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0, claude/gen-difficulty-allocation, 2026-10-06)
 
 **The season difficulty mix is apportioned in WHOLE PUZZLES per game, and

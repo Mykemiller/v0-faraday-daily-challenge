@@ -18,9 +18,13 @@
 // ignoring difficulty_curve entirely.
 // Relative, with the extension: this module's tests run under plain
 // `node --test`, which does not read tsconfig `paths`.
-import { DIFFICULTY_CURVES, curvePoints } from "../generation/difficulty.js";
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — effectiveTypeMix comes through the
+// same door for the same reason: the slate table previews the mix a game
+// will actually be generated against, and the preview has to BE the
+// generator's arithmetic, not a second copy of it.
+import { DIFFICULTY_CURVES, curvePoints, effectiveTypeMix } from "../generation/difficulty.js";
 
-export { DIFFICULTY_CURVES, curvePoints };
+export { DIFFICULTY_CURVES, curvePoints, effectiveTypeMix };
 
 // ── states ───────────────────────────────────────────────────────────────────
 

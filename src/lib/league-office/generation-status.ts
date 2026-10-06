@@ -73,9 +73,12 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const configId = focus?.id ?? null;
 
   const [slate, catalog, themeMix, difficultyMix, runs, corpusSectors] = await Promise.all([
+    // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3 — the floor/ceiling come down with
+    // the slate: the checklist cannot say what the realized mix will be, or
+    // that a window is empty, without them.
     configId
-      ? q<{ game_id: string; is_enabled: boolean; puzzle_count: number | null }>(
-          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count`)
+      ? q<GenerationInput["slate"][number]>(
+          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count,difficulty_floor,difficulty_ceiling`)
       : Promise.resolve([]),
     q<GenCatalogGame>(s, `game_catalog?select=id,game_key,display_name,lifecycle_state,runtime_key`),
     configId

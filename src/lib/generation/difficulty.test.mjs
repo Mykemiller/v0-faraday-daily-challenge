@@ -19,6 +19,7 @@ import {
   CANONICAL_BANDS, LEGACY_ALIASES, canonicalDifficulty, difficultyFor, resolveRowDifficulty,
   CURVE_CUSTOM_WARNING, DIFFICULTY_CURVES, curvePoints, difficultyTargets, largestRemainder,
   mixWeights, normalizeCurve, planDifficulty,
+  difficultyWindow, effectiveTypeMix, mixVector,
 } from "./difficulty.js";
 import * as cli from "../../../scripts/far287/lib/difficulty.mjs";
 
@@ -517,4 +518,194 @@ test("the worker allocates from the season plan, not from the 10-slot bag", () =
   assert.match(src, /planDifficulty\(\{/, "the worker must build a season-wide plan");
   assert.doesNotMatch(src, /difficultyFor\(/, "the 10-slot bag must not decide a banked puzzle's band");
   assert.match(src, /difficulty_curve/, "the worker must read the configured curve");
+});
+
+// ── CC-DC-GEN-DIFFICULTY-PERGAME-1.0 — effectiveTypeMix ──────────────────────
+//
+// The live Football slate (season_config 3bf84bc8-f202-4a2d-9a89-9dcc38f36711,
+// measured 2026-10-06) is the fixture, because it is the configuration that
+// banked 167 rows below their own game's floor:
+//
+//   Dark Fiber  expert       – expert        Frequency   foundational – expert
+//   Rackl       expert       – expert        The Brief   practitioner – expert
+//   The Stack   practitioner – expert
+//
+// against a season mix of 14.41 / 29.82 / 55.77.
+
+// (FOOTBALL_MIX — 14.41 / 29.82 / 55.77 — is declared above, for the allocation
+// tests; the window tests clip the very same mix.)
+
+/** The effective mix as a 3-vector, for terser assertions. */
+const effVec = (opts) => mixVector(effectiveTypeMix({ seasonMix: FOOTBALL_MIX, ...opts }));
+
+test("a game pinned expert–expert is generated 100% expert (Rackl, Dark Fiber)", () => {
+  assert.deepEqual(effVec({ floor: "expert", ceiling: "expert" }), [0, 0, 100]);
+});
+
+test("clipping the foundational band renormalizes the rest (The Brief, The Stack)", () => {
+  // 29.82 and 55.77 of 85.59 → 34.84 / 65.16, summing to exactly 100.
+  assert.deepEqual(effVec({ floor: "practitioner", ceiling: "expert" }), [0, 34.84, 65.16]);
+});
+
+test("an effective mix always totals exactly 100", () => {
+  for (const floor of [null, "foundational", "practitioner", "expert"])
+    for (const ceiling of [null, "foundational", "practitioner", "expert"]) {
+      const rows = effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor, ceiling });
+      if (!rows) continue;
+      const total = rows.reduce((a, r) => a + r.target_pct, 0);
+      assert.ok(Math.abs(total - 100) < 1e-9, `${floor}–${ceiling} totalled ${total}`);
+    }
+});
+
+test("a floor deeper than the ceiling leaves no band — null, never a guess", () => {
+  assert.equal(effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "expert", ceiling: "practitioner" }), null);
+  assert.equal(effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "expert", ceiling: "foundational" }), null);
+  assert.equal(effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "practitioner", ceiling: "foundational" }), null);
+  assert.equal(difficultyWindow("expert", "foundational"), null);
+});
+
+test("a wide-open window is the season mix, untouched", () => {
+  assert.deepEqual(effVec({}), [14.41, 29.82, 55.77]);
+  assert.deepEqual(effVec({ floor: null, ceiling: null }), [14.41, 29.82, 55.77]);
+  assert.deepEqual(effVec({ floor: "foundational", ceiling: "expert" }), [14.41, 29.82, 55.77]);
+});
+
+test("one open bound clips only its own side", () => {
+  assert.deepEqual(effVec({ floor: "practitioner" }), [0, 34.84, 65.16]);
+  // 14.41 / 29.82 of 44.23 → 32.58 / 67.42
+  assert.deepEqual(effVec({ ceiling: "practitioner" }), [32.58, 67.42, 0]);
+});
+
+test("the bounds read the legacy vocabulary, like every other band input", () => {
+  assert.deepEqual(effVec({ floor: "medium", ceiling: "hard" }), effVec({ floor: "practitioner", ceiling: "expert" }));
+  assert.deepEqual(difficultyWindow("easy", "HARD"), { lo: 0, hi: 2 });
+});
+
+test("an unrecognised bound is OPEN, never empty — a stale enum cannot stop a season", () => {
+  assert.deepEqual(effVec({ floor: "impossible", ceiling: "expert" }), [14.41, 29.82, 55.77]);
+  assert.deepEqual(difficultyWindow(undefined, "  "), { lo: 0, hi: 2 });
+});
+
+test("a game's own override rows WIN over the season mix (P2)", () => {
+  const own = [
+    { difficulty_band: "foundational", target_pct: 10 },
+    { difficulty_band: "practitioner", target_pct: 10 },
+    { difficulty_band: "expert", target_pct: 80 },
+  ];
+  assert.deepEqual(effVec({ perGameRows: own }), [10, 10, 80]);
+  // ...and the window still clips the override, not the season mix:
+  // 10 / 80 of 90 → 11.11 / 88.89
+  assert.deepEqual(effVec({ perGameRows: own, floor: "practitioner" }), [0, 11.11, 88.89]);
+});
+
+test("an override set of nothing we recognise falls back to the season mix", () => {
+  assert.deepEqual(effVec({ perGameRows: [] }), [14.41, 29.82, 55.77]);
+  assert.deepEqual(effVec({ perGameRows: [{ difficulty_band: "brutal", target_pct: 100 }] }), [14.41, 29.82, 55.77]);
+});
+
+test("duplicate override rows for one band are summed, as everywhere else", () => {
+  assert.deepEqual(
+    effVec({ perGameRows: [
+      { difficulty_band: "practitioner", target_pct: 25 },
+      { difficulty_band: "medium", target_pct: 25 },
+      { difficulty_band: "expert", target_pct: 50 },
+    ] }),
+    [0, 50, 50]
+  );
+});
+
+test("a window whose bands all weigh zero splits evenly, never collapses to one", () => {
+  // normalizeTo100's rule: no signal is an even split, not 100% of band 0.
+  const rows = effectiveTypeMix({
+    seasonMix: [{ difficulty_band: "foundational", target_pct: 100 }],
+    floor: "practitioner",
+  });
+  assert.deepEqual(mixVector(rows), [0, 50, 50]);
+});
+
+test("a missing season mix degrades to 40/40/20, exactly like the allocator", () => {
+  assert.deepEqual(mixVector(effectiveTypeMix({})), [40, 40, 20]);
+  assert.deepEqual(mixVector(effectiveTypeMix({ seasonMix: [] })), [40, 40, 20]);
+  assert.deepEqual(mixVector(effectiveTypeMix(null)), [40, 40, 20]);
+  assert.deepEqual(mixVector(effectiveTypeMix(undefined)), [40, 40, 20]);
+});
+
+test("effectiveTypeMix emits canonical bands in canonical order (D6)", () => {
+  const rows = effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "foundational", ceiling: "expert" });
+  assert.deepEqual(rows.map((r) => r.difficulty_band), CANONICAL_BANDS);
+  for (const r of rows) assert.ok(CANONICAL_BANDS.includes(r.difficulty_band));
+});
+
+test("the effective mix is what planDifficulty then allocates (the perTypeMix seam)", () => {
+  const dates = Array.from({ length: 120 }, (_, i) => `2026-08-${String((i % 28) + 1).padStart(2, "0")}-${i}`);
+  const perTypeMix = {
+    Rackl: effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "expert", ceiling: "expert" }),
+    "The Brief": effectiveTypeMix({ seasonMix: FOOTBALL_MIX, floor: "practitioner", ceiling: "expert" }),
+    Frequency: effectiveTypeMix({ seasonMix: FOOTBALL_MIX }),
+  };
+  const plan = planDifficulty({ dates, types: Object.keys(perTypeMix), mix: FOOTBALL_MIX, perTypeMix, seed: "s" });
+
+  const count = (type) => {
+    const c = { foundational: 0, practitioner: 0, expert: 0 };
+    for (const d of dates) c[plan.get(`${type}|${d}`)]++;
+    return c;
+  };
+  // Rackl: pinned expert, so every one of the 120 days is expert.
+  assert.deepEqual(count("Rackl"), { foundational: 0, practitioner: 0, expert: 120 });
+  // The Brief: no foundational day at all, and 34.84/65.16 of 120 = 42/78.
+  assert.deepEqual(count("The Brief"), { foundational: 0, practitioner: 42, expert: 78 });
+  // Frequency's window is open, so it is unchanged by any of this.
+  assert.deepEqual(count("Frequency"), difficultyTargets(FOOTBALL_MIX, 120));
+});
+
+test("the whole Football slate: the realized season mix is 2.88 / 19.90 / 77.22", () => {
+  // The number the League Office warns about, computed here from the helper
+  // alone so the two surfaces are checked against one arithmetic.
+  const slate = [
+    ["Dark Fiber", "expert", "expert"],
+    ["Frequency", "foundational", "expert"],
+    ["The Brief", "practitioner", "expert"],
+    ["The Stack", "practitioner", "expert"],
+    ["Rackl", "expert", "expert"],
+  ];
+  const vecs = slate.map(([, floor, ceiling]) => effVec({ floor, ceiling }));
+  const realized = CANONICAL_BANDS.map((_, b) => vecs.reduce((a, v) => a + v[b], 0) / vecs.length);
+  assert.deepEqual(realized.map((v) => Math.round(v * 100) / 100), [2.88, 19.9, 77.22]);
+  assert.deepEqual(realized.map(Math.round), [3, 20, 77]);
+});
+
+test("scripts/far287/lib/difficulty.mjs computes identical effective mixes", () => {
+  const own = [
+    { difficulty_band: "practitioner", target_pct: 70 },
+    { difficulty_band: "expert", target_pct: 30 },
+  ];
+  for (const floor of [null, "foundational", "practitioner", "expert", "easy", "nonsense"])
+    for (const ceiling of [null, "foundational", "practitioner", "expert", "hard"])
+      for (const perGameRows of [undefined, [], own])
+        for (const seasonMix of [FOOTBALL_MIX, [], [{ difficulty_band: "expert", target_pct: 100 }]]) {
+          const args = { seasonMix, perGameRows, floor, ceiling };
+          assert.deepEqual(
+            cli.effectiveTypeMix(args),
+            effectiveTypeMix(args),
+            `twin drift at ${JSON.stringify(args)}`
+          );
+          assert.deepEqual(cli.difficultyWindow(floor, ceiling), difficultyWindow(floor, ceiling));
+          assert.deepEqual(cli.mixVector(cli.effectiveTypeMix(args)), mixVector(effectiveTypeMix(args)));
+        }
+});
+
+test("the worker clips every enabled game to its own window before allocating", () => {
+  const worker = readFileSync(join(REPO, "src/lib/generation/worker.ts"), "utf8");
+  // The two columns are SELECTed...
+  assert.match(worker, /select=game_id,is_enabled,difficulty_floor,difficulty_ceiling/);
+  // ...fed through the shared helper...
+  assert.match(worker, /effectiveTypeMix\(\{/);
+  assert.match(worker, /floor:\s*row\.difficulty_floor/);
+  assert.match(worker, /ceiling:\s*row\.difficulty_ceiling/);
+  // ...including the per-game override rows the worker used to drop...
+  assert.match(worker, /perGameRows:\s*difficultyMixRows\.filter/);
+  // ...and the result reaches the allocator through the perTypeMix seam.
+  assert.match(worker, /perTypeMix,/);
+  // An empty window stops the run rather than inventing a band.
+  assert.match(worker, /difficulty_window_empty/);
 });

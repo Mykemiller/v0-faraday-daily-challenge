@@ -33,7 +33,7 @@ import type { Svc } from "@/lib/league-office/service";
 import { seasonDates } from "@/lib/league-office/generation-logic";
 import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./corpus";
 import { systemPrompt, userPrompt } from "./prompts";
-import { planDifficulty, resolveRowDifficulty } from "./difficulty";
+import { effectiveTypeMix, planDifficulty, resolveRowDifficulty } from "./difficulty";
 import {
   parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry, clampMessage,
 } from "./failure-reasons";
@@ -377,7 +377,12 @@ async function sliceBody(
     return { runId: run.id, status: "failed_short", note: "no season_config" };
   }
   const [slate, catalog, themeMixRows, difficultyMixRows] = await Promise.all([
-    sbGet<{ game_id: string; is_enabled: boolean }>(s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled`),
+    // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — the slate's difficulty WINDOW comes
+    // down with it. These two columns were configured and read by nothing, and
+    // the Football season banked 167 rows below their own game's floor as a
+    // direct result (measured 2026-10-06).
+    sbGet<{ game_id: string; is_enabled: boolean; difficulty_floor: string | null; difficulty_ceiling: string | null }>(
+      s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled,difficulty_floor,difficulty_ceiling`),
     sbGet<{ id: string; runtime_key: string | null; lifecycle_state: string }>(s, `game_catalog?select=id,runtime_key,lifecycle_state`),
     sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; target_pct: number; is_excluded: boolean }>(
       s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,target_pct,is_excluded`),
@@ -385,11 +390,15 @@ async function sliceBody(
       s, `season_difficulty_mix?season_config_id=eq.${cfg.id}&select=difficulty_band,target_pct,applies_to_game_id`),
   ]);
   const byId = new Map(catalog.map((g) => [g.id, g]));
-  const types = slate
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — the catalog row and the SLATE row are
+  // carried together from here on: the runtime key names the type, and the
+  // slate row carries the floor/ceiling that type is generated inside.
+  const enabledGames = slate
     .filter((r) => r.is_enabled)
-    .map((r) => byId.get(r.game_id))
-    .filter((g): g is NonNullable<typeof g> => !!g && g.lifecycle_state === "live" && !!g.runtime_key)
-    .map((g) => g.runtime_key as string);
+    .map((r) => ({ row: r, game: byId.get(r.game_id) }))
+    .filter((x): x is { row: typeof x.row; game: NonNullable<typeof x.game> } =>
+      !!x.game && x.game.lifecycle_state === "live" && !!x.game.runtime_key);
+  const types = enabledGames.map((x) => x.game.runtime_key as string);
   if (types.length === 0) {
     await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { error: "no live games enabled" } });
     return { runId: run.id, status: "failed_short", note: "no live games enabled" };
@@ -551,10 +560,39 @@ async function sliceBody(
   // which could only quantize the mix to tenths — Football asked for
   // 14.41/29.82/55.77 and banked 120/178/297 instead of 85/180/330 — and which
   // read difficulty_curve not at all.
+  //
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — and the mix each type is apportioned
+  // against is now the game's OWN: its override rows
+  // (season_difficulty_mix.applies_to_game_id, which this worker used to drop
+  // on the floor) when it has any, else the season mix — clipped to the
+  // game's [difficulty_floor, difficulty_ceiling] and renormalized. Rackl is
+  // configured expert-expert, so Rackl is now 100% expert instead of 20/30/50
+  // of a mix that was never its own.
+  const perTypeMix: Record<string, { difficulty_band: string; target_pct: number }[]> = {};
+  for (const { row, game } of enabledGames) {
+    const eff = effectiveTypeMix({
+      seasonMix: globalDiffMix,
+      perGameRows: difficultyMixRows.filter((d) => d.applies_to_game_id === game.id),
+      floor: row.difficulty_floor,
+      ceiling: row.difficulty_ceiling,
+    });
+    // P4 — a floor deeper than the ceiling leaves no band to generate. The
+    // League Office blocks this as `difficulty_window_empty` before a run is
+    // ever queued; reaching it here means the slate changed under a queued run,
+    // and inventing a band would be worse than stopping.
+    if (!eff) {
+      const note = `difficulty_window_empty: ${game.runtime_key}`;
+      await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { ...cursor, error: note } });
+      return { runId: run.id, status: "failed_short", note };
+    }
+    perTypeMix[game.runtime_key as string] = eff;
+  }
+
   const diffPlan = planDifficulty({
     dates,
     types,
     mix: globalDiffMix,
+    perTypeMix,
     curve: cfg.difficulty_curve ?? "flat",
     seed: season.id,
   });

@@ -16,6 +16,7 @@ import {
   generationWarnings,
   isStalled,
   bankMinimumFindings, bankAlarmApplies, bankCoverageWindow,
+  realizedDifficultyMix,
   type GenerationInput,
   type GenRun,
 } from "./generation-logic.ts";
@@ -360,4 +361,143 @@ test("bank coverage window is the next 14 serve days clipped to the season", () 
   assert.deepEqual(bankCoverageWindow("2026-10-05", "2026-09-10", "2026-10-01"), { from: null, to: null, required: 0 });
   // no window → nothing to cover
   assert.deepEqual(bankCoverageWindow("2026-09-15", null, null), { from: null, to: null, required: 0 });
+});
+
+// ── CC-DC-GEN-DIFFICULTY-PERGAME-1.0 ─────────────────────────────────────────
+//
+// The live Football slate, measured 2026-10-06 against season_config
+// 3bf84bc8-f202-4a2d-9a89-9dcc38f36711. Five enabled games, a season mix of
+// 14.41 / 29.82 / 55.77, and floors that quietly rewrite it to 2.9 / 19.9 /
+// 77.2 — the configuration that banked 167 rows below their own game's floor
+// (Dark Fiber 60, Rackl 59, The Brief 24, The Stack 24).
+const FOOTBALL_SLATE: [string, string | null, string | null][] = [
+  ["Dark Fiber", "expert", "expert"],
+  ["Frequency", "foundational", "expert"],
+  ["The Brief", "practitioner", "expert"],
+  ["The Stack", "practitioner", "expert"],
+  ["Rackl", "expert", "expert"],
+];
+
+function footballInput(): GenerationInput {
+  const input = okInput();
+  const byName = new Map(LIVE7.map((g) => [g.display_name, g.id]));
+  input.slate = FOOTBALL_SLATE.map(([name, difficulty_floor, difficulty_ceiling]) => ({
+    game_id: byName.get(name) as string,
+    is_enabled: true,
+    puzzle_count: null,
+    difficulty_floor,
+    difficulty_ceiling,
+  }));
+  input.difficultyMix = [
+    { difficulty_band: "foundational", target_pct: 14.41, applies_to_game_id: null },
+    { difficulty_band: "practitioner", target_pct: 29.82, applies_to_game_id: null },
+    { difficulty_band: "expert", target_pct: 55.77, applies_to_game_id: null },
+  ];
+  return input;
+}
+
+test("the Football slate's floors shift the season mix, and the commissioner is told", () => {
+  const input = footballInput();
+  // Still generatable — a shift is a consequence of a valid configuration.
+  assert.deepEqual(generationFindings(input, false), []);
+
+  const shift = realizedDifficultyMix(input);
+  assert.deepEqual(shift.configured, [14.41, 29.82, 55.77]);
+  assert.deepEqual(
+    shift.realized.map((v) => Math.round(v * 10) / 10),
+    [2.9, 19.9, 77.2]
+  );
+  // Expert is the worst-hit band: 77.218 − 55.77.
+  assert.ok(Math.abs(shift.maxDeviation - 21.448) < 0.001, `maxDeviation was ${shift.maxDeviation}`);
+
+  const warns = generationWarnings(input).filter((w) => w.code === "difficulty_mix_shifted_by_game_rules");
+  assert.equal(warns.length, 1);
+  assert.equal(warns[0].severity, "warning");
+  assert.match(warns[0].message, /from 14\/30\/56 to 3\/20\/77/);
+});
+
+test("per-game mix rows shift the season too, not only floors and ceilings", () => {
+  const input = okInput();
+  // Pin ONE of the seven games to all-expert via an override row set.
+  const gid = LIVE7[0].id;
+  input.difficultyMix = [
+    ...input.difficultyMix,
+    { difficulty_band: "foundational", target_pct: 0, applies_to_game_id: gid },
+    { difficulty_band: "practitioner", target_pct: 0, applies_to_game_id: gid },
+    { difficulty_band: "expert", target_pct: 100, applies_to_game_id: gid },
+  ];
+  const shift = realizedDifficultyMix(input);
+  // Six games at 40/40/20 plus one at 0/0/100, over seven.
+  assert.deepEqual(
+    shift.realized.map((v) => Math.round(v * 100) / 100),
+    [34.29, 34.29, 31.43]
+  );
+  // 31.43 − 20 = 11.43 points on expert: over the five-point bar.
+  assert.ok(generationWarnings(input).some((w) => w.code === "difficulty_mix_shifted_by_game_rules"));
+});
+
+test("a slate with no floors, ceilings or overrides never raises the shift warning", () => {
+  // okInput() is exactly that: seven open games on one season mix.
+  assert.ok(!generationWarnings(okInput()).some((w) => w.code === "difficulty_mix_shifted_by_game_rules"));
+  const shift = realizedDifficultyMix(okInput());
+  assert.deepEqual(shift.realized, shift.configured);
+  assert.equal(shift.maxDeviation, 0);
+});
+
+test("a shift inside the five-point bar stays quiet", () => {
+  const input = okInput();
+  // One of seven games clipped to practitioner–expert: 40/40/20 → 0/66.67/33.33
+  // for that game, so the season moves 5.71 / 3.81 / 1.90 points. Over the bar
+  // on foundational only...
+  input.slate[0] = { ...input.slate[0], difficulty_floor: "practitioner" };
+  assert.ok(generationWarnings(input).some((w) => w.code === "difficulty_mix_shifted_by_game_rules"));
+
+  // ...whereas a ceiling that drops nothing moves nothing.
+  const quiet = okInput();
+  quiet.slate[0] = { ...quiet.slate[0], difficulty_floor: "foundational", difficulty_ceiling: "expert" };
+  assert.ok(!generationWarnings(quiet).some((w) => w.code === "difficulty_mix_shifted_by_game_rules"));
+});
+
+test("a floor deeper than the ceiling BLOCKS as difficulty_window_empty", () => {
+  const input = okInput();
+  input.slate[2] = { ...input.slate[2], difficulty_floor: "expert", difficulty_ceiling: "practitioner" };
+  const errs = generationFindings(input, false).filter((f) => f.code === "difficulty_window_empty");
+  assert.equal(errs.length, 1);
+  assert.equal(errs[0].severity, "error");
+  assert.match(errs[0].message, /The Stack/);
+  assert.match(errs[0].message, /floor of expert above its ceiling of practitioner/);
+
+  // The game it names is the one that is broken, and only that one.
+  input.slate[5] = { ...input.slate[5], difficulty_floor: "practitioner", difficulty_ceiling: "foundational" };
+  assert.equal(generationFindings(input, false).filter((f) => f.code === "difficulty_window_empty").length, 2);
+});
+
+test("an empty window on a DISABLED game is nobody's problem", () => {
+  const input = okInput();
+  input.slate[2] = {
+    ...input.slate[2], is_enabled: false, difficulty_floor: "expert", difficulty_ceiling: "foundational",
+  };
+  assert.ok(!generationFindings(input, false).some((f) => f.code === "difficulty_window_empty"));
+  // ...and it carries no weight in the realized mix either.
+  assert.equal(realizedDifficultyMix(input).perGame.length, 6);
+});
+
+test("an empty window never also counts as a shift — it is excluded, not zeroed", () => {
+  const input = footballInput();
+  input.slate[1] = { ...input.slate[1], difficulty_floor: "expert", difficulty_ceiling: "foundational" };
+  const shift = realizedDifficultyMix(input);
+  assert.equal(shift.perGame.filter((g) => g.mix === null).length, 1);
+  // The four survivors are 0/0/100, 0/34.84/65.16, 0/34.84/65.16, 0/0/100.
+  assert.deepEqual(
+    shift.realized.map((v) => Math.round(v * 100) / 100),
+    [0, 17.42, 82.58]
+  );
+});
+
+test("slate rows with no floor/ceiling fields at all behave as fully open", () => {
+  // Older callers (and every test above okInput()) omit the two columns.
+  const input = okInput();
+  assert.ok(input.slate.every((r) => r.difficulty_floor === undefined));
+  assert.deepEqual(generationFindings(input, false), []);
+  assert.equal(realizedDifficultyMix(input).maxDeviation, 0);
 });
