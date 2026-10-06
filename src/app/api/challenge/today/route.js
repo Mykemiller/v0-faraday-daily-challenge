@@ -47,6 +47,12 @@ import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // (CC-DC-SEASON-GOLIVE-1.0).
 import { todayCT } from "@/lib/seasons/golive";
 import { fetchNextSeason } from "@/lib/seasons/next-season";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — the season's scoring rules, so a
+// `points_override` / `hint_penalty_pct` / `streak_bonus_enabled` the
+// commissioner set is a rule the player can SEE, not a stored-only value. The
+// block is advisory to the client (it renders the number); /api/score resolves
+// the same columns itself before it writes one.
+import { resolveSeasonScoringRules } from "@/lib/scoring/season-rules-server";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -194,7 +200,7 @@ export async function GET(request) {
     const season = await resolveSeasonFor(h, subscriberId);
     const seasonId = season?.id ?? null;
 
-    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason, scoring] = await Promise.all([
       getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
@@ -208,6 +214,12 @@ export async function GET(request) {
       // reads already in flight, and a field that is only populated in the one
       // state that renders it is a field nobody can test from the outside.
       fetchNextSeason(h, todayCT()),
+      // D7 — resolved from the SAME season the puzzles came from, in the same
+      // parallel batch so it costs no added latency. A season with no active
+      // config, a missing key or any read failure yields the identity rules
+      // (150 / 0% / streak on), which is what every season scored at before
+      // this pack, so nothing moves for them.
+      resolveSeasonScoringRules(seasonId, h),
     ]);
 
     // Narrow to the season's enabled games. A null slate leaves the set
@@ -254,13 +266,17 @@ export async function GET(request) {
         // that has not started yet. Additive; the client renders it ONLY in the
         // no-season empty state (see lib/lobby-model.ts).
         nextSeason,
+        // D7: `{ [runtime_key]: { pointsMax, hintPenaltyPct }, streakBonus }`.
+        // Purely additive — a client that does not read it scores exactly as
+        // it did, and the server never trusts what comes back.
+        rules: { scoring },
       },
       { headers: NO_STORE }
     );
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
     return Response.json(
-      { puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null },
+      { puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null, rules: { scoring: { streakBonus: true } } },
       { headers: NO_STORE }
     );
   }

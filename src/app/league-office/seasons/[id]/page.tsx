@@ -14,6 +14,9 @@ import { SeasonDatesCard } from "@/components/league-office/season/SeasonDatesCa
 import { GenerationPanel } from "@/components/league-office/season/GenerationPanel";
 import { PlayoffPanel } from "@/components/league-office/season/PlayoffPanel";
 import { dayMaskLabel } from "@/lib/league-office/season-config-logic";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D5) — the one line that stops a
+// commissioner believing a stored-only value is a live rule.
+import { notEnforcedFields, summarizeNotEnforced } from "@/lib/league-office/config-enforcement";
 
 function dnum(d: string | null): number | null {
   if (!d) return null;
@@ -96,7 +99,13 @@ export default async function SeasonDetailPage({
 
       <div style={{ marginBottom: 16 }}>
         <Card title="Puzzle generation">
-          <GenerationPanel seasonId={s.id} />
+          <GenerationPanel
+            seasonId={s.id}
+            /* D5 — the same list the "effective now" panel shows, carried into
+               the generate confirm step: generating against a config whose
+               settings do not all apply is a thing to know BEFORE the run. */
+            notEnforced={notEnforcedFields(cfg?.effective ?? null).map((f) => f.label)}
+          />
         </Card>
       </div>
 
@@ -184,6 +193,11 @@ function EffectiveNow({ effective }: { effective: Record<string, unknown> | null
   const fmt = (x: unknown) =>
     x === null || x === undefined || x === "" ? "—" : typeof x === "boolean" ? (x ? "On" : "Off") : String(x);
 
+  // Only the settings THIS config actually set that nothing reads — a field
+  // still on its system default is not a decision anyone made, and listing it
+  // would bury the two or three that are real.
+  const unenforced = notEnforcedFields(effective);
+
   const rows: [string, string][] = [
     ["Version", `v${fmt(v("config_version"))} · ${fmt(v("config_state"))}`],
     ["In force since", String(v("effective_from") ?? "").slice(0, 16).replace("T", " ") || "—"],
@@ -216,6 +230,24 @@ function EffectiveNow({ effective }: { effective: Record<string, unknown> | null
           </span>
         </div>
       ))}
+      {unenforced.length ? (
+        <p
+          style={{
+            gridColumn: "1 / -1",
+            margin: "6px 0 0",
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "#8d8375",
+            borderTop: "1px solid var(--color-cream-line)",
+            paddingTop: 10,
+          }}
+        >
+          <strong style={{ color: "#94560a", fontWeight: 600 }}>{summarizeNotEnforced(unenforced)}</strong>
+          {" — "}
+          {unenforced.map((f) => f.label).join(", ")}
+          {". They are stored on the version and will apply the day each one is wired up; today nothing reads them."}
+        </p>
+      ) : null}
     </div>
   );
 }

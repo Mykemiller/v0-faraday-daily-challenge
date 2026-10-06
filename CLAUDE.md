@@ -1,5 +1,79 @@
 @AGENTS.md
 
+## Is this setting a rule yet? (CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0, claude/lo-config-enforcement, 2026-10-06)
+
+**THE RULE: wiring a field up = flipping its `CONFIG_ENFORCEMENT` entry, IN THE
+SAME PR.** `src/lib/league-office/config-enforcement.ts` classifies every column
+the Season Configurator can write — the 31 in `CONFIG_FIELDS` and the 10
+`season_games` columns `normalizeGameRow` writes — as `enforced` / `partial` /
+`not_enforced`, each with the reader that enforces it (`by`) and one sentence
+for the commissioner (`note`). `npm run test:config-enforcement` fails in BOTH
+directions: an unclassified writable column, and an entry for a column the
+editor cannot write. It also re-reads `normalizeGameRow` out of
+`season-write.ts`, so a new slate column cannot ship unclassified. A table that
+lags the code is worse than no table — if you make a field real, flip it here.
+
+Surfaces: a "Not enforced yet" / "Partly enforced" chip next to the field in
+ConfigEditor (`Field` / `Toggle` take `enforcement="<column>"`; the `note` is
+the tooltip; inputs stay editable and values still save), and one line —
+`notEnforcedFields` + `summarizeNotEnforced` — on the season detail page's
+"effective now" panel and in both generate confirms. Fields still on their
+system default are skipped, so the count is decisions someone actually made.
+
+**D7 — season scoring is now real.** `src/lib/scoring/season-scoring.js` is
+plain JS and pure, imported verbatim by `DailyChallenge.jsx` AND
+`/api/score`:
+
+```
+seasonScore = round( clamp(raw,0,150) × pointsMax/150 × (1 − min(hintPenaltyPct × clamp(hints,0,3), 100)/100) )
+  pointsMax      = season_games.points_override ?? 150
+  hintPenaltyPct = season_config.hint_penalty_pct ?? 0
+```
+
+`/api/challenge/today` ships `rules.scoring = { [runtime_key]: { pointsMax,
+hintPenaltyPct }, streakBonus }` for the CALLER's resolved season
+(`resolveSeasonFor`, never a `status=eq.active` pick) so the score card can show
+the right number immediately. **The client is told the rules; it is never
+believed about them.** The POST to `/api/score` carries `score` (the raw 0..150
+roll-up), `hintsUsed` and `scoringVersion: 2` — and no rules. The route resolves
+`points_override` / `hint_penalty_pct` ITSELF via
+`src/lib/scoring/season-rules-server.ts`, from the season
+`fn_season_for_subscriber_row` gives for that subscriber, and writes the
+recomputed score to `dc_completions` (through complete-puzzle),
+`dc_daily_attempts`, `score_events` and `leaderboard_daily`.
+
+Two invariants to keep:
+- **No `scoringVersion` ⇒ byte-for-byte today's behaviour.** Browsers holding a
+  bundle cached from before the deploy keep scoring the way they did.
+  `scoringPathFor` opts in on the literal `2` and nothing else.
+- **Nothing rescores history.** The route only ever writes the completion in
+  front of it; completions written before the deploy keep their stored score.
+  There is no backfill and there must not be one — mid-season retroactive
+  rescoring was explicitly ruled out.
+
+**`streak_bonus_enabled` can only be enforced CLIENT-SIDE.** `calcScore` folds
+the readiness multiplier into the raw score before the server ever sees it, so
+the server cannot take it back out; the flag is applied by feeding `calcScore`
+`streak = 0` (`useScoringStreak` / `effectiveStreak`). A stale cached client
+keeps its multiplier until it reloads. Moving this server-side means moving the
+multiplier out of `calcScore`, which changes every game component.
+
+`hintsUsed` is still client-reported — there is no server record of hints spent
+(the budget lives in `localStorage`) — so a client that under-reports pays no
+penalty. That is unchanged from before this pack, where the same field was
+written verbatim to `dc_completions.hints_used`; it is clamped to 0..3 server-
+side. Flipping `hint_penalty_pct` to `enforced` does NOT claim the hint count is
+trustworthy, only that the configured penalty is applied to it.
+
+Still `not_enforced` after this pack, deliberately: `drop_lowest_n_days`,
+`team_score_method`, `team_score_top_n`, `signals_per_correct`,
+`scoring_profile`, `publish_leaderboard`, `leaderboard_visibility`,
+`publish_standings_at`, `hints_enabled`, `max_hints_per_game`,
+`late_submission_grace_hours`, `registration_opens_on`, `min_team_size`,
+`max_team_size`, `target_solve_rate_pct`, `season_games.weight`,
+`season_games.sort_order`. `max_teams_per_subscriber` is `partial`: lowering it
+warns, and the join path in `/api/teams` still enforces a hardcoded 5.
+
 ## Replacing an approved season from a date (CC-LO-REGENERATE-FROM-DATE-1.0, claude/lo-regenerate-from, 2026-10-06)
 
 **MIGRATION FIRST, THEN THE APP.** `supabase/migrations/20261006214500_dc_puzzle_bank_superseded.sql`

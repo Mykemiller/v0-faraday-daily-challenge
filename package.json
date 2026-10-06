@@ -46,7 +46,9 @@
     "test:legal": "node --test src/lib/legal/markdown.test.ts src/lib/legal/corpus.test.ts",
     "test:pricing": "node --test src/config/pricing.test.ts",
     "test:schedule": "node --test src/lib/seasons/schedule.test.ts",
-    "test:regenerate": "node --test src/lib/league-office/regenerate-logic.test.ts"
+    "test:regenerate": "node --test src/lib/league-office/regenerate-logic.test.ts",
+    "test:config-enforcement": "node --test src/lib/league-office/config-enforcement.test.ts",
+    "test:season-scoring": "node --test src/lib/scoring/season-scoring.test.mjs"
   },
   "dependencies": {
     "next": "16.2.3",

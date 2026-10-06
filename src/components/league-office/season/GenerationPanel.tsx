@@ -31,6 +31,7 @@ import { ReasonDialog } from "./ReasonDialog";
 import { MiniButton, PrimaryButton } from "./fields";
 import { topFailure } from "@/lib/generation/failure-reasons";
 import { advanceUntilDone, MAX_ADVANCE_SLICES } from "@/lib/generation/advance";
+import { summarizeNotEnforced } from "@/lib/league-office/config-enforcement";
 
 type Finding = { severity: "error" | "warning"; code: string; message: string };
 type Run = {
@@ -109,7 +110,18 @@ const ACTION_TO_API: Record<Exclude<Action, "lock">, string> = {
   approve_puzzles: "season.approve_puzzles",
 };
 
-export function GenerationPanel({ seasonId }: { seasonId: string }) {
+export function GenerationPanel({
+  seasonId,
+  notEnforced = [],
+}: {
+  seasonId: string;
+  /** CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D5) — labels of the settings this
+   *  season's effective config SET but that nothing reads yet, resolved on the
+   *  server by the detail page (it already holds v_season_effective_config).
+   *  Optional and defaulted, so this panel renders identically anywhere that
+   *  does not pass it. */
+  notEnforced?: string[];
+}) {
   const router = useRouter();
   const [status, setStatus] = useState<Status | null>(null);
   const [action, setAction] = useState<Action | null>(null);
@@ -272,10 +284,19 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
   const confFailures = conf ? conf.rows.filter((r) => r.status === "fail") : [];
   const est = Math.max(1, Math.ceil((status.totalTarget / 10) * 1.2)); // ~1 min per 10-puzzle batch, padded
 
+  // D5 — one sentence, appended to both generate confirms. Not a blocker and
+  // not a warning: generating against a config whose every setting is not yet
+  // a rule is normal today, and the only failure is believing otherwise.
+  const notEnforcedNote = notEnforced.length
+    ? ` ${summarizeNotEnforced(notEnforced)}: ${notEnforced.join(", ")}.`
+    : "";
+
   const copy: Record<Action, { title: string; description: string; confirm: string; destructive?: boolean }> = {
     pilot: {
       title: "Generate pilot",
-      description: `Generates ONE puzzle per configured game (${status.targets.length} total) as Draft/Unpublished rows for review. Nothing is published; players see nothing.`,
+      description:
+        `Generates ONE puzzle per configured game (${status.targets.length} total) as Draft/Unpublished rows for review. Nothing is published; players see nothing.` +
+        notEnforcedNote,
       confirm: "Generate pilot",
     },
     full: {
@@ -283,7 +304,8 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       description:
         `Generates ${status.totalTarget.toLocaleString()} puzzles (${status.targets.length} games × ${status.dayCount ?? "?"} days) as Draft/Unpublished rows. ` +
         `Estimated runtime ≈ ${est} min across worker slices. ` +
-        (status.warnings.length ? `Warnings: ${status.warnings.map((w) => w.message).join(" ")}` : "No warnings."),
+        (status.warnings.length ? `Warnings: ${status.warnings.map((w) => w.message).join(" ")}` : "No warnings.") +
+        notEnforcedNote,
       confirm: "Generate puzzles",
     },
     approve_pilot: {

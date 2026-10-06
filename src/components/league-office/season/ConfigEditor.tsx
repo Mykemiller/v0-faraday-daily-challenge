@@ -37,6 +37,12 @@ import {
   sumPct, TEAM_SCORE_METHODS,
   scopeFromRows,
 } from "@/lib/league-office/season-config-logic";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4/D5) — field-by-field "is this a rule
+// yet?". The chips themselves live in fields.tsx (Field/Toggle `enforcement`);
+// this import is for the slate header and the save-time summary.
+import {
+  enforcementOf,
+} from "@/lib/league-office/config-enforcement";
 
 // ── local row shapes (client-side working copies) ────────────────────────────
 
@@ -467,7 +473,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("effective_from", v ? new Date(v).toISOString() : null)}
                   />
                 </Field>
-                <Field label="Effective to" hint="Usually left empty — the next version supersedes this one.">
+                <Field label="Effective to" hint="Usually left empty — the next version supersedes this one." enforcement="effective_to">
                   <TextInput
                     type="datetime-local"
                     disabled={readOnly}
@@ -475,7 +481,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("effective_to", v ? new Date(v).toISOString() : null)}
                   />
                 </Field>
-                <Field label="Label">
+                <Field label="Label" enforcement="label">
                   <TextInput
                     disabled={readOnly}
                     value={String(config.label ?? "")}
@@ -485,7 +491,7 @@ export default function ConfigEditor({
                 </Field>
               </Grid>
               <div style={{ marginTop: 14 }}>
-                <Field label="Notes">
+                <Field label="Notes" enforcement="notes">
                   <TextArea
                     disabled={readOnly}
                     value={String(config.notes ?? "")}
@@ -543,6 +549,7 @@ export default function ConfigEditor({
                 <Field
                   label="Games per day"
                   hint={`Must not exceed the ${enabledCount} enabled game${enabledCount === 1 ? "" : "s"}.`}
+                  enforcement="games_per_day"
                 >
                   <NumberInput
                     disabled={readOnly}
@@ -553,7 +560,7 @@ export default function ConfigEditor({
                     placeholder="all"
                   />
                 </Field>
-                <Field label="Play days of week" hint="Master mask — a game may narrow it further, never widen it.">
+                <Field label="Play days of week" hint="Master mask — a game may narrow it further, never widen it." enforcement="play_days_of_week">
                   <DayMask
                     disabled={readOnly}
                     value={(config.play_days_of_week as number[]) ?? null}
@@ -750,7 +757,7 @@ export default function ConfigEditor({
             {/* ── E. Difficulty ───────────────────────────────────────────── */}
             <Section id="sec-e" title="Difficulty">
               <Grid>
-                <Field label="Difficulty curve">
+                <Field label="Difficulty curve" enforcement="difficulty_curve">
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ flex: 1 }}>
                       <Select
@@ -768,7 +775,7 @@ export default function ConfigEditor({
                     </span>
                   </div>
                 </Field>
-                <Field label="Target solve rate">
+                <Field label="Target solve rate" enforcement="target_solve_rate_pct">
                   <NumberInput
                     disabled={readOnly}
                     value={config.target_solve_rate_pct as number | null}
@@ -892,6 +899,7 @@ export default function ConfigEditor({
                 <Field
                   label="Max teams per subscriber"
                   hint="Lowering this warns with the number of subscribers already over the new limit. No membership is ever removed automatically."
+                  enforcement="max_teams_per_subscriber"
                 >
                   <Stepper
                     disabled={readOnly}
@@ -901,7 +909,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("max_teams_per_subscriber", v)}
                   />
                 </Field>
-                <Field label="Min team size">
+                <Field label="Min team size" enforcement="min_team_size">
                   <NumberInput
                     disabled={readOnly}
                     min={1}
@@ -909,7 +917,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("min_team_size", v ?? 1)}
                   />
                 </Field>
-                <Field label="Max team size" hint="Empty = unlimited.">
+                <Field label="Max team size" hint="Empty = unlimited." enforcement="max_team_size">
                   <NumberInput
                     disabled={readOnly}
                     min={1}
@@ -924,31 +932,34 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.allow_free_agency === true}
                   onChange={(v) => setCfg("allow_free_agency", v)}
+                  enforcement="allow_free_agency"
                   label="Allow free agency"
                 />
                 <Toggle
                   disabled={readOnly}
                   checked={config.allow_late_join === true}
                   onChange={(v) => setCfg("allow_late_join", v)}
+                  enforcement="allow_late_join"
                   label="Allow late join"
                 />
                 <Toggle
                   disabled={readOnly}
                   checked={config.allow_mid_season_team_switch === true}
                   onChange={(v) => setCfg("allow_mid_season_team_switch", v)}
+                  enforcement="allow_mid_season_team_switch"
                   label="Allow mid-season team switch"
                 />
               </div>
 
               <div style={{ marginTop: 16 }}>
                 <Grid cols={3}>
-                  <Field label="Registration opens">
+                  <Field label="Registration opens" enforcement="registration_opens_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.registration_opens_on)} onChange={(v) => setCfg("registration_opens_on", v || null)} />
                   </Field>
-                  <Field label="Registration closes">
+                  <Field label="Registration closes" enforcement="registration_closes_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.registration_closes_on)} onChange={(v) => setCfg("registration_closes_on", v || null)} />
                   </Field>
-                  <Field label="Roster lock">
+                  <Field label="Roster lock" enforcement="roster_lock_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.roster_lock_on)} onChange={(v) => setCfg("roster_lock_on", v || null)} />
                   </Field>
                 </Grid>
@@ -958,13 +969,13 @@ export default function ConfigEditor({
             {/* ── G. Scoring ──────────────────────────────────────────────── */}
             <Section id="sec-g" title="Scoring">
               <Grid cols={3}>
-                <Field label="Scoring profile">
+                <Field label="Scoring profile" enforcement="scoring_profile">
                   <TextInput disabled={readOnly} value={String(config.scoring_profile ?? "standard")} onChange={(v) => setCfg("scoring_profile", v)} />
                 </Field>
-                <Field label="Signals per correct">
+                <Field label="Signals per correct" enforcement="signals_per_correct">
                   <NumberInput disabled={readOnly} min={0} value={config.signals_per_correct as number} onChange={(v) => setCfg("signals_per_correct", v ?? 0)} />
                 </Field>
-                <Field label="Drop lowest N days">
+                <Field label="Drop lowest N days" enforcement="drop_lowest_n_days">
                   <NumberInput disabled={readOnly} min={0} value={config.drop_lowest_n_days as number} onChange={(v) => setCfg("drop_lowest_n_days", v ?? 0)} />
                 </Field>
               </Grid>
@@ -974,13 +985,14 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.streak_bonus_enabled === true}
                   onChange={(v) => setCfg("streak_bonus_enabled", v)}
+                  enforcement="streak_bonus_enabled"
                   label="Streak bonus enabled"
                 />
               </div>
 
               <div style={{ marginTop: 14 }}>
                 <Grid cols={3}>
-                  <Field label="Team score method">
+                  <Field label="Team score method" enforcement="team_score_method">
                     <Select
                       disabled={readOnly}
                       value={String(config.team_score_method ?? "sum")}
@@ -989,7 +1001,7 @@ export default function ConfigEditor({
                     />
                   </Field>
                   {config.team_score_method === "top_n" ? (
-                    <Field label="Top N" hint="Required when the method is Top N.">
+                    <Field label="Top N" hint="Required when the method is Top N." enforcement="team_score_top_n">
                       <NumberInput
                         disabled={readOnly}
                         min={1}
@@ -998,7 +1010,7 @@ export default function ConfigEditor({
                       />
                     </Field>
                   ) : null}
-                  <Field label="Late submission grace">
+                  <Field label="Late submission grace" enforcement="late_submission_grace_hours">
                     <NumberInput
                       disabled={readOnly}
                       min={0}
@@ -1015,14 +1027,15 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.hints_enabled === true}
                   onChange={(v) => setCfg("hints_enabled", v)}
+                  enforcement="hints_enabled"
                   label="Hints enabled"
                 />
                 <div style={{ marginTop: 12 }}>
                   <Grid>
-                    <Field label="Max hints per game">
+                    <Field label="Max hints per game" enforcement="max_hints_per_game">
                       <NumberInput disabled={readOnly || config.hints_enabled !== true} min={0} value={config.max_hints_per_game as number} onChange={(v) => setCfg("max_hints_per_game", v ?? 0)} />
                     </Field>
-                    <Field label="Hint penalty">
+                    <Field label="Hint penalty" enforcement="hint_penalty_pct">
                       <NumberInput disabled={readOnly || config.hints_enabled !== true} min={0} max={100} step={0.5} value={config.hint_penalty_pct as number} onChange={(v) => setCfg("hint_penalty_pct", v ?? 0)} suffix="%" />
                     </Field>
                   </Grid>
@@ -1036,11 +1049,12 @@ export default function ConfigEditor({
                 disabled={readOnly}
                 checked={config.publish_leaderboard === true}
                 onChange={(v) => setCfg("publish_leaderboard", v)}
+                enforcement="publish_leaderboard"
                 label="Publish leaderboard"
               />
               <div style={{ marginTop: 14 }}>
                 <Grid>
-                  <Field label="Leaderboard visibility">
+                  <Field label="Leaderboard visibility" enforcement="leaderboard_visibility">
                     <Select
                       disabled={readOnly || config.publish_leaderboard !== true}
                       value={String(config.leaderboard_visibility ?? "public")}
@@ -1048,7 +1062,7 @@ export default function ConfigEditor({
                       options={LEADERBOARD_VISIBILITIES.map((v) => ({ value: v, label: cap(v) }))}
                     />
                   </Field>
-                  <Field label="Publish standings at" hint="Empty = as soon as the season opens.">
+                  <Field label="Publish standings at" hint="Empty = as soon as the season opens." enforcement="publish_standings_at">
                     <TextInput
                       type="datetime-local"
                       disabled={readOnly}
@@ -1250,15 +1264,35 @@ function SlateHeader() {
       <div />
       <div>On</div>
       <div>Game</div>
-      <div style={{ textAlign: "right" }}>Weight</div>
+      {/* CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4) — the slate's two columns
+          that read as rules but are not. A chip per cell would be seven
+          identical chips per column; the header carries it once, with the same
+          `note` tooltip the config fields use. */}
+      <div style={{ textAlign: "right" }} title={enforcementOf("season_games.weight")?.note}>
+        Weight <SlateNotEnforcedMark />
+      </div>
       <div style={{ textAlign: "right" }}>Points</div>
       <div>Floor</div>
       <div>Ceiling</div>
       <div title="Foundational / Practitioner / Expert — the mix this game is actually generated against">Effective mix</div>
       <div>Days</div>
       <div>Window</div>
-      <div>Order</div>
+      <div title={enforcementOf("season_games.sort_order")?.note}>
+        Order <SlateNotEnforcedMark />
+      </div>
     </div>
+  );
+}
+
+/** A degree-sign-sized "not a rule yet" marker for a slate COLUMN. The slate
+ *  header is 9.5px mono in a 11-column grid — a full "Not enforced yet" pill
+ *  would not fit and would push the table into a horizontal scroll. The
+ *  tooltip on the header cell carries the explanation. */
+function SlateNotEnforcedMark() {
+  return (
+    <span aria-label="not enforced yet" style={{ color: "#b08b3e", cursor: "help" }}>
+      °
+    </span>
   );
 }
 

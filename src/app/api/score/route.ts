@@ -1,5 +1,5 @@
 // Authoritative score-write path for the Daily Challenge.
-//   POST /api/score { token, gameType, score, publicId?, result? }
+//   POST /api/score { token, gameType, score, publicId?, result?, scoringVersion?, hintsUsed? }
 //
 // Responsibilities:
 //   1. Validate session via service role.
@@ -11,8 +11,31 @@
 //
 // Server-only. Never trusts the client for score math. Requires env:
 //   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL (falls back to project URL).
+//
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — SCORING VERSIONS.
+//   `scoringVersion: 2`  the caller's season rules (season_games.points_override,
+//                        season_config.hint_penalty_pct) are resolved HERE, from
+//                        the season fn_season_for_subscriber_row gives for THIS
+//                        subscriber, and the resulting score is what gets written
+//                        to dc_completions (via complete-puzzle), score_events,
+//                        dc_daily_attempts and leaderboard_daily. The body may
+//                        not carry rules; resolveGameScoringRules reads the
+//                        columns itself. `hintsUsed` is the one client input and
+//                        is clamped 0..3 inside seasonScore.
+//   absent               EXACTLY today's behaviour, byte for byte. Clients cached
+//                        from before this deploy keep scoring the way they did,
+//                        and no stored score is ever recomputed: this route only
+//                        ever writes the completion in front of it. Nothing in
+//                        this pack rescores history.
 
 import { resolveSeasonFor } from "@/lib/seasons/resolve";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — season scoring. `seasonScore` is
+// the SAME pure module the client renders with, so the number on the score
+// card and the number in the database agree by construction. The RULES it is
+// fed are resolved here, by this route, from the subscriber's own season —
+// the request body carries no rules and none would be read if it did.
+import { seasonScore, scoringPathFor } from "@/lib/scoring/season-scoring.js";
+import { resolveGameScoringRules } from "@/lib/scoring/season-rules-server";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -86,7 +109,16 @@ export async function POST(request: Request) {
   // Analytics-only hint tier (0..3, FAR-198/FAR-287) — forwarded verbatim to
   // complete-puzzle, which normalizes and writes dc_completions.hints_used.
   // Never an input to score math here.
+  // Under scoringVersion 2 it is ALSO the hint penalty's input — still the only
+  // thing about scoring this route takes from the caller, and still clamped to
+  // 0..3 by seasonScore. There is no server-side record of hints spent to check
+  // it against (the budget lives in the player's localStorage), so a client that
+  // under-reports pays no penalty; that is unchanged from today, where the field
+  // is written to dc_completions.hints_used verbatim.
   const hintsUsed = typeof body.hintsUsed === "number" ? body.hintsUsed : null;
+  // D7: the ONLY scoring input the body carries besides hintsUsed. Anything
+  // other than the literal 2 is the legacy path — see scoringPathFor.
+  const scoringPath = scoringPathFor(body);
   // FAR-388: elapsed solve time in seconds (client-timed). Forwarded verbatim to
   // complete-puzzle, which normalizes (clamps/caps) and writes
   // dc_completions.solve_seconds. Analytics/presentation only — never score math.
@@ -97,6 +129,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid or expired session" }, { status: 401 });
 
   const playDate = centralDate(new Date());
+
+  // ONE season resolution per request, memoized. The legacy path still calls
+  // it at exactly the point it always did (the locked_at check below) and
+  // still calls it once; scoringVersion 2 pulls it forward and reuses the same
+  // answer, so the two paths can never disagree about whose season this is.
+  let seasonResolved = false;
+  let seasonCache: Awaited<ReturnType<typeof resolveSeasonFor>> = null;
+  const scorerSeason = async () => {
+    if (!seasonResolved) {
+      seasonCache = await resolveSeasonFor(s.headers, subscriberId);
+      seasonResolved = true;
+    }
+    return seasonCache;
+  };
 
   // Check for existing attempt — idempotent: second attempt returns the prior result.
   const existingR = await fetch(
@@ -118,6 +164,19 @@ export async function POST(request: Request) {
     }
   }
 
+  // The score that will be WRITTEN — resolved after the idempotency check,
+  // so a replay costs no extra reads. Legacy: the client's number, untouched.
+  // v2: recomputed here from server-resolved rules — the client's number is
+  // demoted to the raw input it always was (an accuracy/speed/streak roll-up
+  // capped at 150) and the season's ceiling and hint penalty are applied on
+  // top of it by the same pure function the score card rendered with.
+  let finalScore = score;
+  if (scoringPath === "v2") {
+    const season = await scorerSeason();
+    const rules = await resolveGameScoringRules(season?.id ?? null, gameType, s.headers);
+    finalScore = seasonScore({ rawScore: score, rules, hintsUsed: hintsUsed ?? 0 });
+  }
+
   // Delegate streak/badge logic to the existing complete-puzzle edge function.
   let completionResult: Record<string, unknown> = {};
   try {
@@ -131,7 +190,11 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         sessionToken: token,
         puzzleType: gameType,
-        score,
+        // dc_completions.score. Under v2 this is the season's score, which is
+        // why the ceiling shows up in history and in every leaderboard read
+        // derived from it — and why a completion written BEFORE this deploy
+        // keeps the number it was written with. Nothing backfills.
+        score: finalScore,
         ...(publicId ? { publicId } : {}),
         ...(hintsUsed !== null ? { hintsUsed } : {}),
         ...(solveSeconds !== null ? { solveSeconds } : {}),
@@ -146,7 +209,7 @@ export async function POST(request: Request) {
 
   // Check season locked_at — reject score writes after the season locks. THE
   // SCORER's season (CC-LO-CONCURRENT-SEASONS-1.0), not "the" active one.
-  const activeSeason = await resolveSeasonFor(s.headers, subscriberId);
+  const activeSeason = await scorerSeason();
   if (activeSeason?.locked_at && new Date() > new Date(activeSeason.locked_at)) {
     return Response.json({ error: "Season is locked — no more scores accepted" }, { status: 403 });
   }
@@ -160,7 +223,7 @@ export async function POST(request: Request) {
       game_type: gameType,
       play_date: playDate,
       result,
-      score,
+      score: finalScore,
     }),
   }).catch(() => {});
 
@@ -175,7 +238,7 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       subscriber_id: subscriberId,
       game_id: gameType,
-      points: score,
+      points: finalScore,
       played_at: new Date().toISOString(),
     }),
   }).catch(() => {});
@@ -183,7 +246,7 @@ export async function POST(request: Request) {
   // Upsert leaderboard_daily: increment running daily score + games_played.
   // Read-then-write is safe here because dc_daily_attempts already prevents
   // double-completion for the same (subscriber, gameType, date).
-  await upsertLeaderboardDaily(s, subscriberId, playDate, score, completionResult.playStreak as number ?? 0);
+  await upsertLeaderboardDaily(s, subscriberId, playDate, finalScore, completionResult.playStreak as number ?? 0);
 
   const runningDailyTotal = await getDailyTotal(s, subscriberId, playDate);
 
@@ -203,6 +266,10 @@ export async function POST(request: Request) {
   return Response.json({
     ok: true,
     alreadyPlayed: false,
+    // D7: what was actually written. Under the legacy path it is the number
+    // the caller sent, so an old client reading it sees no change.
+    finalScore,
+    scoringVersion: scoringPath === "v2" ? 2 : 1,
     runningDailyTotal,
     playStreak: completionResult.playStreak ?? null,
     fullSetJustCompleted: completionResult.fullSetJustCompleted ?? false,
