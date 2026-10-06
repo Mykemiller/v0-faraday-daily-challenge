@@ -1,5 +1,43 @@
 @AGENTS.md
 
+## How many hints does a season give? (CC-DC-HINTS-FROM-CONFIG-1.0, claude/dc-hints-config, 2026-10-06)
+
+**The hint budget and the hints on/off switch come from the season's effective
+config — never a constant.** `src/lib/seasons/hint-rules.ts` is the one
+server-side answer: `hintRulesFor(headers, seasonId)` reads
+`v_season_effective_config` (the ONLY authority on which config version is in
+force — reading `season_config` directly picks drafts and superseded rows) and
+returns `{ hintsEnabled, maxHints }`. The pure half, `hintRules(row)`, is the
+tested decision.
+
+**`BANK_HINT_SLOTS = 3` is the ceiling, and it lives in
+`src/lib/league-office/season-config-logic.ts`.** The generator writes three
+hint tiers per puzzle, so `maxHints = min(max_hints_per_game, 3)`: a season set
+to 4 has no fourth hint for anyone to reveal. Three enforcers of the same
+constant — `sanitizeConfigPatch` clamps new saves to [0, 3]; `localFindings`
+and `generationFindings` raise the `max_hints_exceeds_bank` ERROR on a stored
+value above it; the serve path mins. Football and HOT SUMMER were both saved at
+4 before the clamp (measured 2026-10-06) and surface the finding until re-saved.
+
+**The wire.** `/api/challenge/today` adds `hintsEnabled` and `maxHints` to the
+EXISTING `rules` object beside `scoring` — additive; a client that reads
+neither behaves as before. `DailyChallenge.jsx` passes them to all 7 games via
+`HintRulesContext`; `/challenge/hints` fetches the same route. Both spend the
+same localStorage budget key, whose SHAPE
+(`faraday_hints_${day}_${gameType}`, FAR-198) this pack does not touch.
+
+**Fail soft.** No key, no season, no effective config, a transport error, an
+older payload — all read as hints ON with a budget of 3, which is exactly what
+every season served before this pack. A rules read that went wrong must never
+silently take hints away.
+
+**Out of scope: `hint_penalty_pct`.** That column is read by
+`scoring/season-scoring.ts` and shipped in `rules.scoring`. This pack never
+touches it.
+
+Tests: `npm run test:hint-rules`, plus the clamp/finding cases in
+`test:season-config`, `test:generation` and `test:config-enforcement`.
+
 ## How many teams may a player join? (CC-DC-TEAM-CAP-FROM-CONFIG-1.0, claude/dc-team-cap, 2026-10-06)
 
 **The per-player team cap and the maximum team size come from the season's

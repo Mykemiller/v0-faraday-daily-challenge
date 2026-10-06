@@ -185,12 +185,15 @@ const FOOTBALL = {
   allow_mid_season_team_switch: true,
 };
 
-test("Football: exactly the three settings it set that do nothing", () => {
+test("Football: exactly the two settings it set that do nothing", () => {
+  // Was three. CC-DC-HINTS-FROM-CONFIG-1.0 made `max_hints_per_game` a real
+  // rule, so Football's 4 is no longer a stored-only value — it is a budget
+  // the serve path reads (and mins to the bank's 3).
   const found = notEnforcedFields(FOOTBALL).map((f) => f.field).sort();
-  assert.deepEqual(found, ["max_hints_per_game", "registration_opens_on", "target_solve_rate_pct"]);
+  assert.deepEqual(found, ["registration_opens_on", "target_solve_rate_pct"]);
   assert.equal(
     summarizeNotEnforced(notEnforcedFields(FOOTBALL)),
-    "3 settings in this config are saved but not yet enforced"
+    "2 settings in this config are saved but not yet enforced"
   );
 });
 
@@ -202,6 +205,19 @@ test("Football: the fields it set that ARE rules stay off the list", () => {
   // a line in the "saved but does nothing" count either.
   assert.ok(!found.has("max_teams_per_subscriber"));
   assert.ok(!found.has("max_team_size"));
+  // Same for the hint budget (CC-DC-HINTS-FROM-CONFIG-1.0).
+  assert.ok(!found.has("max_hints_per_game"));
+  assert.ok(!found.has("hints_enabled"));
+});
+
+test("the hint fields read as enforced and name their reader", () => {
+  for (const f of ["hints_enabled", "max_hints_per_game"]) {
+    assert.equal(CONFIG_ENFORCEMENT[f].status, "enforced", f);
+    assert.match(CONFIG_ENFORCEMENT[f].by, /hint-rules/, f);
+  }
+  // The penalty is owned elsewhere and must not have drifted.
+  assert.equal(CONFIG_ENFORCEMENT.hint_penalty_pct.status, "enforced");
+  assert.match(CONFIG_ENFORCEMENT.hint_penalty_pct.by, /season-scoring/);
 });
 
 test("a config sitting entirely on its defaults nags about nothing", () => {

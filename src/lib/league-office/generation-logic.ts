@@ -33,6 +33,10 @@ import {
   overScheduledDates, scheduledDayCount,
   type ScheduleConfig, type ScheduleGame, type ScheduleSeason,
 } from "../seasons/schedule.ts";
+// CC-DC-HINTS-FROM-CONFIG-1.0 D1 — the bank's hint-tier count has one
+// definition, in the same module the Configurator clamps against, so the
+// pre-flight and the editor can never disagree about what "too many" is.
+import { BANK_HINT_SLOTS } from "./season-config-logic.ts";
 
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
@@ -188,6 +192,13 @@ export type GenerationInput = {
    * blocked. Nothing anywhere picks which game to drop.
    */
   gamesPerDay?: number | null;
+  /**
+   * CC-DC-HINTS-FROM-CONFIG-1.0 D1 — the focus config's `max_hints_per_game`.
+   * A VALIDATION rule only: above `BANK_HINT_SLOTS` the bank has no hint to
+   * serve, so the season is asking for content that does not exist and the run
+   * is blocked until the number comes down. Optional: absent ⇒ no finding.
+   */
+  maxHintsPerGame?: number | null;
 };
 
 const isHundred = (n: number) => Math.abs(n - 100) < 0.001;
@@ -426,6 +437,16 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
       `Games per day is ${input.gamesPerDay}, but more games than that are scheduled on ${over.length} date${over.length === 1 ? "" : "s"} — ${first}${over.length > 3 ? ", …" : ""}. Raise the cap or narrow the slate; generation never drops a game to fit.`
     );
   }
+
+  // 5c — CC-DC-HINTS-FROM-CONFIG-1.0 D1: the hint budget cannot exceed the
+  // three tiers the generator writes per puzzle. Same code and same ceiling as
+  // the Configurator's `localFindings`, so a commissioner sees the identical
+  // sentence in the editor and in the generation pre-flight.
+  if (input.maxHintsPerGame != null && input.maxHintsPerGame > BANK_HINT_SLOTS)
+    err(
+      "max_hints_exceeds_bank",
+      `Max hints per game is ${input.maxHintsPerGame}, but the bank stores ${BANK_HINT_SLOTS} hints per puzzle — there is no fourth hint to generate. Lower it to ${BANK_HINT_SLOTS}.`
+    );
 
   // 6 — difficulty mix sums to exactly 100 (global rows; per-game overrides per game)
   const globalDiff = input.difficultyMix.filter((d) => !d.applies_to_game_id);

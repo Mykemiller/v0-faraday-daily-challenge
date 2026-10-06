@@ -40,6 +40,20 @@ export type DifficultyBand = (typeof DIFFICULTY_BANDS)[number];
 export const TEAM_SCORE_METHODS = ["sum", "average", "top_n"] as const;
 export const LEADERBOARD_VISIBILITIES = ["public", "league", "private"] as const;
 
+/**
+ * CC-DC-HINTS-FROM-CONFIG-1.0 D1 — how many hint tiers the PUZZLE BANK stores
+ * for one game on one day. Three, everywhere: the generator writes Hint 1/2/3,
+ * `/api/challenge/day-content` serves three, and both hint surfaces render
+ * three. That is a property of the content, not a preference, so it is the
+ * hard ceiling on `season_config.max_hints_per_game` — a season asking for 4
+ * cannot be given a fourth hint by anyone, because no fourth hint exists.
+ *
+ * THE one definition. `sanitizeConfigPatch` clamps to it, `localFindings` and
+ * `generationFindings` raise `max_hints_exceeds_bank` above it, and the serve
+ * path (`src/lib/seasons/hint-rules.ts`) mins against it.
+ */
+export const BANK_HINT_SLOTS = 3;
+
 /** The seven IDF 4.0 Theaters, as carried by `dc_daily_theme.theater_id`.
  *  Names are the public labels — never D-codes (repo-wide IDF rule). */
 export const THEATERS: { id: string; name: string }[] = [
@@ -677,6 +691,14 @@ export function sanitizeConfigPatch(input: Record<string, unknown>): Record<stri
   for (const [k, fallback] of Object.entries(NOT_NULL_FALLBACKS))
     if (k in out && (out[k] === null || out[k] === undefined)) out[k] = fallback;
 
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — the hint budget is clamped to what the
+  // bank can actually serve. Above BANK_HINT_SLOTS the extra hints do not
+  // exist; below zero is not a setting. Applied AFTER the NOT NULL fallback so
+  // a cleared field lands on 3 and is then clamped to 3 (a no-op), never the
+  // other way round.
+  if (typeof out.max_hints_per_game === "number")
+    out.max_hints_per_game = Math.min(BANK_HINT_SLOTS, Math.max(0, out.max_hints_per_game));
+
   return out;
 }
 
@@ -713,6 +735,9 @@ export function localFindings(input: {
   gamesPerDay: number | null;
   teamScoreMethod: string;
   teamScoreTopN: number | null;
+  /** CC-DC-HINTS-FROM-CONFIG-1.0 D1. Optional: a caller that does not supply
+   *  it simply gets no hint finding, which is what every caller got before. */
+  maxHintsPerGame?: number | null;
 }): Finding[] {
   const out: Finding[] = [];
   const enabled = input.games.filter((g) => g.is_enabled).length;
@@ -729,6 +754,19 @@ export function localFindings(input: {
 
   if (input.teamScoreMethod === "top_n" && !input.teamScoreTopN)
     out.push({ severity: "error", code: "top_n_missing", message: "Team scoring is top-N but no N is set." });
+
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — a stored budget above the bank's three
+  // tiers. New saves are clamped by sanitizeConfigPatch, so this only fires on
+  // configs written before the clamp existed (two active ones at
+  // 2026-10-06 — Football and HOT SUMMER, both at 4). It is an ERROR rather
+  // than a warning because the number is not merely optimistic, it is
+  // unservable: players get 3 whatever it says.
+  if (input.maxHintsPerGame != null && input.maxHintsPerGame > BANK_HINT_SLOTS)
+    out.push({
+      severity: "error",
+      code: "max_hints_exceeds_bank",
+      message: `Max hints per game (${input.maxHintsPerGame}) exceeds the ${BANK_HINT_SLOTS} hints the bank stores — players will get ${BANK_HINT_SLOTS}.`,
+    });
 
   // CC-LO-MIX-NORMALIZE-1.0: an off-100 theme/difficulty total is no longer a
   // finding here. The TotalBar states it inline and every save rescales the

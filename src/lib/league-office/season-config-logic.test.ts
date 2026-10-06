@@ -8,7 +8,7 @@ import {
   editability, slugify, round2, sumPct, isHundred, normalizeTo100, evenSplit,
   defaultDifficultyMix, defaultThemeMix, normalizeDayMask, dayMaskLabel,
   windowSummary, validateWindow, curvePoints, canonicalJson, fingerprint,
-  configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
+  BANK_HINT_SLOTS, configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
   diffConfigs, promoteIntent, countOverCap, THEATERS,
   derivedFreeAgency,
   seedTradingWindows, validateTradingWindows, tradingWindowsFit, leagueWindowDefaults,
@@ -255,6 +255,21 @@ test("sanitizeConfigPatch guards enums and NOT NULL columns", () => {
   assert.equal(sanitizeConfigPatch({ team_score_top_n: "" }).team_score_top_n, null);
 });
 
+// CC-DC-HINTS-FROM-CONFIG-1.0 D1 ───────────────────────────────────────────
+test("sanitizeConfigPatch clamps the hint budget to what the bank stores", () => {
+  assert.equal(BANK_HINT_SLOTS, 3);
+  assert.equal(sanitizeConfigPatch({ max_hints_per_game: 4 }).max_hints_per_game, 3);
+  assert.equal(sanitizeConfigPatch({ max_hints_per_game: "9" }).max_hints_per_game, 3);
+  assert.equal(sanitizeConfigPatch({ max_hints_per_game: -2 }).max_hints_per_game, 0);
+  // In range, untouched — including the legitimate "this season gives none".
+  for (const n of [0, 1, 2, 3])
+    assert.equal(sanitizeConfigPatch({ max_hints_per_game: n }).max_hints_per_game, n);
+  // A cleared field still lands on the NOT NULL fallback, not on 0.
+  assert.equal(sanitizeConfigPatch({ max_hints_per_game: "" }).max_hints_per_game, 3);
+  // Absent stays absent — a PATCH that does not mention hints must not write them.
+  assert.ok(!("max_hints_per_game" in sanitizeConfigPatch({ label: "x" })));
+});
+
 // ── findings ─────────────────────────────────────────────────────────────────
 const okInput = {
   games: [{ is_enabled: true }, { is_enabled: true }],
@@ -281,6 +296,23 @@ test("localFindings mirrors the DB validator's rules", () => {
   // path rescales it to 100, so there is nothing for the footer to report.
   const offMix = localFindings({ ...okInput, themeMix: [{ target_pct: 90 }], difficultyMix: [{ target_pct: 80 }] });
   assert.equal(offMix.length, 0);
+});
+
+// CC-DC-HINTS-FROM-CONFIG-1.0 D1 ───────────────────────────────────────────
+test("localFindings reports a stored hint budget above the bank's three tiers", () => {
+  // Football and HOT SUMMER both sit at 4 (SELECTed 2026-10-06) — written
+  // before the clamp existed, so the editor has to say so until they re-save.
+  const over = localFindings({ ...okInput, maxHintsPerGame: 4 });
+  assert.equal(over.length, 1);
+  assert.equal(over[0].code, "max_hints_exceeds_bank");
+  assert.equal(over[0].severity, "error");
+  assert.match(over[0].message, /players will get 3/);
+
+  for (const n of [0, 1, 2, 3])
+    assert.deepEqual(localFindings({ ...okInput, maxHintsPerGame: n }), [], `${n} is servable`);
+  // Optional: a caller that does not pass it gets what it always got.
+  assert.deepEqual(localFindings({ ...okInput, maxHintsPerGame: null }), []);
+  assert.deepEqual(localFindings(okInput), []);
 });
 
 // ── mix normalization (CC-LO-MIX-NORMALIZE-1.0) ──────────────────────────────

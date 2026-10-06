@@ -53,6 +53,12 @@ import { fetchNextSeason } from "@/lib/seasons/next-season";
 // block is advisory to the client (it renders the number); /api/score resolves
 // the same columns itself before it writes one.
 import { resolveSeasonScoringRules } from "@/lib/scoring/season-rules-server";
+// CC-DC-HINTS-FROM-CONFIG-1.0 D2 — `hints_enabled` / `max_hints_per_game`,
+// resolved from the SAME season as the puzzles. Read through
+// `v_season_effective_config` (the one authority on which config version is in
+// force), matching teamRulesFor rather than adding a second, weaker
+// `state=eq.active` pick.
+import { hintRulesFor } from "@/lib/seasons/hint-rules";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -200,7 +206,7 @@ export async function GET(request) {
     const season = await resolveSeasonFor(h, subscriberId);
     const seasonId = season?.id ?? null;
 
-    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason, scoring] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason, scoring, hints] = await Promise.all([
       getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
@@ -220,6 +226,10 @@ export async function GET(request) {
       // (150 / 0% / streak on), which is what every season scored at before
       // this pack, so nothing moves for them.
       resolveSeasonScoringRules(seasonId, h),
+      // D2 — one more read in the same parallel batch. Fail-soft to
+      // { hints on, 3 }, which is exactly what every season served before
+      // this pack, so nothing moves for a season with no effective config.
+      hintRulesFor(h, seasonId),
     ]);
 
     // Narrow to the season's enabled games. A null slate leaves the set
@@ -269,14 +279,22 @@ export async function GET(request) {
         // D7: `{ [runtime_key]: { pointsMax, hintPenaltyPct }, streakBonus }`.
         // Purely additive — a client that does not read it scores exactly as
         // it did, and the server never trusts what comes back.
-        rules: { scoring },
+        // CC-DC-HINTS-FROM-CONFIG-1.0 D2 — `hintsEnabled` and `maxHints` are
+        // ADDITIVE siblings of `scoring` inside the same block. `maxHints` is
+        // already min'd against the bank's three tiers, so the client never
+        // has to know the ceiling exists; a client that does not read either
+        // field behaves exactly as it did.
+        rules: { scoring, hintsEnabled: hints.hintsEnabled, maxHints: hints.maxHints },
       },
       { headers: NO_STORE }
     );
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
     return Response.json(
-      { puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null, rules: { scoring: { streakBonus: true } } },
+      {
+        puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null,
+        rules: { scoring: { streakBonus: true }, hintsEnabled: true, maxHints: 3 },
+      },
       { headers: NO_STORE }
     );
   }
