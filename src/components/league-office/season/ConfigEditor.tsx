@@ -31,6 +31,7 @@ import type {
 } from "@/lib/league-office/seasons";
 import {
   curvePoints, DIFFICULTY_BANDS, DIFFICULTY_CURVES, diffConfigs, editability,
+  effectiveTypeMix,
   evenSplit, fieldLabel, formatValue, isHundred, LEADERBOARD_VISIBILITIES,
   localFindings, normalizeDifficultyMix, normalizeThemeMix, promoteIntent, round2, summarizeFindings,
   sumPct, TEAM_SCORE_METHODS,
@@ -159,6 +160,31 @@ export default function ConfigEditor({
   const themeTotal = sumPct(themeMix.filter((t) => !t.is_excluded).map((t) => t.target_pct));
   const baseDifficulty = difficultyMix.filter((d) => !d.applies_to_game_id);
   const difficultyTotal = sumPct(baseDifficulty.map((d) => d.target_pct));
+
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — the slate's read-only "Effective mix"
+  // column. The commissioner sets a season mix in section E and a floor per
+  // game in section C, and until now nothing said the second one rewrites the
+  // first: on the Football slate the configured 14/30/56 comes out of the
+  // generator as 3/20/77. This is the same effectiveTypeMix() the worker
+  // allocates with, so the preview cannot drift from the run.
+  const effectiveMixFor = (g: GameRow): { label: string; empty: boolean } => {
+    const rows = effectiveTypeMix({
+      seasonMix: baseDifficulty,
+      perGameRows: difficultyMix.filter((d) => d.applies_to_game_id === g.game_id),
+      floor: g.difficulty_floor,
+      ceiling: g.difficulty_ceiling,
+    });
+    if (!rows) return { label: "no band", empty: true };
+    const byBand = new Map(rows.map((r) => [r.difficulty_band, r.target_pct]));
+    // A band the window drops renders as an em dash, not as 0 — "not generated
+    // at all" and "generated 0.4% of the time" are different facts.
+    return {
+      label: DIFFICULTY_BANDS.map((b) =>
+        byBand.has(b) ? String(Math.round(byBand.get(b) as number)) : "—"
+      ).join(" / "),
+      empty: false,
+    };
+  };
 
   const findings = useMemo(
     () =>
@@ -545,6 +571,7 @@ export default function ConfigEditor({
                       row={g}
                       index={i}
                       game={catalogById.get(g.game_id)}
+                      effectiveMix={effectiveMixFor(g)}
                       disabled={readOnly}
                       onChange={(next) => {
                         setGames((rows) => rows.map((r, ri) => (ri === i ? next : r)));
@@ -1197,7 +1224,10 @@ export default function ConfigEditor({
 // The game column gets a real minimum so the name never collapses to an ellipsis
 // (it used to share a 1.4fr slot that the fixed columns squeezed to ~28px inside
 // the 900px min-width — that is why names rendered as "T..").
-const SLATE_COLS = "34px 30px minmax(230px, 1.8fr) 90px 78px 84px 108px 108px 150px 118px";
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — "Effective mix" sits immediately
+// after Ceiling, because it is the consequence of Floor and Ceiling and the
+// commissioner should read them left to right as cause then effect.
+const SLATE_COLS = "34px 30px minmax(230px, 1.8fr) 90px 78px 84px 108px 116px 108px 150px 118px";
 
 function SlateHeader() {
   return (
@@ -1224,6 +1254,7 @@ function SlateHeader() {
       <div style={{ textAlign: "right" }}>Points</div>
       <div>Floor</div>
       <div>Ceiling</div>
+      <div title="Foundational / Practitioner / Expert — the mix this game is actually generated against">Effective mix</div>
       <div>Days</div>
       <div>Window</div>
       <div>Order</div>
@@ -1232,11 +1263,14 @@ function SlateHeader() {
 }
 
 function SlateRow({
-  row, index, game, disabled, onChange, onMove, onDropRow, isFirst, isLast,
+  row, index, game, effectiveMix, disabled, onChange, onMove, onDropRow, isFirst, isLast,
 }: {
   row: GameRow;
   index: number;
   game: GameCatalogRow | undefined;
+  /** CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — read-only, computed by the parent
+   *  from the live difficulty mix with the generator's own helper. */
+  effectiveMix: { label: string; empty: boolean };
   disabled?: boolean;
   onChange: (next: GameRow) => void;
   onMove: (dir: -1 | 1) => void;
@@ -1348,6 +1382,28 @@ function SlateRow({
       <div><NumberInput disabled={disabled} min={0} value={row.points_override} onChange={(v) => set({ points_override: v })} placeholder={String(game?.default_points ?? "")} /></div>
       <div><Select disabled={disabled} value={row.difficulty_floor ?? ""} onChange={(v) => set({ difficulty_floor: v || null })} options={bands} /></div>
       <div><Select disabled={disabled} value={row.difficulty_ceiling ?? ""} onChange={(v) => set({ difficulty_ceiling: v || null })} options={bands} /></div>
+
+      {/* CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — what this game will actually be
+          generated against, once its override rows and its floor/ceiling have
+          been applied to the season mix. Read-only: it is a consequence of the
+          two selects to its left and of section E, never an input of its own. */}
+      <div
+        className="font-mono"
+        title={
+          effectiveMix.empty
+            ? "The floor is deeper than the ceiling — no band is left to generate."
+            : "Foundational / Practitioner / Expert, after this game's floor, ceiling and overrides"
+        }
+        style={{
+          fontSize: 11,
+          letterSpacing: ".02em",
+          color: effectiveMix.empty ? "#a4462a" : row.is_enabled ? MUTED : FAINT,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {effectiveMix.label}
+      </div>
+
       <div><DayMask disabled={disabled} value={row.appears_on_days} onChange={(v) => set({ appears_on_days: v })} /></div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>

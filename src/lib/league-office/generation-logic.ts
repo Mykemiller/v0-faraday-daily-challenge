@@ -22,7 +22,9 @@
 // Relative, with the extension: generation-logic.test.ts runs under plain
 // `node --test` (type stripping), which does not read tsconfig `paths`.
 import { unfillableThemeQuotas } from "../generation/theme-allocation.js";
-import { CURVE_CUSTOM_WARNING, normalizeCurve } from "../generation/difficulty.js";
+import {
+  CANONICAL_BANDS, CURVE_CUSTOM_WARNING, effectiveTypeMix, mixVector, normalizeCurve,
+} from "../generation/difficulty.js";
 
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
@@ -50,6 +52,14 @@ export type GenSlateGame = {
   game_id: string;
   is_enabled: boolean;
   puzzle_count: number | null;
+  /**
+   * CC-DC-GEN-DIFFICULTY-PERGAME-1.0 — `season_games.difficulty_floor` and
+   * `.difficulty_ceiling`: the band window this game is generated inside.
+   * Optional, and an absent bound is OPEN on that side, so a caller that does
+   * not supply them gets exactly the pre-PERGAME behaviour.
+   */
+  difficulty_floor?: string | null;
+  difficulty_ceiling?: string | null;
 };
 
 export type GenThemeMixRow = {
@@ -90,6 +100,11 @@ export const BANK_MINIMUM_DAYS = 14;
 export const RUN_SIZE_WARN = 2000;
 export const THIN_CORPUS_SECTORS = ["D16", "D18"];
 export const THIN_CORPUS_WARN_PCT = 15;
+/** CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3 — how far, in percentage POINTS on any
+ *  one band, the per-game rules may pull the season away from the configured
+ *  mix before the commissioner is told. Five points is roughly "one band moved
+ *  by a sixth"; Football moves expert by 21. */
+export const DIFFICULTY_SHIFT_WARN_PTS = 5;
 
 /** Inclusive day count of a season window; null when dates are missing/invalid. */
 export function seasonDayCount(startsOn: string | null, endsOn: string | null): number | null {
@@ -164,6 +179,76 @@ export function computeTargets(input: GenerationInput): {
       return [{ game, requested, effective: dayCount ?? 0 }];
     });
   return { dayCount, perGame, total: sum(perGame.map((g) => g.effective)) };
+}
+
+/**
+ * CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3 — what the season's difficulty mix is
+ * going to COME OUT as, once every enabled game's own override rows and its
+ * [floor, ceiling] window have been applied.
+ *
+ * The commissioner sets one season mix and then, several sections further down
+ * the same editor, sets a floor per game. Nothing told them those two
+ * interact. On the Football slate they interact to the tune of 21 points:
+ * expert is configured at 55.77% and lands at 77.2%, because Rackl and Dark
+ * Fiber are pinned expert-expert and The Brief and The Stack have their
+ * foundational share clipped away (measured 2026-10-06, config
+ * 3bf84bc8-f202-4a2d-9a89-9dcc38f36711).
+ *
+ * `realized` is the per-game effective mixes weighted by each game's SCHEDULED
+ * DAYS — which is what computeTargets() says a game generates, one puzzle per
+ * day (see the module header on why surplus is not representable in v1). A
+ * game whose window is empty carries no weight here; it is a blocking
+ * `difficulty_window_empty` error, not a shift.
+ *
+ * Pure, and exported so the League Office panel, the confirm modal and the
+ * tests all read one number.
+ */
+export function realizedDifficultyMix(input: GenerationInput): {
+  /** The season mix as configured, normalized, in CANONICAL_BANDS order. */
+  configured: number[];
+  /** What the per-game rules actually produce, same order. */
+  realized: number[];
+  /** The largest single-band gap between the two, in percentage points. */
+  maxDeviation: number;
+  perGame: { game: GenCatalogGame; days: number; mix: number[] | null }[];
+} {
+  const dayCount = seasonDayCount(input.season.starts_on, input.season.ends_on) ?? 0;
+  const byId = new Map(input.catalog.map((g) => [g.id, g]));
+  const globalDiff = input.difficultyMix.filter((d) => !d.applies_to_game_id);
+  // An open window over the season mix IS the configured mix, normalized the
+  // one way the editor normalizes — no second rounding rule in this file.
+  const configured = mixVector(effectiveTypeMix({ seasonMix: globalDiff }));
+
+  const perGame = input.slate
+    .filter((r) => r.is_enabled)
+    .flatMap((r) => {
+      const game = byId.get(r.game_id);
+      if (!game) return [];
+      const rows = effectiveTypeMix({
+        seasonMix: globalDiff,
+        perGameRows: input.difficultyMix.filter((d) => d.applies_to_game_id === r.game_id),
+        floor: r.difficulty_floor,
+        ceiling: r.difficulty_ceiling,
+      });
+      return [{ game, days: dayCount, mix: rows ? mixVector(rows) : null }];
+    });
+
+  const weighted = perGame.filter((g): g is typeof g & { mix: number[] } => !!g.mix && g.days > 0);
+  const totalDays = sum(weighted.map((g) => g.days));
+  const realized =
+    totalDays > 0
+      ? CANONICAL_BANDS.map((_, b) => sum(weighted.map((g) => g.mix[b] * g.days)) / totalDays)
+      : configured.slice();
+  const maxDeviation = CANONICAL_BANDS.reduce(
+    (worst, _b, i) => Math.max(worst, Math.abs(realized[i] - configured[i])),
+    0
+  );
+  return { configured, realized, maxDeviation, perGame };
+}
+
+/** A mix vector as the commissioner reads it: whole points, deepest last. */
+function formatMix(v: number[]): string {
+  return v.map((n) => Math.round(n)).join("/");
 }
 
 /** Spec conditions 1–10 as blocking errors. `forFullRun` adds condition 10. */
@@ -245,6 +330,26 @@ export function generationFindings(input: GenerationInput, forFullRun: boolean):
     if (!isHundred(pct))
       err("game_difficulty_mix_not_100", `"${byId.get(gid)?.display_name ?? gid}" difficulty override totals ${pct}% (must be exactly 100%).`);
 
+  // 6b — CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3: a game's [floor, ceiling] must
+  // leave at least one band standing. A floor deeper than the ceiling is not a
+  // mix the generator can round its way out of — there is nothing to generate
+  // — so it blocks here rather than failing the run mid-slice.
+  for (const r of enabled) {
+    const g = byId.get(r.game_id);
+    if (!g) continue;
+    const eff = effectiveTypeMix({
+      seasonMix: globalDiff,
+      perGameRows: input.difficultyMix.filter((d) => d.applies_to_game_id === r.game_id),
+      floor: r.difficulty_floor,
+      ceiling: r.difficulty_ceiling,
+    });
+    if (!eff)
+      err(
+        "difficulty_window_empty",
+        `"${g.display_name}" has a difficulty floor of ${r.difficulty_floor} above its ceiling of ${r.difficulty_ceiling} — no band is left to generate.`
+      );
+  }
+
   // 7 — theme emphasis: sector codes must be live Active domain codes; mix sums to 100
   const active = new Set(input.activeDomainCodes);
   const included = input.themeMix.filter((t) => !t.is_excluded);
@@ -314,6 +419,19 @@ export function generationWarnings(input: GenerationInput): Finding[] {
     warn(
       CURVE_CUSTOM_WARNING,
       'Difficulty curve is set to "custom", but no custom shape is stored — generation will spread the configured mix evenly across the season. The band totals still match the mix exactly.'
+    );
+
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3 — the season mix and the per-game
+  // floors are set in two different sections of the editor and multiply into
+  // each other. Say so BEFORE generating, in the two numbers the commissioner
+  // configured and will measure the bank against.
+  const shift = realizedDifficultyMix(input);
+  if (shift.maxDeviation > DIFFICULTY_SHIFT_WARN_PTS)
+    warn(
+      "difficulty_mix_shifted_by_game_rules",
+      `Per-game floors shift the season mix from ${formatMix(shift.configured)} to ` +
+        `${formatMix(shift.realized)} (foundational/practitioner/expert) — the per-game ` +
+        `floors, ceilings and overrides win, band for band.`
     );
 
   const targets = computeTargets(input);

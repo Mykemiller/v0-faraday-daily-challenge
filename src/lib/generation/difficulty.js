@@ -393,3 +393,138 @@ export function difficultyTargets(mix, dateCount) {
   CANONICAL_BANDS.forEach((b, i) => { out[b] = counts[i]; });
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 — the per-game window, applied
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Root cause this section exists to kill: `season_games.difficulty_floor` and
+// `.difficulty_ceiling` were configured and read by NOTHING. The Football slate
+// (config 3bf84bc8-f202-4a2d-9a89-9dcc38f36711) sets Rackl and Dark Fiber to
+// expert–expert and The Brief and The Stack to practitioner–expert, and the
+// season banked 167 rows below their game's own floor anyway (measured
+// 2026-10-06: Dark Fiber 60, Rackl 59, The Brief 24, The Stack 24). The same
+// was true of the per-game override rows in season_difficulty_mix: the worker
+// filtered `applies_to_game_id` rows OUT and allocated every game from the
+// season mix.
+//
+// Invariants:
+//   P1  pure. Mix rows, a floor and a ceiling in; normalized mix rows out. No
+//       I/O, no clock, no randomness — the League Office preview, the worker
+//       and the CLI all call this and must agree to the 0.01.
+//   P2  the game's OWN mix rows (season_difficulty_mix.applies_to_game_id =
+//       this game) REPLACE the season mix when any of them names a band we
+//       know. They are an override, not an addition.
+//   P3  a band outside [floor, ceiling] is DROPPED, and what is left is
+//       renormalized to 100 — never clamped onto the nearest in-window band,
+//       which would silently invent a mix nobody configured. A null, absent or
+//       unrecognised bound is OPEN on that side.
+//   P4  a floor DEEPER than the ceiling leaves no band at all. That is a
+//       configuration fault, so the answer is null and the League Office
+//       blocks the run (`difficulty_window_empty`) rather than the generator
+//       guessing.
+//   P5  CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 is untouched: the result is fed to
+//       planDifficulty() through the `perTypeMix` seam D5 already reserved, so
+//       the largest-remainder totals and the curve placement are unchanged.
+
+/**
+ * normalizeTo100()'s semantics (src/lib/league-office/season-config-logic.ts),
+ * in plain JS so the generator, the CLI twin and the editor round identically:
+ * scale to 100, round each share to 2dp, and push the residual onto the
+ * largest element. A zero-sum input is an even split — "no signal" must never
+ * collapse the whole window onto its first band.
+ *
+ * @param {number[]} values
+ * @returns {number[]}
+ */
+function normalizePct(values) {
+  const n = values.length;
+  if (!n) return [];
+  const total = values.reduce((a, v) => a + (Number(v) || 0), 0);
+  const out =
+    total > 0
+      ? values.map((v) => round2(((Number(v) || 0) * 100) / total))
+      : new Array(n).fill(round2(100 / n));
+  const drift = round2(100 - out.reduce((a, v) => a + v, 0));
+  if (drift === 0) return out;
+  let idx = 0;
+  for (let i = 1; i < n; i++) if (out[i] > out[idx]) idx = i;
+  out[idx] = round2(out[idx] + drift);
+  return out;
+}
+
+/**
+ * The inclusive index window into CANONICAL_BANDS that a floor/ceiling pair
+ * admits, or null when it admits nothing (P4).
+ *
+ * Both bounds go through canonicalDifficulty, so the legacy vocabulary still
+ * reads (`hard` is a ceiling of `expert`) and an unknown string is treated as
+ * no bound at all — a stale enum value must not be able to empty a game's
+ * window and stop a season generating.
+ *
+ * @param {unknown} floor
+ * @param {unknown} ceiling
+ * @returns {{lo: number, hi: number}|null}
+ */
+export function difficultyWindow(floor, ceiling) {
+  const f = canonicalDifficulty(floor);
+  const c = canonicalDifficulty(ceiling);
+  const lo = f === null ? 0 : CANONICAL_BANDS.indexOf(f);
+  const hi = c === null ? CANONICAL_BANDS.length - 1 : CANONICAL_BANDS.indexOf(c);
+  return lo <= hi ? { lo, hi } : null;
+}
+
+/**
+ * The mix ONE game is actually generated against: its own override rows if it
+ * has any, else the season mix, clipped to its [floor, ceiling] window and
+ * renormalized to 100.
+ *
+ * Feed the result to planDifficulty({ perTypeMix: { [runtime_key]: rows } }).
+ *
+ * @param {{
+ *   seasonMix?: {difficulty_band: string, target_pct: number}[],
+ *   perGameRows?: {difficulty_band: string, target_pct: number}[],
+ *   floor?: unknown,
+ *   ceiling?: unknown,
+ * }} input
+ * @returns {{difficulty_band: string, target_pct: number}[]|null} canonical
+ *   order, summing to exactly 100 — or null when the window is empty (P4).
+ */
+export function effectiveTypeMix(input) {
+  const i = input && typeof input === "object" ? input : {};
+  const win = difficultyWindow(i.floor, i.ceiling);
+  if (!win) return null;
+
+  // P2 — an override set is only an override if something in it resolves. A
+  // row naming a band we do not know is not a quieter season mix, it is noise.
+  const own = (Array.isArray(i.perGameRows) ? i.perGameRows : []).filter(
+    (r) => canonicalDifficulty(r?.difficulty_band) !== null,
+  );
+  // mixWeights() applies the SAME canonicalization, duplicate-row summing and
+  // 40/40/20 degradation the allocator uses, so a mix means one thing here and
+  // another nowhere.
+  const weights = mixWeights(own.length ? own : i.seasonMix);
+
+  const kept = weights.slice(win.lo, win.hi + 1);
+  const pct = normalizePct(kept);
+  return kept.map((_, k) => ({
+    difficulty_band: CANONICAL_BANDS[win.lo + k],
+    target_pct: pct[k],
+  }));
+}
+
+/**
+ * A mix as one percentage per CANONICAL_BANDS entry (0 for a band the mix does
+ * not carry) — the shape a caller compares two mixes in.
+ *
+ * @param {{difficulty_band: string, target_pct: number}[]|null|undefined} rows
+ * @returns {number[]}
+ */
+export function mixVector(rows) {
+  const out = CANONICAL_BANDS.map(() => 0);
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const b = CANONICAL_BANDS.indexOf(canonicalDifficulty(r?.difficulty_band));
+    if (b >= 0) out[b] += Number(r?.target_pct) || 0;
+  }
+  return out;
+}
