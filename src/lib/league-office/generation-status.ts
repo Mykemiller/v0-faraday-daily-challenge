@@ -304,3 +304,33 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     conformance: conformanceReport,
   };
 }
+
+/**
+ * CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — how much of a season's bank is already
+ * committed, as two numbers.
+ *
+ * `approved` is everything that cleared review (Published, Live, Retired);
+ * `served` is the subset players have already seen (Live, Retired). Drafts are
+ * excluded on purpose: an unapproved row is not something a config edit would
+ * be "too late" for.
+ *
+ * The projection is ONE column — `published`. No name, no clue, no answer and
+ * no date leaves the server for this banner; it reports a count and nothing
+ * else, which is all the commissioner is being told.
+ */
+export type BankCommitment = { approved: number; served: number };
+
+const APPROVED_STATES = ["Published", "Live", "Retired"];
+const SERVED_STATES = ["Live", "Retired"];
+
+export async function bankCommitment(s: Svc, seasonId: string): Promise<BankCommitment> {
+  const rows = await qPaged<{ published: string | null }>(
+    s,
+    `dc_puzzle_bank_staging?season_id=eq.${seasonId}` +
+      `&published=in.(${APPROVED_STATES.join(",")})&select=published&order=id.asc`
+  );
+  return {
+    approved: rows.length,
+    served: rows.filter((r) => r.published && SERVED_STATES.includes(r.published)).length,
+  };
+}

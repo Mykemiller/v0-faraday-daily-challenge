@@ -977,3 +977,140 @@ function nameGamesInMessage(raw: string, catalog: { id: string; display_name: st
     }
   );
 }
+
+// ── CC-LO-POSTGEN-CONFIG-GUARD-1.0: settings that shape GENERATION ───────────
+//
+// Once a season's puzzles exist, the configuration splits in two. Most of it is
+// read at PLAY time (scoring, hints, visibility, team rules) and keeps applying
+// to the bank that is already there. The settings below were read ONCE, by the
+// generator, and editing them now changes nothing that has already been
+// written — the puzzles do not move.
+//
+// That is not a reason to block the edit (the next run will honour it, and
+// `season.regenerate_from` is the path that actually replaces puzzles). It is a
+// reason to say so before the save, and to mark the audit row so a later reader
+// can tell a shaping edit apart from a scoring tweak.
+
+/** D1 — THE list, in one place. Anything not here is play-time configuration. */
+export const GENERATION_SHAPING_FIELDS = {
+  /** `season_config` columns. */
+  config: ["play_days_of_week", "games_per_day", "difficulty_curve"],
+  /** `season_games` columns, compared per slate row. */
+  slate: [
+    "is_enabled",
+    "difficulty_floor",
+    "difficulty_ceiling",
+    "puzzle_count",
+    "appears_on_days",
+    "starts_on",
+    "ends_on",
+  ],
+  /** Whole child tables — every row counts, so they are compared as a set. */
+  mixes: ["season_theme_mix", "season_difficulty_mix"],
+} as const;
+
+/** The four sets a save replaces, in the loose row shape both the editor's
+ *  working copy and a PostgREST read satisfy. */
+export type ShapingSnapshot = {
+  config: Record<string, unknown>;
+  games: Record<string, unknown>[];
+  themeMix: Record<string, unknown>[];
+  difficultyMix: Record<string, unknown>[];
+};
+
+const THEME_MIX_KEYS = [
+  "theater_id", "sector_code", "thread_code", "target_pct", "min_pct", "max_pct", "is_excluded",
+] as const;
+const DIFFICULTY_MIX_KEYS = [
+  "difficulty_band", "target_pct", "min_pct", "max_pct", "applies_to_game_id",
+] as const;
+
+/** One comparable token per value. `null`/`undefined` collapse (PostgREST and
+ *  the editor disagree about which one an empty column is), numerics are
+ *  compared at the 2dp the writer stores — `"14.00"` and `14` are the SAME
+ *  mix — and arrays are order-insensitive. */
+function shapingValue(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (Array.isArray(v)) return `[${v.map(shapingValue).sort().join(",")}]`;
+  if (typeof v === "number") return Number.isFinite(v) ? String(round2(v)) : "null";
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))
+    return String(round2(Number(v)));
+  return canonicalJson(v);
+}
+
+/** A set signature: row order from PostgREST must never read as a change. */
+function mixSignature(rows: Record<string, unknown>[], keys: readonly string[]): string {
+  return canonicalJson(
+    rows
+      .map((r) => keys.map((k) => shapingValue(r[k])))
+      .sort((a, b) => (canonicalJson(a) < canonicalJson(b) ? -1 : 1))
+  );
+}
+
+/** What a slate row that is not there at all means. A catalog game the season
+ *  never configured is an absent, disabled row — not a change. */
+function slateDefault(column: string): unknown {
+  return column === "is_enabled" ? false : null;
+}
+
+/**
+ * D3 — which GENERATION_SHAPING_FIELDS this edit touches, in declaration order.
+ * `[]` means the save cannot affect a future generation run, so it needs no
+ * acknowledgement however much else it changes.
+ *
+ * A column the `after` side does not carry AT ALL is "not supplied", not
+ * "cleared": the editor never sends `puzzle_count`, and a PATCH that omits a
+ * column must not be reported as changing it.
+ */
+export function shapingFieldsChanged(before: ShapingSnapshot, after: ShapingSnapshot): string[] {
+  const changed: string[] = [];
+
+  for (const column of GENERATION_SHAPING_FIELDS.config) {
+    if (!(column in after.config)) continue;
+    if (shapingValue(before.config[column]) !== shapingValue(after.config[column]))
+      changed.push(column);
+  }
+
+  const byGame = (rows: Record<string, unknown>[]) =>
+    new Map(rows.map((r) => [String(r.game_id ?? ""), r]));
+  const beforeGames = byGame(before.games);
+  const afterGames = byGame(after.games);
+  const gameIds = [...new Set([...beforeGames.keys(), ...afterGames.keys()])];
+
+  for (const column of GENERATION_SHAPING_FIELDS.slate) {
+    const moved = gameIds.some((id) => {
+      const b = beforeGames.get(id);
+      const a = afterGames.get(id);
+      // Both rows present but the column was not sent → nothing to compare.
+      if (b && a && !(column in a)) return false;
+      const bv = b && column in b ? b[column] : slateDefault(column);
+      const av = a && column in a ? a[column] : slateDefault(column);
+      return shapingValue(bv) !== shapingValue(av);
+    });
+    if (moved) changed.push(`slate.${column}`);
+  }
+
+  if (mixSignature(before.themeMix, THEME_MIX_KEYS) !== mixSignature(after.themeMix, THEME_MIX_KEYS))
+    changed.push("season_theme_mix");
+  if (
+    mixSignature(before.difficultyMix, DIFFICULTY_MIX_KEYS) !==
+    mixSignature(after.difficultyMix, DIFFICULTY_MIX_KEYS)
+  )
+    changed.push("season_difficulty_mix");
+
+  return changed;
+}
+
+/** A shaping key as a commissioner reads it. */
+export function shapingFieldLabel(key: string): string {
+  if (key === "season_theme_mix") return "Theme & domain mix";
+  if (key === "season_difficulty_mix") return "Difficulty mix";
+  if (key.startsWith("slate.")) return `Game slate · ${fieldLabel(key.slice("slate.".length))}`;
+  return fieldLabel(key);
+}
+
+/** "Game slate · Is enabled, Theme & domain mix" — for the dialog and the
+ *  refusal message. Empty in, empty out. */
+export function summarizeShapingFields(keys: string[]): string {
+  return keys.map(shapingFieldLabel).join(", ");
+}

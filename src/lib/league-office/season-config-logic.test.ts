@@ -641,3 +641,170 @@ test("the day-range label is dropped rather than rendered nonsensically", () => 
   // the ordinary case still renders
   assert.equal(seasonDayRangeLabel("2026-11-01", "2026-11-08", "2026-11-01"), "Day 1–8 of season");
 });
+
+// ── CC-LO-POSTGEN-CONFIG-GUARD-1.0 — shapingFieldsChanged ────────────────────
+
+const SHAPE_BASE = (): logic.ShapingSnapshot => ({
+  config: {
+    label: "v3",
+    games_per_day: 3,
+    play_days_of_week: [1, 2, 3, 4, 5],
+    difficulty_curve: "ramp",
+    max_teams_per_subscriber: 2,
+    hints_enabled: true,
+  },
+  games: [
+    {
+      game_id: "g-1", is_enabled: true, weight: 1, sort_order: 10,
+      difficulty_floor: null, difficulty_ceiling: null, puzzle_count: null,
+      appears_on_days: null, starts_on: null, ends_on: null, notes: null,
+    },
+    {
+      game_id: "g-2", is_enabled: false, weight: 1, sort_order: 20,
+      difficulty_floor: null, difficulty_ceiling: null, puzzle_count: null,
+      appears_on_days: null, starts_on: null, ends_on: null, notes: null,
+    },
+  ],
+  themeMix: [
+    { theater_id: "t-a", sector_code: null, thread_code: null, target_pct: 60, min_pct: null, max_pct: null, is_excluded: false },
+    { theater_id: "t-b", sector_code: null, thread_code: null, target_pct: 40, min_pct: null, max_pct: null, is_excluded: false },
+  ],
+  difficultyMix: [
+    { difficulty_band: "foundational", target_pct: 30, min_pct: null, max_pct: null, applies_to_game_id: null },
+    { difficulty_band: "practitioner", target_pct: 40, min_pct: null, max_pct: null, applies_to_game_id: null },
+    { difficulty_band: "expert", target_pct: 30, min_pct: null, max_pct: null, applies_to_game_id: null },
+  ],
+});
+
+test("an identical draft touches no generation-shaping field", () => {
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), SHAPE_BASE()), []);
+});
+
+test("a slate toggle is a shaping change", () => {
+  const after = SHAPE_BASE();
+  after.games[1].is_enabled = true;
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), after), ["slate.is_enabled"]);
+});
+
+test("a mix change is a shaping change — theme and difficulty are named apart", () => {
+  const theme = SHAPE_BASE();
+  theme.themeMix[0].target_pct = 70;
+  theme.themeMix[1].target_pct = 30;
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), theme), ["season_theme_mix"]);
+
+  const diff = SHAPE_BASE();
+  diff.difficultyMix[2].target_pct = 20;
+  diff.difficultyMix[0].target_pct = 40;
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), diff), ["season_difficulty_mix"]);
+
+  // A per-game override row ADDED is still a difficulty-mix change.
+  const perGame = SHAPE_BASE();
+  perGame.difficultyMix.push({
+    difficulty_band: "expert", target_pct: 100, min_pct: null, max_pct: null,
+    applies_to_game_id: "g-1",
+  });
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), perGame), ["season_difficulty_mix"]);
+});
+
+test("a NON-shaping change is not reported — that is the whole point", () => {
+  const after = SHAPE_BASE();
+  after.config.label = "v4";
+  after.config.max_teams_per_subscriber = 5;
+  after.config.hints_enabled = false;
+  after.games[0].weight = 7;
+  after.games[0].sort_order = 99;
+  after.games[0].notes = "bumped";
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), after), []);
+});
+
+test("every config-level shaping column is watched, in declaration order", () => {
+  const after = SHAPE_BASE();
+  after.config.play_days_of_week = [1, 2, 3];
+  after.config.games_per_day = 4;
+  after.config.difficulty_curve = "flat";
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), after), [
+    "play_days_of_week", "games_per_day", "difficulty_curve",
+  ]);
+});
+
+test("every slate-level shaping column is watched", () => {
+  const cases: [string, unknown][] = [
+    ["difficulty_floor", "practitioner"],
+    ["difficulty_ceiling", "expert"],
+    ["puzzle_count", 40],
+    ["appears_on_days", [1, 3, 5]],
+    ["starts_on", "2026-11-01"],
+    ["ends_on", "2026-12-01"],
+  ];
+  for (const [column, value] of cases) {
+    const after = SHAPE_BASE();
+    after.games[0][column] = value;
+    assert.deepEqual(
+      logic.shapingFieldsChanged(SHAPE_BASE(), after), [`slate.${column}`],
+      `${column} must be a shaping field`
+    );
+  }
+});
+
+test("a column the client never sends is 'not supplied', never 'cleared'", () => {
+  // The editor's slate working copy carries no puzzle_count at all. A save
+  // from that screen must not read as wiping a configured target.
+  const before = SHAPE_BASE();
+  before.games[0].puzzle_count = 40;
+  const after = SHAPE_BASE();
+  for (const g of after.games) delete g.puzzle_count;
+  assert.deepEqual(logic.shapingFieldsChanged(before, after), []);
+});
+
+test("null and undefined are the same empty column; 14 and \"14.00\" are the same mix", () => {
+  const before = SHAPE_BASE();
+  const after = SHAPE_BASE();
+  after.games[0].difficulty_floor = undefined;
+  after.themeMix[0].target_pct = "60.00";
+  after.themeMix[1].target_pct = "40.000";
+  after.config.play_days_of_week = [5, 4, 3, 2, 1];
+  assert.deepEqual(logic.shapingFieldsChanged(before, after), []);
+});
+
+test("a slate row that only exists on one side counts only when it is enabled", () => {
+  // mergeSlate() invents a row per catalog game; an absent, disabled one is
+  // not an edit.
+  const after = SHAPE_BASE();
+  after.games.push({ game_id: "g-3", is_enabled: false, weight: 1, sort_order: 30 });
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), after), []);
+
+  const enabled = SHAPE_BASE();
+  enabled.games.push({ game_id: "g-3", is_enabled: true, weight: 1, sort_order: 30 });
+  assert.deepEqual(logic.shapingFieldsChanged(SHAPE_BASE(), enabled), ["slate.is_enabled"]);
+});
+
+test("the shaping list is the agreed one and nothing has quietly joined it", () => {
+  assert.deepEqual(logic.GENERATION_SHAPING_FIELDS.config,
+    ["play_days_of_week", "games_per_day", "difficulty_curve"]);
+  assert.deepEqual(logic.GENERATION_SHAPING_FIELDS.slate, [
+    "is_enabled", "difficulty_floor", "difficulty_ceiling", "puzzle_count",
+    "appears_on_days", "starts_on", "ends_on",
+  ]);
+  assert.deepEqual(logic.GENERATION_SHAPING_FIELDS.mixes,
+    ["season_theme_mix", "season_difficulty_mix"]);
+  // Scoring, hints and team rules are read at PLAY time — they must NOT be here.
+  const flat: string[] = [
+    ...logic.GENERATION_SHAPING_FIELDS.config,
+    ...logic.GENERATION_SHAPING_FIELDS.slate,
+  ];
+  for (const playTime of ["max_hints_per_game", "hints_enabled", "scoring_profile",
+    "max_teams_per_subscriber", "team_score_method", "publish_leaderboard", "weight"])
+    assert.equal(flat.includes(playTime), false, `${playTime} is play-time configuration`);
+});
+
+test("shaping keys render as something a commissioner can read", () => {
+  assert.equal(logic.shapingFieldLabel("games_per_day"), "Games per day");
+  assert.equal(logic.shapingFieldLabel("slate.difficulty_floor"), "Game slate · Difficulty floor");
+  assert.equal(logic.shapingFieldLabel("season_theme_mix"), "Theme & domain mix");
+  assert.equal(logic.shapingFieldLabel("season_difficulty_mix"), "Difficulty mix");
+  assert.equal(logic.summarizeShapingFields([]), "");
+  assert.equal(
+    logic.summarizeShapingFields(["slate.is_enabled", "season_theme_mix"]),
+    "Game slate · Is enabled, Theme & domain mix"
+  );
+});

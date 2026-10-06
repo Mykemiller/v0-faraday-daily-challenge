@@ -36,6 +36,9 @@ import {
   localFindings, normalizeDifficultyMix, normalizeThemeMix, promoteIntent, round2, summarizeFindings,
   sumPct, TEAM_SCORE_METHODS,
   scopeFromRows,
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D1/D3 — the settings the generator read
+  // once, and the pure diff that says whether this edit touches any of them.
+  shapingFieldsChanged, summarizeShapingFields,
 } from "@/lib/league-office/season-config-logic";
 // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4/D5) — field-by-field "is this a rule
 // yet?". The chips themselves live in fields.tsx (Field/Toggle `enforcement`);
@@ -91,16 +94,28 @@ const SECTIONS = [
   { id: "sec-i", label: "Advanced" },
 ];
 
+/** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — what the banner states. `null` for a
+ *  season that has not generated: there is nothing to be too late for. */
+export type PostGenerationSummary = {
+  generatedAt: string;
+  /** Puzzles that cleared review (Published + Live + Retired). */
+  approved: number;
+  /** The subset players have already seen (Live + Retired). */
+  served: number;
+};
+
 export default function ConfigEditor({
   bundle,
   scopeOptions,
   taxonomy,
   incumbent,
+  postGeneration = null,
 }: {
   bundle: ConfigBundle;
   scopeOptions: ScopeOptions;
   taxonomy: ThemeTheater[];
   incumbent: SeasonConfigRow | null;
+  postGeneration?: PostGenerationSummary | null;
 }) {
   const router = useRouter();
   const seasonLocked = !!bundle.season?.locked_at;
@@ -144,6 +159,11 @@ export default function ConfigEditor({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<null | "save" | "promote" | "cancel">(null);
   const [pendingCapAck, setPendingCapAck] = useState(false);
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — set when the API refuses an
+  // unacknowledged post-generation shaping edit. The client computes the same
+  // diff below, so this is the belt to that braces: a 409 can only happen if
+  // the two ever disagree, and the dialog still recovers.
+  const [pendingPostGenAck, setPendingPostGenAck] = useState(false);
 
   const touch = useCallback(() => setDirty(true), []);
   const setCfg = useCallback(
@@ -211,6 +231,34 @@ export default function ConfigEditor({
 
   const intent = promoteIntent(String(config.effective_from ?? ""));
 
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — which generation-shaping settings this
+  // draft has moved since it was loaded. Computed from the SAME pure function
+  // the writer enforces with, so the checkbox appears before the first save
+  // attempt rather than after a round-trip refusal. Empty on a season that has
+  // not generated — the question does not arise.
+  const shapingChanged = useMemo(
+    () =>
+      postGeneration
+        ? shapingFieldsChanged(
+            {
+              config: bundle.config as unknown as Record<string, unknown>,
+              games: bundle.games as unknown as Record<string, unknown>[],
+              themeMix: bundle.themeMix as unknown as Record<string, unknown>[],
+              difficultyMix: bundle.difficultyMix as unknown as Record<string, unknown>[],
+            },
+            {
+              config,
+              games: games as unknown as Record<string, unknown>[],
+              themeMix: themeMix as unknown as Record<string, unknown>[],
+              difficultyMix: difficultyMix as unknown as Record<string, unknown>[],
+            }
+          )
+        : [],
+    [postGeneration, bundle, config, games, themeMix, difficultyMix]
+  );
+  const needsPostGenAck = !!postGeneration && (shapingChanged.length > 0 || pendingPostGenAck);
+  const POST_GEN_ACK = "I understand existing puzzles will not change";
+
   // ── save ───────────────────────────────────────────────────────────────────
   // CC-LO-MIX-NORMALIZE-1.0: the writer rescales every mix group to exactly
   // 100% (normalizeThemeMix / normalizeDifficultyMix). Applying the same pure
@@ -224,7 +272,11 @@ export default function ConfigEditor({
     return { theme, diff };
   };
 
-  const save = async (reason: string, acknowledgeCapWarning = false) => {
+  const save = async (
+    reason: string,
+    acknowledgeCapWarning = false,
+    acknowledgePostGeneration = false
+  ) => {
     setBusy(true);
     try {
       const { theme, diff } = settledMixes();
@@ -233,12 +285,21 @@ export default function ConfigEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config, games, themeMix: theme, difficultyMix: diff,
-          fingerprint, reason, acknowledgeCapWarning,
+          fingerprint, reason, acknowledgeCapWarning, acknowledgePostGeneration,
         }),
       });
       const j = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — the writer saw a shaping change
+        // the client did not. Re-open with the checkbox rather than losing the
+        // edit.
+        if (j?.postGenerationWarning) {
+          setPendingPostGenAck(true);
+          toast(j.message);
+          setDialog("save");
+          return;
+        }
         // A cap reduction needs an explicit acknowledgement — re-open the dialog
         // with the count so the commissioner decides. Memberships are never
         // auto-removed.
@@ -256,6 +317,7 @@ export default function ConfigEditor({
       if (j.fingerprint) setFingerprint(j.fingerprint);
       setDirty(false);
       setPendingCapAck(false);
+      setPendingPostGenAck(false);
       setDialog(null);
       toast(j.message ?? "Draft saved.");
       router.refresh();
@@ -315,6 +377,10 @@ export default function ConfigEditor({
           body: JSON.stringify({
             config, games, themeMix: theme, difficultyMix: diff,
             fingerprint, reason, acknowledgeCapWarning: true,
+            // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — promoting a dirty draft
+            // saves it first, so the same acknowledgement applies; the promote
+            // dialog below carries the checkbox when it is needed.
+            acknowledgePostGeneration: true,
           }),
         });
         const sj = await res.json().catch(() => ({}));
@@ -399,6 +465,21 @@ export default function ConfigEditor({
         {seasonLocked ? <StatusChip label="season locked" tone="red" /> : null}
       </div>
       <div className="double-rule" />
+
+      {/* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — persistent, above everything the
+          commissioner is about to edit. The counts are the point: "595
+          approved" is what makes "these will not change" concrete. */}
+      {postGeneration ? (
+        <div style={{ marginTop: 14 }}>
+          <Callout tone="warning">
+            <strong>This season&rsquo;s puzzles were generated on {formatDay(postGeneration.generatedAt)}</strong>{" "}
+            ({postGeneration.approved} approved, {postGeneration.served} already served).
+            Changes to slate, theme, difficulty or schedule settings will not change existing
+            puzzles — they shape the next generation run. To replace puzzles that already exist,
+            use <strong>Regenerate from date</strong> on the season&rsquo;s generation panel.
+          </Callout>
+        </div>
+      ) : null}
 
       {readOnly ? (
         <div style={{ marginTop: 14 }}>
@@ -1156,10 +1237,14 @@ export default function ConfigEditor({
             ? "Some subscribers already hold more teams than the new cap. Saving does NOT remove any membership — it only applies from here on."
             : "Saves this version's configuration. It does not take effect until the version is promoted."
         }
+        details={shapingChanged.length ? <PostGenNotice fields={shapingChanged} /> : null}
         confirmLabel={pendingCapAck ? "Save anyway" : "Save draft"}
         destructive={pendingCapAck}
-        onCancel={() => { setDialog(null); setPendingCapAck(false); }}
-        onConfirm={(reason) => save(reason, pendingCapAck)}
+        /* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — reuses the OPTIONAL `acknowledge`
+           gate CC-LO-GEN-CONFORMANCE-1.0 D4 already added to ReasonDialog. */
+        acknowledge={needsPostGenAck ? POST_GEN_ACK : null}
+        onCancel={() => { setDialog(null); setPendingCapAck(false); setPendingPostGenAck(false); }}
+        onConfirm={(reason) => save(reason, pendingCapAck, needsPostGenAck)}
       />
 
       <ReasonDialog
@@ -1180,8 +1265,18 @@ export default function ConfigEditor({
             </>
           )
         }
-        details={<PromoteDiff incumbent={incumbent} next={config} />}
+        details={
+          <>
+            {/* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — promote saves the dirty
+                draft first, so a shaping edit is acknowledged here too. */}
+            {dirty && shapingChanged.length > 0 ? (
+              <PostGenNotice fields={shapingChanged} />
+            ) : null}
+            <PromoteDiff incumbent={incumbent} next={config} />
+          </>
+        }
         confirmLabel={intent.action === "schedule" ? "Schedule" : "Promote now"}
+        acknowledge={dirty && shapingChanged.length > 0 ? POST_GEN_ACK : null}
         onCancel={() => setDialog(null)}
         onConfirm={promote}
       />
@@ -1741,6 +1836,38 @@ function toLocalInput(v: unknown): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — the dialog's "and here is exactly what
+ *  you moved" block. Named fields, because "some settings" is not a warning a
+ *  commissioner can act on. */
+function PostGenNotice({ fields }: { fields: string[] }) {
+  if (!fields.length) return null;
+  return (
+    <div
+      style={{
+        fontSize: 12.5,
+        lineHeight: 1.55,
+        color: "#7c4708",
+        background: "rgba(148,86,10,.10)",
+        border: "1px solid rgba(148,86,10,.28)",
+        borderRadius: 8,
+        padding: "10px 13px",
+      }}
+    >
+      <strong>Generation-shaping settings changed:</strong> {summarizeShapingFields(fields)}.
+      <div style={{ marginTop: 6 }}>
+        Puzzles already generated for this season keep the values they were made with. Use{" "}
+        <strong>Regenerate from date</strong> on the generation panel to replace future puzzles.
+      </div>
+    </div>
+  );
+}
+
+/** "2026-10-05" from a timestamptz, or the raw string if it is not one. */
+function formatDay(v: string): string {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? v : d.toISOString().slice(0, 10);
 }
 
 function formatExact(v: unknown): string {

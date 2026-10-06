@@ -1,5 +1,58 @@
 @AGENTS.md
 
+## Editing a season whose puzzles already exist (CC-LO-POSTGEN-CONFIG-GUARD-1.0, claude/lo-postgen-guard, 2026-10-06)
+
+Once `seasons.generated_at` is stamped, the season configuration splits in two.
+Most of it is read at PLAY time (scoring, hints, team rules, visibility) and
+keeps applying to the bank that is already there. A short list was read ONCE, by
+the generator, and editing it now changes **nothing already written**. The guard
+says so before the save, requires an acknowledgement, and marks the audit row.
+No DB change, no trigger change, no auto-regeneration.
+
+- **D1 — one list, one place.** `GENERATION_SHAPING_FIELDS` in
+  `src/lib/league-office/season-config-logic.ts`: config
+  `play_days_of_week`/`games_per_day`/`difficulty_curve`; slate
+  `is_enabled`/`difficulty_floor`/`difficulty_ceiling`/`puzzle_count`/
+  `appears_on_days`/`starts_on`/`ends_on`; and **every** `season_theme_mix` and
+  `season_difficulty_mix` row (compared as a set, so PostgREST row order never
+  reads as a change). A test asserts play-time fields (`max_hints_per_game`,
+  `scoring_profile`, `max_teams_per_subscriber`, slate `weight`…) are NOT on it.
+- **`shapingFieldsChanged(before, after)` is pure and is the ONLY definition.**
+  The editor calls it to decide whether to show the checkbox; `saveConfigDraft`
+  calls the same function to decide whether to refuse. Two rules keep it honest:
+  a column the `after` side does not carry **at all** is "not supplied", never
+  "cleared" (the editor's slate working copy has no `puzzle_count`), and
+  `null`/`undefined` and `14`/`"14.00"` compare EQUAL (PostgREST numerics come
+  back as strings and the writer normalizes mixes to 2dp on every save — without
+  this every save after the first would report a phantom mix change).
+- **D2 — persistent banner** on the Config editor whenever `generated_at` is
+  set: generation date + `<n> approved, <m> already served`. Counts come from
+  `bankCommitment()` in `generation-status.ts` — approved = Published+Live+
+  Retired, served = Live+Retired, and the projection is the single column
+  `published`. No puzzle name, clue, answer or date reaches the browser.
+- **D3 — acknowledged and audited.** A shaping diff after generation needs the
+  ReasonDialog's **optional `acknowledge` checkbox** (the mechanism
+  CC-LO-GEN-CONFORMANCE-1.0 D4 already added — do NOT add a second one):
+  "I understand existing puzzles will not change". Unacknowledged ⇒ API 409
+  `{ postGenerationWarning, shapingFields }`. On success the `config.save` audit
+  row carries `after.post_generation_edit = true`, `after.post_generation_fields`
+  and `after.generated_at`. Non-shaping edits save exactly as before, and the
+  season row is read only when the diff is non-empty — a scoring-only save costs
+  no extra query.
+- **D4 — Unlock copy only.** Unlocking a generated season now says config edits
+  will not regenerate puzzles. The action, its API and its audit row are
+  unchanged. `seasons.generated_at` was added to the `Season` type and to
+  `seasonCols` in `data.ts` to carry it.
+- **D5 — no auto-regeneration.** The banner, the dialog and the unlock copy all
+  point at `Regenerate from date` (CC-LO-REGENERATE-FROM-DATE-1.0) as the only
+  thing that replaces puzzles that already exist.
+- Tests: `npm run test:season-config` (60, 11 new). Untouched and still green:
+  `test:generation`, `test:gen-conformance`, `test:config-enforcement`,
+  `test:regenerate`, `test:hint-rules`, `test:team-rules`, `test:season-scoring`,
+  `test:theme-allocation`, `test:generation-difficulty`, `test:schedule`,
+  `test:slate-enforced`, `test:generation-domain`, `test:lobby-model`,
+  `test:season-resolve`.
+
 ## How many hints does a season give? (CC-DC-HINTS-FROM-CONFIG-1.0, claude/dc-hints-config, 2026-10-06)
 
 **The hint budget and the hints on/off switch come from the season's effective
