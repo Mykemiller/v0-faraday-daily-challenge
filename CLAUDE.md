@@ -42,21 +42,70 @@ roll-up), `hintsUsed` and `scoringVersion: 2` — and no rules. The route resolv
 recomputed score to `dc_completions` (through complete-puzzle),
 `dc_daily_attempts`, `score_events` and `leaderboard_daily`.
 
-Two invariants to keep:
-- **No `scoringVersion` ⇒ byte-for-byte today's behaviour.** Browsers holding a
-  bundle cached from before the deploy keep scoring the way they did.
-  `scoringPathFor` opts in on the literal `2` and nothing else.
-- **Nothing rescores history.** The route only ever writes the completion in
-  front of it; completions written before the deploy keep their stored score.
-  There is no backfill and there must not be one — mid-season retroactive
-  rescoring was explicitly ruled out.
+**Which config:** `v_season_effective_config`, not `state=eq.active`. That view
+is the repo's one authority on what is in force, and the two already disagree
+in production — config `667c488f…` is `state='active'` with an `effective_to`
+of 2026-09-05, so the raw predicate returns a version whose window closed a
+month ago. The hint penalty is additionally gated on `hints_enabled`: a season
+that gives no hints cannot charge for them.
 
-**`streak_bonus_enabled` can only be enforced CLIENT-SIDE.** `calcScore` folds
-the readiness multiplier into the raw score before the server ever sees it, so
-the server cannot take it back out; the flag is applied by feeding `calcScore`
-`streak = 0` (`useScoringStreak` / `effectiveStreak`). A stale cached client
-keeps its multiplier until it reloads. Moving this server-side means moving the
-multiplier out of `calcScore`, which changes every game component.
+**EVERY write is scaled — there is no version branch** (Myke, 2026-10-06,
+overriding the original "no `scoringVersion` ⇒ unchanged" decision). A browser
+on a bundle cached from before the deploy still gets its score scaled
+server-side; it will briefly DISPLAY a larger number than was stored, and that
+self-heals on reload. A leaderboard whose rows mean different things depending
+on which bundle each player had cached is worse than a stale display.
+`scoringPathFor` existed to choose between the two paths and has been deleted
+rather than left as a dead abstraction. `scoringVersion` is still accepted and
+echoed (it says the caller is hint-aware) and decides nothing.
+
+`hintsUsed` stays opt-in: absent ⇒ 0 ⇒ no penalty. Never invent a penalty for a
+client that did not report hints.
+
+**The ceiling is the safety property.** `clamp(raw,0,150) × pointsMax/150` is at
+most `pointsMax`, because the raw is clamped BEFORE scaling — a streak
+multiplier already folded in by `calcScore`, or an invented 10⁹, both clamp to
+150 — and the hint factor is in [0,1]. No client, stale or crafted, can write
+above the configured per-game maximum. Tested exhaustively over
+(ceiling × penalty × hints × raw).
+
+**Nothing rescores history.** The route only ever writes the completion in front
+of it; completions written before the deploy keep their stored score. There is
+no backfill and there must not be one — mid-season retroactive rescoring was
+explicitly ruled out.
+
+**`hint_penalty_pct`'s default was a trap.** The column is
+`numeric NOT NULL DEFAULT 25.00` and nothing read it, so seven of ten rows sat
+on an un-chosen 25.00 — three of them `active`. Wiring it up would have started
+charging 25% per hint on three live seasons nobody configured. Myke ruled the
+unconfigured penalty is ZERO:
+`supabase/migrations/20261006230000_season_config_hint_penalty_default_zero.sql`
+moves the default to 0.00 and rewrites the five never-chosen rows BY ID (the two
+`superseded` ones are history and are deliberately left alone). **Apply it
+before the deploy that ships season scoring.** Never write `?? 0` and call it
+"the answer for a season that configures nothing" — a NOT NULL column with a
+default cannot tell you nobody chose.
+
+**`streak_bonus_enabled` is `partial`, not `enforced`, and that is deliberate.**
+`calcScore` folds the readiness multiplier into the raw score before the server
+sees it, so there is no un-bonused number left for `/api/score` to recover: the
+flag is applied by feeding `calcScore` `streak = 0` (`useScoringStreak` /
+`effectiveStreak`) and a stale or hand-rolled client keeps the bonus. Marking it
+`enforced` would have left the one scoring rule the server cannot hold as the
+one field shown with no chip, since `enforcementChip` suppresses the chip for
+enforced fields. Moving it server-side means moving the multiplier out of
+`calcScore`, which touches all seven game components.
+
+**The hint budget is keyed on the CENTRAL day, read at call time**
+(`src/lib/dc-day.js`). It used to be `new Date().toISOString().slice(0,10)` —
+UTC, and frozen at module load. UTC midnight is 7pm CDT, so a session at
+7:01pm CT read the NEXT day's budget (reset, `hintsUsed` 0, penalty evaded) and
+the next morning read that same key back and charged for the previous evening's
+hints. Harmless as analytics; wrong as score math. `/api/score` and
+`/api/challenge/today` both delegate their `centralDate` to the same
+`chicagoDay`, so there is ONE definition. The `faraday_hints_<day>_<gameType>`
+key SHAPE is unchanged. `faraday_daily_*` is still on the frozen UTC slice on
+purpose — it is a local scratch, not score math.
 
 `hintsUsed` is still client-reported — there is no server record of hints spent
 (the budget lives in `localStorage`) — so a client that under-reports pays no

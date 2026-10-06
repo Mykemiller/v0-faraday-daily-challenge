@@ -31,6 +31,9 @@ import TodaysSignalCard from "@/components/TodaysSignalCard";
 // the number written to dc_completions are one function of one input, not two
 // implementations that happen to agree.
 import { seasonScore, gameScoringRules, effectiveStreak } from "@/lib/scoring/season-scoring.js";
+// FIX B2 — the hint budget's day key. CENTRAL, and read at call time, so it is
+// the same day the server stamps the completion with. See src/lib/dc-day.js.
+import { hintBudgetKey, readHintBudget } from "@/lib/dc-day.js";
 import { deriveTakeFallback } from "@/lib/faradays-take";
 import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 import { resolveDomainName } from "@/lib/idf-labels";
@@ -245,7 +248,7 @@ function hintsForQuestion(q) {
 // when there are no hints to give.
 function HintControl({ gameType, hints }) {
   const list = Array.isArray(hints) ? hints.filter(Boolean) : [];
-  const storageKey = `faraday_hints_${TODAY}_${gameType}`;
+  const storageKey = hintBudgetKey(gameType);
   const [usedTotal, setUsedTotal] = useState(0);   // budget spent across the game today
   const [localShown, setLocalShown] = useState(0); // revealed within this instance
 
@@ -487,12 +490,10 @@ const SeasonScoringContext = createContext(null);
 
 /** The FAR-198 hint budget spent on `gameType` today, 0..3. The same key
  *  HintControl writes and the same clamp /api/score applies — read here so the
- *  score card can show the penalty at the moment it is incurred. */
+ *  score card can show the penalty at the moment it is incurred. CENTRAL day,
+ *  evaluated per call (FIX B2). */
 function hintsSpentToday(gameType) {
-  try {
-    const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${gameType}`) || "0", 10);
-    return Number.isNaN(v) ? 0 : Math.max(0, Math.min(3, v));
-  } catch { return 0; }
+  return readHintBudget(gameType, HINT_MAX);
 }
 
 /** The streak calcScore should use. `streak_bonus_enabled = false` can only be
@@ -1722,6 +1723,13 @@ function GameReplay({ gameType, snapshot, puzzle, onBack }) {
 }
 
 // ── Daily results persistence ────────────────────────────────────────────────
+// Deliberately still the UTC slice, and deliberately still frozen at load: the
+// only two things left keyed on it are `faraday_daily_*` (a local scratch of
+// this session's results — the server's todayCompletions is authoritative) and
+// a display date. The HINT BUDGET moved off it to the Central serve day in
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 FIX B2, because that one feeds score
+// math and has to agree with the server; these two do not and changing them
+// would reset a player's local scratch for no gain. See src/lib/dc-day.js.
 const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -167,9 +167,19 @@ export const CONFIG_ENFORCEMENT: Record<string, EnforcementEntry> = {
     note: "Signal awards are not driven by this column.",
   },
   streak_bonus_enabled: {
-    status: "enforced",
-    by: "DailyChallenge.jsx calcScore (client, via /api/challenge/today rules.scoring)",
-    note: "Off removes the Intelligence Readiness multiplier from the score. Enforced in the client, because the multiplier is folded into the raw score before the server ever sees it — a stale cached client keeps its multiplier until it reloads.",
+    // PARTIAL, not enforced, and the distinction is the whole point of this
+    // table. The server CANNOT enforce this one: calcScore folds the readiness
+    // multiplier into the raw score before the POST, so there is no un-bonused
+    // number left for /api/score to recover. Turning it off is a request the
+    // current client honours, not a rule the platform imposes — a stale bundle
+    // or a hand-rolled POST keeps the bonus. Marking it `enforced` would have
+    // left the one scoring rule the server cannot hold as the one shown
+    // without a caveat, because enforcementChip suppresses the chip for
+    // enforced fields. points_override and hint_penalty_pct ARE enforced:
+    // those the server recomputes from its own reads.
+    status: "partial",
+    by: "DailyChallenge.jsx calcScore (client only, via /api/challenge/today rules.scoring)",
+    note: "Off removes the Intelligence Readiness multiplier — but only in the current client. The multiplier is folded into the score before the server sees it, so the server cannot take it back out: a stale cached client keeps its bonus until it reloads. Moving this server-side means moving the multiplier out of calcScore.",
   },
   drop_lowest_n_days: {
     status: "not_enforced",
@@ -333,6 +343,37 @@ export const SYSTEM_DEFAULTS: Record<string, unknown> = {
   "season_games.sort_order": 100,
   "season_games.notes": null,
 };
+
+/**
+ * The per-hint penalty a completion in THIS config will actually be charged,
+ * as the server resolves it — gated on `hints_enabled`, because a season that
+ * gives no hints cannot charge for them whatever the column says.
+ *
+ * Mirrors resolveSeasonScoringRules exactly. It exists so the League Office
+ * states the EFFECTIVE number rather than the stored one: those differ
+ * whenever hints are off, and the editor already greys the input out in that
+ * case without saying what the consequence is.
+ */
+export function effectiveHintPenaltyPct(
+  config: Record<string, unknown> | null | undefined
+): number {
+  if (!config) return 0;
+  if (config.hints_enabled === false) return 0;
+  const n = Number(config.hint_penalty_pct);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/** One line for the detail page: what a hint costs, and what three cost. */
+export function hintPenaltySummary(
+  config: Record<string, unknown> | null | undefined
+): string {
+  if (!config) return "—";
+  if (config.hints_enabled === false) return "Hints off — no penalty";
+  const pct = effectiveHintPenaltyPct(config);
+  if (pct <= 0) return "No penalty per hint";
+  const three = Math.min(pct * 3, 100);
+  return `−${pct}% per hint · −${three}% at the 3-hint maximum`;
+}
 
 export function enforcementOf(field: string): EnforcementEntry | null {
   return CONFIG_ENFORCEMENT[field] ?? null;

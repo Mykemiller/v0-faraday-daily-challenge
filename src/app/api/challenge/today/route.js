@@ -53,6 +53,8 @@ import { fetchNextSeason } from "@/lib/seasons/next-season";
 // block is advisory to the client (it renders the number); /api/score resolves
 // the same columns itself before it writes one.
 import { resolveSeasonScoringRules } from "@/lib/scoring/season-rules-server";
+// FIX B2 — one definition of the CT serve day, shared with the browser.
+import { chicagoDay } from "@/lib/dc-day.js";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -89,12 +91,7 @@ async function resolveSubscriberId(h, token) {
 
 // CT calendar date (matches the sync's puzzle_date + the AUTO-128 rotator).
 function centralDate(d) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  return chicagoDay(d);
 }
 
 // Faraday's Take (FAR-389) + Faraday Signal (FAR-385): read today's per-puzzle

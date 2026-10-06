@@ -24,6 +24,23 @@
 /** The raw ceiling every game's calcScore tops out at. */
 export const RAW_SCORE_MAX = 150;
 
+/** A score ceiling is only meaningful ABOVE zero: a 0 ceiling is not a cap,
+ *  it is every completion for that game scoring nothing. Anything missing,
+ *  non-numeric, non-finite or non-positive falls back to the platform
+ *  default — the one value that can never surprise a player. */
+function ceilingOr(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** A penalty percentage, on the other hand, is meaningful AT zero — that is
+ *  "no penalty", the commonest configuration. Anything missing or malformed
+ *  falls back to it. */
+function penaltyOr(v, fallback) {
+  const n = Number(v);
+  return v !== "" && v !== null && v !== undefined && Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 function clamp(n, lo, hi) {
   const v = Number(n);
   if (!Number.isFinite(v)) return lo;
@@ -40,14 +57,28 @@ function clamp(n, lo, hi) {
  * completion that cannot be written at all. The RULES, by contrast, are never
  * client-supplied on the server path — /api/score resolves them itself.
  *
- * Defaults are the identity transform: pointsMax 150 + hintPenaltyPct 0 returns
- * the raw score unchanged, which is exactly the pre-pack behaviour and the
- * answer for every season that configures neither.
+ * Defaults are the identity transform: pointsMax 150 + hintPenaltyPct 0
+ * returns the raw score unchanged.
+ *
+ * DO NOT read that as "the answer for every season that configures neither".
+ * It was written here once and it was wrong: `hint_penalty_pct` is
+ * `numeric NOT NULL DEFAULT 25.00`, so a season that configures nothing
+ * arrives with 25, not 0, and `?? 0` can only fire when there is no
+ * configuration in force at all. Seven of ten rows sat on that un-chosen 25.00
+ * when this was written. The default is being migrated to 0.00
+ * (supabase/migrations/20261006230000_…) precisely because the code could not
+ * tell "nobody chose" from "somebody chose 25" — this function never could and
+ * never will. It applies the rules it is handed.
  */
 export function seasonScore({ rawScore, rules, hintsUsed } = {}) {
   const raw = clamp(rawScore, 0, RAW_SCORE_MAX);
-  const pointsMax = Math.max(0, Number(rules?.pointsMax ?? RAW_SCORE_MAX) || 0);
-  const penaltyPct = Math.max(0, Number(rules?.hintPenaltyPct ?? 0) || 0);
+  // A malformed ceiling falls back to the platform default, NOT to 0. The
+  // earlier `|| 0` here did the opposite: garbage in `pointsMax` zeroed the
+  // player's score, which is the single worst outcome this function can
+  // produce and the exact opposite of its stated fail-soft intent.
+  const pointsMax = ceilingOr(rules?.pointsMax, RAW_SCORE_MAX);
+  // A malformed penalty falls back to NO penalty, for the same reason.
+  const penaltyPct = penaltyOr(rules?.hintPenaltyPct, 0);
   const hints = clamp(hintsUsed, 0, 3);
 
   const scaled = raw * (pointsMax / RAW_SCORE_MAX);
@@ -83,17 +114,9 @@ export function effectiveStreak(streak, scoring) {
   return streakBonusEnabled(scoring) ? streak : 0;
 }
 
-/**
- * Which scoring path a POST /api/score body takes. Pure, and deliberately
- * strict: ONLY the literal number 2 opts in. "2", 2.0-as-a-string, true, a
- * larger future version — all of them fall back to `legacy`, because the
- * failure mode worth protecting against is a client accidentally opting into
- * a rescore, never a client accidentally missing one.
- *
- * `legacy` means byte-for-byte today's behaviour: the score the caller sent is
- * the score that is written. That is what a browser holding a cached bundle
- * from before this deploy does, and it must keep working unchanged.
- */
-export function scoringPathFor(body) {
-  return body && body.scoringVersion === 2 ? "v2" : "legacy";
-}
+// `scoringPathFor` lived here and is DELETED. It decided whether a POST took
+// the new scaling path or the pre-pack one, on `scoringVersion === 2`. Myke
+// ruled 2026-10-06 that the server scales EVERY write: a leaderboard whose
+// rows mean different things depending on which bundle the player had cached
+// is worse than a stale client briefly displaying a number smaller than the
+// one that was stored. There is no second path left for it to choose.

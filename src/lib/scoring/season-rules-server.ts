@@ -7,20 +7,30 @@
 //   /api/score            resolves it AGAIN, for itself, before it writes.
 //
 // That duplication is the design, not an oversight. The client is told the
-// rules so it can render them; it is never believed about them. /api/score
-// accepts `scoringVersion` and `hintsUsed` from the body and NOTHING ELSE
-// about scoring — a POST claiming `pointsMax: 100000` carries no such field,
-// and adding one would not help, because the route reads these columns itself
-// from the season it resolved for that subscriber.
+// rules so it can render them; it is never believed about them. The request
+// body carries no rules, and this module would not read them if it did — it
+// goes to the database for every value it returns.
 //
-// Which config: `state = 'active'` for the caller's resolved season — the same
-// predicate resolveSeasonSlate() uses, so the games a season serves and the
-// ceilings it scores them at can never come from two different versions.
+// WHICH CONFIG: `v_season_effective_config`. That view is the repo's declared
+// single authority on "which configuration is in force right now" (see
+// league-playoffs/phase.ts and fetchSeasonRules in league-playoffs/server.ts),
+// and it is the reader config-enforcement.ts credits for `effective_from` /
+// `effective_to`. An earlier draft of this module used
+// `season_config?state=eq.active&limit=1` instead, which is NOT the same
+// question and already disagrees in production: config
+// 667c488f-1c9f-4199-a7ee-40aff7c094a7 is `state = 'active'` with an
+// `effective_to` of 2026-09-05, so the view correctly returns nothing for that
+// season while the raw predicate happily returns a config whose window closed
+// a month ago. Scoring a completion against a retired version is exactly the
+// class of bug this pack exists to end, so it asks the one place.
+//
+// HINTS: the penalty is gated on `hints_enabled`. The editor already greys the
+// penalty input out when hints are off; the server has to agree, or a season
+// that gives no hints still charges for them.
 //
 // Fail-soft everywhere. Every failure returns the identity rules (150 / 0% /
-// streak on), which is byte-for-byte the pre-pack behaviour — a season with no
-// config, a dropped connection or a missing key must never cost a player their
-// score.
+// streak on) — a season with no configuration in force, a dropped connection
+// or a missing key must never cost a player their score.
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -54,8 +64,9 @@ async function rows<T>(headers: Record<string, string>, path: string): Promise<T
   return Array.isArray(body) ? (body as T[]) : [];
 }
 
-type ActiveConfig = {
-  id: string;
+type EffectiveConfig = {
+  config_id: string | null;
+  hints_enabled: boolean | null;
   hint_penalty_pct: number | string | null;
   streak_bonus_enabled: boolean | null;
 };
@@ -77,17 +88,24 @@ export async function resolveSeasonScoringRules(
   if (!h) return out;
 
   try {
+    // The view LEFT JOINs the config onto the season, so a season with nothing
+    // in force still returns one row — with `config_id` null. That is the
+    // "no configuration applies" answer, and it must read as the identity
+    // rules rather than as a missing row.
     const config = (
-      await rows<ActiveConfig>(
+      await rows<EffectiveConfig>(
         h,
-        `season_config?season_id=eq.${encodeURIComponent(seasonId)}&state=eq.active` +
-          `&select=id,hint_penalty_pct,streak_bonus_enabled&limit=1`
+        `v_season_effective_config?season_id=eq.${encodeURIComponent(seasonId)}` +
+          `&select=config_id,hints_enabled,hint_penalty_pct,streak_bonus_enabled&limit=1`
       )
     )[0];
-    if (!config?.id) return out;
+    if (!config?.config_id) return out;
 
     // `hint_penalty_pct` is NUMERIC, so PostgREST hands it over as "10.00".
-    const hintPenaltyPct = toNumber(config.hint_penalty_pct, 0);
+    // Gated on `hints_enabled`: a season that gives no hints cannot charge for
+    // them, whatever the column says. Resolved HERE, not taken from the client.
+    const hintPenaltyPct =
+      config.hints_enabled === false ? 0 : toNumber(config.hint_penalty_pct, 0);
     out.streakBonus = config.streak_bonus_enabled !== false;
 
     const slate = await rows<{
@@ -95,15 +113,20 @@ export async function resolveSeasonScoringRules(
       game_catalog: { runtime_key: string | null } | null;
     }>(
       h,
-      `season_games?season_config_id=eq.${encodeURIComponent(config.id)}&is_enabled=eq.true` +
+      `season_games?season_config_id=eq.${encodeURIComponent(config.config_id)}&is_enabled=eq.true` +
         `&select=points_override,game_catalog(runtime_key)`
     );
 
     for (const row of slate) {
       const key = row.game_catalog?.runtime_key;
       if (typeof key !== "string" || !key || key === "streakBonus") continue;
+      // `points_override = 0` would zero every completion for this game. The
+      // editor forbids it (min 1) and normalizeGameRow coerces it to null, but
+      // a row predating those guards must not silently wipe a player's score:
+      // a non-positive override reads as "no override".
+      const override = toNumber(row.points_override, DEFAULT_POINTS_MAX);
       out[key] = {
-        pointsMax: toNumber(row.points_override, DEFAULT_POINTS_MAX),
+        pointsMax: override > 0 ? override : DEFAULT_POINTS_MAX,
         hintPenaltyPct,
       };
     }
