@@ -38,8 +38,8 @@ import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
 // to the RESULT of getLivePuzzles(), so it is backend-agnostic: it works
 // identically on the Airtable and Supabase paths, and does not wait on the
 // DC_PUZZLE_SOURCE cutover.
-import { filterToSlate } from "@/lib/season-slate";
-import { resolveSeasonSlate } from "@/lib/season-slate-server";
+import { filterToSlate, narrowToScheduled } from "@/lib/season-slate";
+import { resolveSeasonSlate, resolveSeasonSchedule } from "@/lib/season-slate-server";
 import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // CC-DC-LOBBY-EMPTY-STATE-1.0 (D8): `nextSeason` so a no-season lobby can say
 // WHEN the next one starts instead of just "No challenge today." `todayCT` is
@@ -194,12 +194,16 @@ export async function GET(request) {
     const season = await resolveSeasonFor(h, subscriberId);
     const seasonId = season?.id ?? null;
 
-    const [livePuzzles, tip, takes, solveBands, slate, nextSeason] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason] = await Promise.all([
       getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
       fetchSolveBands(),
       resolveSeasonSlate(seasonId),
+      // CC-DC-GEN-SCHEDULE-FIELDS-1.0 D4 — which of the slate's games play
+      // TODAY. `todayCT()` is the CT serve day, imported rather than
+      // re-derived (CC-DC-SEASON-GOLIVE-1.0 owns it). null = do not narrow.
+      resolveSeasonSchedule(seasonId, todayCT()),
       // Unconditional and parallel: it costs no added latency next to the five
       // reads already in flight, and a field that is only populated in the one
       // state that renders it is a field nobody can test from the outside.
@@ -209,7 +213,19 @@ export async function GET(request) {
     // Narrow to the season's enabled games. A null slate leaves the set
     // untouched — see season-slate.ts for the two fail-safes and why they are
     // load-bearing (3 of 6 prod seasons have no active config).
-    const puzzles = filterToSlate(livePuzzles, slate);
+    const slated = filterToSlate(livePuzzles, slate);
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 D4 — then drop the slate games that are not
+    // SCHEDULED today (play_days_of_week, appears_on_days, the per-game
+    // window). Applied to the RESULT, exactly like the slate filter, and with
+    // the same fail-safes — plus one difference that is the point of it: a
+    // narrowing to zero games is HONOURED, because "a Saturday in a Mon–Fri
+    // season" is a correct answer of no puzzles. The lobby renders that as the
+    // `no_puzzles` empty state (season present, nothing playable) and never as
+    // mocks. `servedSlate` is narrowed in lockstep so the tile list and the
+    // puzzle set can never contradict each other.
+    const narrowed = narrowToScheduled(slated, slate, scheduled);
+    const puzzles = narrowed.puzzles;
+    const servedSlate = narrowed.slate;
     // Attach the take + signal to each puzzle by type (spoiler-safe: both are
     // rendered only on the completion screen, after the player has solved that
     // puzzle — and the signal carries no answer material by construction).
@@ -232,7 +248,7 @@ export async function GET(request) {
         puzzles,
         tip,
         solveBands,
-        slate,
+        slate: servedSlate,
         season: season ? { id: season.id, name: season.name ?? null } : null,
         // D8: { name, starts_on } | null — the earliest platform-scoped season
         // that has not started yet. Additive; the client renders it ONLY in the

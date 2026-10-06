@@ -15,7 +15,7 @@ import {
   generationFindings,
   generationWarnings,
   isStalled,
-  bankMinimumFindings, bankAlarmApplies, bankCoverageWindow,
+  bankMinimumFindings, bankAlarmApplies, bankCoverageWindow, bankServeDays,
   realizedDifficultyMix,
   type GenerationInput,
   type GenRun,
@@ -500,4 +500,162 @@ test("slate rows with no floor/ceiling fields at all behave as fully open", () =
   assert.ok(input.slate.every((r) => r.difficulty_floor === undefined));
   assert.deepEqual(generationFindings(input, false), []);
   assert.equal(realizedDifficultyMix(input).maxDeviation, 0);
+});
+
+// ── CC-DC-GEN-SCHEDULE-FIELDS-1.0 ────────────────────────────────────────────
+//
+// play_days_of_week, appears_on_days and the per-game start/end dates were read
+// by NOTHING before this pack: targets were `dayCount × enabled games`, so a
+// Monday-only game was validated, generated and served seven days a week. The
+// tests below are the per-game counts those four columns now produce, plus the
+// one rule that is deliberately NOT a selector (games_per_day).
+//
+// okInput()'s season is 2026-08-03 (a Monday) → 2026-09-04 (a Friday): 33 days,
+// of which 25 are weekdays and 5 are Mondays.
+
+test("no schedule fields: every enabled game is scheduled on every season day", () => {
+  const input = okInput();
+  assert.ok(input.playDaysOfWeek === undefined && input.slate.every((r) => r.appears_on_days === undefined));
+  const t = computeTargets(input);
+  assert.equal(t.dayCount, 33);
+  assert.ok(t.perGame.every((g) => g.effective === 33));
+  assert.equal(t.total, 33 * 7);
+  assert.deepEqual(generationFindings(input, false), []);
+});
+
+test("play_days_of_week narrows every game's target, not just the day label", () => {
+  const input = okInput();
+  input.playDaysOfWeek = [1, 2, 3, 4, 5];
+  const t = computeTargets(input);
+  assert.equal(t.dayCount, 33, "the season is still 33 days long");
+  assert.ok(t.perGame.every((g) => g.effective === 25), "but only 25 of them are played");
+  assert.equal(t.total, 25 * 7);
+});
+
+test("appears_on_days narrows ONE game's target", () => {
+  const input = okInput();
+  input.slate[0] = { ...input.slate[0], appears_on_days: [1] };
+  const t = computeTargets(input);
+  assert.equal(t.perGame[0].effective, 5, "five Mondays");
+  assert.ok(t.perGame.slice(1).every((g) => g.effective === 33));
+  assert.equal(t.total, 5 + 33 * 6);
+});
+
+test("a per-game window clips that game to part of the season", () => {
+  const input = okInput();
+  input.slate[0] = { ...input.slate[0], starts_on: "2026-08-10", ends_on: "2026-08-16" };
+  assert.equal(computeTargets(input).perGame[0].effective, 7);
+});
+
+test("condition 5 measures puzzle_count against SCHEDULED days, not the season", () => {
+  // A Monday-only game asking for exactly its five Mondays is correct; the old
+  // rule compared 5 against 33 and blocked it.
+  const input = okInput();
+  input.slate[0] = { ...input.slate[0], appears_on_days: [1], puzzle_count: 5 };
+  assert.deepEqual(generationFindings(input, false), []);
+  assert.ok(!generationWarnings(input).some((f) => f.code === "surplus_unsupported"));
+
+  input.slate[0] = { ...input.slate[0], puzzle_count: 4 };
+  assert.ok(generationFindings(input, false).some((f) => f.code === "puzzle_count_short"));
+
+  input.slate[0] = { ...input.slate[0], puzzle_count: 33 };
+  assert.deepEqual(generationFindings(input, false), []);
+  assert.ok(generationWarnings(input).some((f) => f.code === "surplus_unsupported"));
+});
+
+test("a game the calendar never reaches warns — it never silently disappears", () => {
+  const input = okInput();
+  input.slate[0] = { ...input.slate[0], starts_on: "2027-01-01", ends_on: "2027-01-31" };
+  const w = generationWarnings(input).filter((f) => f.code === "game_never_scheduled");
+  assert.equal(w.length, 1);
+  assert.match(w[0].message, /Rackl/);
+  // A warning, never a blocker: the configuration is legal, just probably wrong.
+  assert.deepEqual(generationFindings(input, false), []);
+});
+
+test("an empty play-days mask schedules nothing at all", () => {
+  const input = okInput();
+  input.playDaysOfWeek = [];
+  assert.equal(computeTargets(input).total, 0);
+  assert.equal(generationWarnings(input).filter((f) => f.code === "game_never_scheduled").length, 7);
+});
+
+// ── D2: games_per_day validates, it never selects ───────────────────────────
+
+test("games_per_day below the scheduled count BLOCKS and names the dates", () => {
+  const input = okInput();
+  input.gamesPerDay = 5; // seven games are scheduled every day
+  const f = generationFindings(input, false).filter((c) => c.code === "games_per_day_below_scheduled");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /2026-08-03 \(7\)/);
+  assert.match(f[0].message, /33 dates/);
+  assert.match(f[0].message, /never drops a game/, "the message must say what will NOT happen");
+});
+
+test("games_per_day at or above the busiest day, or unset, is silent", () => {
+  const input = okInput();
+  input.gamesPerDay = 7;
+  assert.deepEqual(generationFindings(input, false), []);
+  input.gamesPerDay = null;
+  assert.deepEqual(generationFindings(input, false), []);
+  delete input.gamesPerDay;
+  assert.deepEqual(generationFindings(input, false), []);
+});
+
+test("a staggered slate sits under a cap the headcount would bust", () => {
+  // Seven games, one weekday each: never more than one game on a day, so
+  // games_per_day = 1 is satisfiable even though the slate has seven games.
+  const input = okInput();
+  input.playDaysOfWeek = [1, 2, 3, 4, 5];
+  input.slate = input.slate.map((r, i) => ({ ...r, appears_on_days: [(i % 5) + 1] }));
+  input.gamesPerDay = 2;
+  assert.deepEqual(generationFindings(input, false), []);
+  // Mon and Tue carry two games each, Wed/Thu/Fri one: 5 weeks × (2+2+1+1+1).
+  assert.equal(computeTargets(input).total, 35);
+});
+
+// ── the difficulty weighting follows the calendar ───────────────────────────
+
+test("a game that plays one day a week pulls the season mix a seventh as hard", () => {
+  const input = footballInput();
+  const everyDay = realizedDifficultyMix(input);
+  // Rackl is pinned expert/expert. Confine it to Mondays and the season's
+  // expert share must FALL, because it now carries 5 days of weight, not 33.
+  input.slate = input.slate.map((r) =>
+    r.difficulty_floor === "expert" && r.difficulty_ceiling === "expert" && r.game_id === input.slate[4].game_id
+      ? { ...r, appears_on_days: [1] }
+      : r
+  );
+  const mondayOnly = realizedDifficultyMix(input);
+  assert.equal(mondayOnly.perGame[4].days, 5);
+  assert.ok(mondayOnly.perGame[0].days === 33, "the other four are untouched");
+  assert.ok(
+    mondayOnly.realized[2] < everyDay.realized[2],
+    `expert should fall from ${everyDay.realized[2]} once Rackl plays five days`
+  );
+});
+
+// ── the bank-minimum bar follows the calendar too ───────────────────────────
+
+test("bankServeDays counts only the days a game serves inside the window", () => {
+  const input = okInput();
+  input.playDaysOfWeek = [1, 2, 3, 4, 5];
+  input.slate[0] = { ...input.slate[0], appears_on_days: [1] };
+  // 2026-08-10 (Mon) → 2026-08-23 (Sun): 14 days, 10 weekdays, 2 Mondays.
+  const days = bankServeDays(input, "2026-08-10", "2026-08-23");
+  assert.equal(days["Rackl"], 2);
+  assert.equal(days["Circuit"], 10);
+  assert.deepEqual(bankServeDays(input, null, null), {});
+});
+
+test("bank minimum: a per-key bar replaces the window length", () => {
+  const keys = ["Rackl", "Circuit"];
+  // Rackl serves 2 of these 14 days and has both; Circuit serves 10 and has 9.
+  const f = bankMinimumFindings(keys, { Rackl: 2, Circuit: 9 }, 14, { Rackl: 2, Circuit: 10 });
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /Circuit has 9 of the 10/);
+  // A game that serves no day in the window cannot be short of anything.
+  assert.deepEqual(bankMinimumFindings(keys, {}, 14, { Rackl: 0, Circuit: 0 }), []);
+  // Unmentioned keys keep the window length.
+  assert.equal(bankMinimumFindings(keys, { Rackl: 14 }, 14, { Rackl: 14 }).length, 1);
 });

@@ -1,5 +1,59 @@
 @AGENTS.md
 
+## One calendar decides which games play on which dates (CC-DC-GEN-SCHEDULE-FIELDS-1.0, claude/dc-schedule-fields, 2026-10-06)
+
+**`src/lib/seasons/schedule.ts` is THE definition of "which games play on which
+dates", and validation, generation and serving all read it.** Four columns
+described the season calendar and were read by nothing:
+`season_config.play_days_of_week`, `season_config.games_per_day`,
+`season_games.appears_on_days` and `season_games.starts_on/.ends_on`. Targets
+were `dayCount × enabled games`, the worker built its slot list as the full
+`dates × types` product, and `/api/challenge/today` applied only the slate — so
+a Mon–Fri season generated and served Saturdays and a Monday-only game ran
+seven days a week. A commissioner could set all four fields and change nothing.
+
+**The rule.** A game plays on a date iff the date is inside both
+`[season.starts_on, season.ends_on]` and `[game.starts_on ?? -∞, game.ends_on ??
++∞]`, its ISO weekday (1=Mon…7=Sun, computed from the plain `YYYY-MM-DD` at UTC
+noon — these are already CT serve days) is in
+`normalizeDayMask(config.play_days_of_week)`, and — when the game names any
+`appears_on_days` — in that mask too. `appears_on_days` null/empty means every
+play day; `play_days_of_week: []` means NEVER (an empty mask is an instruction,
+a null one is an unset field). `appears_on_days` can only NARROW the season's
+play days, never re-open one.
+
+**`games_per_day` is a VALIDATION rule, never a selector.** More games
+scheduled on a day than the cap allows is the blocking finding
+`games_per_day_below_scheduled`, naming the first dates. Nothing anywhere picks
+a game to drop: a season silently serving four of five configured games would
+be invisible from every surface. A new `game_never_scheduled` WARNING names an
+enabled game the calendar never reaches.
+
+**Serving.** `/api/challenge/today` applies `narrowToScheduled()` to the result
+of `filterToSlate()`, keeping every D4 fail-safe — with one deliberate
+exception: a narrowing to **zero** games is HONOURED, because "a Saturday in a
+Mon–Fri season" is a correct answer of no puzzles. The lobby renders it as
+`no_puzzles` (CC-DC-LOBBY-EMPTY-STATE-1.0), never as mocks. A non-empty
+schedule that matches nothing live still falls back, as the slate filter does.
+`resolveSeasonSchedule()` returns null — no narrowing — when there is no active
+config, when the date is outside the season window (that is
+CC-DC-SEASON-GOLIVE-1.0's business), or when nothing WOULD be narrowed, which
+is every production season but one.
+
+**`season_games.weight` stays unenforced.** It has no defined meaning anywhere
+— every live row is 1.000 — and inventing one (a sampling probability? a
+scoring multiplier?) would be a product decision, not a schedule fix.
+
+**Themes still cover every season date.** `dc_daily_theme` is keyed by date,
+not by game; a non-play day gets a theme row no puzzle uses, which keeps the
+worker's inserts in agreement with the theme quotas the checklist validates
+against (`dayCount`).
+
+Tests: `npm run test:schedule` (new, 27), plus `test:slate-enforced` (24) and
+`test:generation` (48) extended additively — nothing deleted. The zero-game day
+is asserted end to end: `narrowToScheduled()` → `lobbyModel()` → `no_puzzles`,
+with a full fixture map supplied and `isProd` true.
+
 ## Each game is generated inside its own difficulty window (CC-DC-GEN-DIFFICULTY-PERGAME-1.0, claude/gen-difficulty-pergame, 2026-10-06)
 
 **`season_games.difficulty_floor` / `.difficulty_ceiling` and the per-game rows
