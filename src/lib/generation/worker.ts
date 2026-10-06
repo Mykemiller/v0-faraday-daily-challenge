@@ -33,7 +33,7 @@ import type { Svc } from "@/lib/league-office/service";
 import { seasonDates } from "@/lib/league-office/generation-logic";
 import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./corpus";
 import { systemPrompt, userPrompt } from "./prompts";
-import { difficultyFor, resolveRowDifficulty } from "./difficulty";
+import { planDifficulty, resolveRowDifficulty } from "./difficulty";
 import {
   parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry, clampMessage,
 } from "./failure-reasons";
@@ -362,12 +362,16 @@ async function sliceBody(
 
   if (run.status === "queued") await checkpoint({ status: "generating" });
 
-  // resolve the focus config's slate + mixes (active first, else latest version)
-  const configs = await sbGet<{ id: string }>(
+  // resolve the focus config's slate + mixes (active first, else latest version).
+  // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — `difficulty_curve` comes down with
+  // it: the shape the commissioner previewed decides WHICH dates carry the
+  // deeper bands, so the generator has to read it.
+  type FocusConfig = { id: string; difficulty_curve?: string | null };
+  const configs = await sbGet<FocusConfig>(
     s,
-    `season_config?season_id=eq.${season.id}&select=id,state,version&state=eq.active&limit=1`
+    `season_config?season_id=eq.${season.id}&select=id,state,version,difficulty_curve&state=eq.active&limit=1`
   );
-  const cfg = configs[0] ?? (await sbGet<{ id: string }>(s, `season_config?season_id=eq.${season.id}&select=id,version&order=version.desc&limit=1`))[0];
+  const cfg = configs[0] ?? (await sbGet<FocusConfig>(s, `season_config?season_id=eq.${season.id}&select=id,version,difficulty_curve&order=version.desc&limit=1`))[0];
   if (!cfg) {
     await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { error: "no season_config" } });
     return { runId: run.id, status: "failed_short", note: "no season_config" };
@@ -538,6 +542,23 @@ async function sliceBody(
   }
   const globalDiffMix = difficultyMixRows.filter((d) => !d.applies_to_game_id);
 
+  // ── the season's difficulty plan ──────────────────────────────────────────
+  // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D4 — computed ONCE per slice, over the
+  // FULL season date list and every enabled type, so the band counts are a
+  // property of the season rather than of whichever slice happens to be
+  // running. Each slot then just looks itself up. What this replaces: the
+  // 10-slot bag in difficulty.js, keyed on `idx * 7 + types.indexOf(type)`,
+  // which could only quantize the mix to tenths — Football asked for
+  // 14.41/29.82/55.77 and banked 120/178/297 instead of 85/180/330 — and which
+  // read difficulty_curve not at all.
+  const diffPlan = planDifficulty({
+    dates,
+    types,
+    mix: globalDiffMix,
+    curve: cfg.difficulty_curve ?? "flat",
+    seed: season.id,
+  });
+
   const mineAtStart = await sbGet<{ id: string }>(s, `dc_puzzle_bank_staging?generation_batch_id=eq.${run.id}&select=id`);
   const baseWritten = mineAtStart.length;
   const baseFailed = run.failed_count || 0;
@@ -581,7 +602,7 @@ async function sliceBody(
             thread_names: day.thread_names,
             tier_name: corpus.tier_names[day.jpas_tier_code] || day.jpas_tier_code,
           },
-          difficulty: difficultyFor(globalDiffMix, idx * 7 + types.indexOf(type)),
+          difficulty: diffPlan.get(`${type}|${p.date}`) ?? "practitioner",
           threadScope: day.thread_names.join("; "),
         };
       });

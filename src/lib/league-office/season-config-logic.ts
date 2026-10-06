@@ -8,6 +8,20 @@
 //
 // Tests: `npm run test:season-config`.
 
+// CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve vocabulary and its shape
+// function moved OUT of this file into src/lib/generation/difficulty.js, which
+// is plain JS and therefore importable by the editor, by this module and by the
+// generation worker alike (generation-logic.ts already reaches across the same
+// boundary for theme-allocation.js). Both are re-exported below so every
+// existing importer keeps its import path; what changed is that the generator
+// now places bands along the SAME shape the sparkline draws, instead of
+// ignoring difficulty_curve entirely.
+// Relative, with the extension: this module's tests run under plain
+// `node --test`, which does not read tsconfig `paths`.
+import { DIFFICULTY_CURVES, curvePoints } from "../generation/difficulty.js";
+
+export { DIFFICULTY_CURVES, curvePoints };
+
 // ── states ───────────────────────────────────────────────────────────────────
 
 export const CONFIG_STATES = ["draft", "scheduled", "active", "superseded", "cancelled"] as const;
@@ -19,7 +33,6 @@ export type ScopeType = (typeof SCOPE_TYPES)[number];
 export const DIFFICULTY_BANDS = ["foundational", "practitioner", "expert"] as const;
 export type DifficultyBand = (typeof DIFFICULTY_BANDS)[number];
 
-export const DIFFICULTY_CURVES = ["flat", "ramp", "wave", "custom"] as const;
 export const TEAM_SCORE_METHODS = ["sum", "average", "top_n"] as const;
 export const LEADERBOARD_VISIBILITIES = ["public", "league", "private"] as const;
 
@@ -518,33 +531,13 @@ export function seasonDayRangeLabel(
   return `Day ${a}–${b} of season`;
 }
 
-// ── difficulty curve preview ─────────────────────────────────────────────────
-
-/** Normalized 0..1 sample points for the inline sparkline. Presentation only —
- *  no scoring or selection logic reads this. */
-export function curvePoints(curve: string, n = 24): number[] {
-  const count = Math.max(2, Math.min(200, Math.floor(n)));
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1);
-    switch (curve) {
-      case "ramp":
-        out.push(t);
-        break;
-      case "wave":
-        out.push(0.5 - Math.cos(t * Math.PI * 2) / 2);
-        break;
-      case "custom":
-        out.push(0.5);
-        break;
-      case "flat":
-      default:
-        out.push(0.5);
-        break;
-    }
-  }
-  return out.map((v) => round2(Math.max(0, Math.min(1, v))));
-}
+// ── difficulty curve ─────────────────────────────────────────────────────────
+//
+// curvePoints() and DIFFICULTY_CURVES are imported and re-exported at the top
+// of this file. They live in src/lib/generation/difficulty.js now because the
+// generator places every season's difficulty bands along that exact curve
+// (CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3) — the sparkline here is a preview OF
+// the allocation, no longer a drawing that nothing honours.
 
 // ── concurrency fingerprint ──────────────────────────────────────────────────
 //

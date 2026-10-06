@@ -1,5 +1,48 @@
 @AGENTS.md
 
+## Generated difficulty matches the mix and follows the curve (CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0, claude/gen-difficulty-allocation, 2026-10-06)
+
+**The season difficulty mix is apportioned in WHOLE PUZZLES per game, and
+`difficulty_curve` decides which dates carry the deeper bands.** The worker used
+to draw each slot's band from a ten-slot bag (`difficultyFor(mix, idx * 7 +
+types.indexOf(type))`), which could only quantize a mix to tenths and read
+`difficulty_curve` not at all. Football asks for 14.41 / 29.82 / 55.77 over 119
+days × 5 games; the bag gave it 10/30/60 per ten slots and the bank landed
+**120 foundational / 178 practitioner / 297 expert** where the mix wanted
+**85 / 180 / 330** (measured 2026-10-06), and its configured `ramp` produced a
+flat period-10 sawtooth.
+
+`planDifficulty({ dates, types, mix, curve, seed, perTypeMix })` in
+**`src/lib/generation/difficulty.js`** is the only thing that decides this now.
+It is pure, seeded on the season id, and returns `Map<"type|date", band>`. Per
+TYPE the normalized mix becomes whole counts over that type's date count by
+**largest remainder**, so every game lands within ±1 puzzle of the mix and the
+counts sum exactly to the date count — Football is now 17 / 36 / 66 per game,
+85 / 180 / 330 for the season. **The curve moves dates, never totals:** `flat`
+is a seeded even interleave (phase-shifted per type so two games do not stack
+their expert days; no run of more than 3 identical bands on the Football
+fixture), `ramp` and `wave` rank-match the bands in ascending depth to
+`curvePoints(curve, dates.length)`, and `custom` places as flat because no
+custom shape is stored anywhere — the League Office warns
+`difficulty_curve_custom_unsupported` rather than letting the sparkline imply
+otherwise.
+
+`curvePoints` and `DIFFICULTY_CURVES` **moved out of `season-config-logic.ts`**
+into `difficulty.js` and are re-exported from their old home, so the editor's
+sparkline and the generator read one function; `curvePoints` now returns exactly
+`n` points (the preview-era 2..200 clamp would have truncated a long season).
+The worker computes the plan **once per slice over the FULL season date list and
+every enabled type** and each slot looks itself up, so band counts are a property
+of the season rather than of whichever slice ran. `difficultyFor` stays exported
+for `scripts/far287/generate-puzzles.mjs`; the CLI twin
+`scripts/far287/lib/difficulty.mjs` mirrors the allocator and
+`npm run test:generation-difficulty` pins the two copies to identical output.
+**Out of scope (follow-up):** per-game mix rows (`applies_to_game_id`) and
+per-game `difficulty_floor`/`difficulty_ceiling` — `perTypeMix` is the seam they
+plug into. CC-DC-GEN-DIFFICULTY-CANON-1.0 is untouched: canonical bands only,
+model self-report still audit-only in `difficulty_raw`. Existing staging rows
+were not modified.
+
 ## The theme calendar obeys the mix, not the corpus dates (CC-DC-GEN-THEME-ALLOCATION-1.0, claude/gen-theme-allocation, 2026-10-06)
 
 **`target_pct` is AUTHORITATIVE for which theme each season day carries, and
