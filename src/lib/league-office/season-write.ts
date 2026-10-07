@@ -33,6 +33,9 @@ import {
   defaultThemeMix, editability, normalizeDayMask, normalizeDifficultyMix,
   normalizeThemeMix, round2,
   sanitizeConfigPatch, slugify, validateTradingWindows,
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D1/D3 — the one list of settings that shape
+  // generation, and the pure diff over it.
+  shapingFieldsChanged, summarizeShapingFields,
   type TradingWindows, type WizardScope,
 } from "./season-config-logic";
 
@@ -584,6 +587,10 @@ export type ConfigSavePayload = {
   reason: string;
   /** Set once the commissioner has seen and accepted the over-cap warning. */
   acknowledgeCapWarning?: boolean;
+  /** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — set once the commissioner has ticked
+   *  "I understand existing puzzles will not change". Only consulted when the
+   *  season has generated AND the diff touches GENERATION_SHAPING_FIELDS. */
+  acknowledgePostGeneration?: boolean;
 };
 
 export async function saveConfigDraft(
@@ -618,6 +625,43 @@ export async function saveConfigDraft(
         409,
         `${over} subscriber${over === 1 ? "" : "s"} already hold more than ${nextCap} team${nextCap === 1 ? "" : "s"} this season (highest: ${worst}). No memberships will be removed — confirm to save this cap anyway.`,
         { capWarning: true, over, worst, cap: nextCap }
+      );
+  }
+
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — a season whose puzzles already exist.
+  // Editing a generation-shaping setting is ALLOWED (the next run honours it,
+  // and season.regenerate_from is the path that actually replaces puzzles) but
+  // it changes nothing already written, so it must be acknowledged and it must
+  // be legible in the audit log afterwards. Nothing else about the save moves.
+  //
+  // The diff is computed first and the season row is read only if it is
+  // non-empty: a scoring-only save costs no extra query.
+  const shapingChanged = shapingFieldsChanged(
+    {
+      config: bundle.config as unknown as Record<string, unknown>,
+      games: bundle.games as unknown as Record<string, unknown>[],
+      themeMix: bundle.themeMix as unknown as Record<string, unknown>[],
+      difficultyMix: bundle.difficultyMix as unknown as Record<string, unknown>[],
+    },
+    {
+      config: payload.config ?? (bundle.config as unknown as Record<string, unknown>),
+      games: payload.games ?? (bundle.games as unknown as Record<string, unknown>[]),
+      themeMix: payload.themeMix ?? (bundle.themeMix as unknown as Record<string, unknown>[]),
+      difficultyMix:
+        payload.difficultyMix ?? (bundle.difficultyMix as unknown as Record<string, unknown>[]),
+    }
+  );
+  let generatedAt: string | null = null;
+  if (shapingChanged.length) {
+    const gen = await getOne<{ generated_at: string | null }>(
+      s, `seasons?id=eq.${bundle.config.season_id}&select=generated_at`
+    );
+    generatedAt = gen?.generated_at ?? null;
+    if (generatedAt && payload.acknowledgePostGeneration !== true)
+      return err(
+        409,
+        `This season's puzzles were generated on ${generatedAt.slice(0, 10)}. Changing ${summarizeShapingFields(shapingChanged)} shapes the NEXT generation run — it does not change a puzzle that already exists. Confirm to save anyway.`,
+        { postGenerationWarning: true, generatedAt, shapingFields: shapingChanged }
       );
   }
 
@@ -683,13 +727,27 @@ export async function saveConfigDraft(
     target_type: "season_config",
     target_id: configId,
     before,
-    after: after ? snapshot(after) : null,
+    // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — a post-generation shaping edit is
+    // flagged IN the audit row, with the fields it touched, so a later reader
+    // can tell "the mix changed but the bank did not" without re-deriving it.
+    after: after
+      ? generatedAt
+        ? {
+            ...snapshot(after),
+            post_generation_edit: true,
+            post_generation_fields: shapingChanged,
+            generated_at: generatedAt,
+          }
+        : snapshot(after)
+      : null,
     reversible: false,
   });
 
   return {
     ok: true,
-    message: "Draft saved — logged to Audit Log.",
+    message: generatedAt
+      ? "Draft saved — logged to Audit Log. Puzzles already generated for this season are unchanged."
+      : "Draft saved — logged to Audit Log.",
     data: {
       fingerprint: after?.fingerprint ?? null,
       findings: after?.findings ?? [],
@@ -727,6 +785,13 @@ function snapshot(b: {
   };
 }
 
+/** `intOrNull`, but a value below 1 is null rather than 0. See the
+ *  points_override note in normalizeGameRow. */
+function positiveIntOrNull(v: unknown): number | null {
+  const n = intOrNull(v);
+  return n !== null && n >= 1 ? n : null;
+}
+
 function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<string, unknown> | null {
   const gameId = String(g.game_id ?? "");
   if (!gameId) return null;
@@ -735,7 +800,11 @@ function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<
     game_id: gameId,
     is_enabled: g.is_enabled === true || g.is_enabled === "true",
     weight: clampNum(g.weight, 1, 0, 999.999),
-    points_override: intOrNull(g.points_override),
+    // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0: `points_override` is a score
+    // ceiling now, so a non-positive one is not a cap — it is every completion
+    // for this game scoring zero. Below 1 reads as "no override" (null = the
+    // platform default), matching the editor's min of 1. Never persisted as 0.
+    points_override: positiveIntOrNull(g.points_override),
     difficulty_floor: strOrNull(g.difficulty_floor),
     difficulty_ceiling: strOrNull(g.difficulty_ceiling),
     appears_on_days: g.appears_on_days == null ? null : normalizeDayMask(g.appears_on_days),

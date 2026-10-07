@@ -1,5 +1,7 @@
 // CC-DC-GEN-DIFFICULTY-CANON-1.0 — the one place generation decides what a
 // difficulty band IS.
+// CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 — and the one place it decides HOW MANY
+// of each band a season gets, and WHICH day each one lands on.
 //
 // Root cause this module exists to kill: the generator used to emit the legacy
 // strings easy/medium/hard, while dc_puzzle_bank_staging carries
@@ -20,7 +22,8 @@
 // modules only inside scripts/far287 — prompts and puzzle-schema already live
 // here as .js/.mjs twins for the same reason — so the vocabulary is duplicated
 // rather than imported across the boundary. The two copies must stay identical
-// in OUTPUT; src/lib/generation/difficulty.test.mjs enforces that.
+// in OUTPUT; src/lib/generation/difficulty.test.mjs enforces that, for
+// planDifficulty() as well as for the canon helpers.
 
 // Canonical bands, in increasing depth. Mirrors table puzzle_difficulty_band
 // and the order the staging CHECK accepts.
@@ -48,33 +51,48 @@ export function canonicalDifficulty(value) {
   return LEGACY_ALIASES[v] ?? null;
 }
 
-/**
- * Deterministic band for a generation slot, drawn from the season's difficulty
- * mix. Same 10-slot bag as before; what changed is that the bands are canonical
- * and that a mix row with an unrecognised band is canonicalized (or dropped),
- * never passed through to the insert.
- *
- * @param {{difficulty_band: string, target_pct: number}[]} mix
- * @param {number} slot
- * @returns {string} always one of CANONICAL_BANDS
- */
-export function difficultyFor(mix, slot) {
-  const DEFAULT_MIX = [
-    { difficulty_band: "foundational", target_pct: 40 },
-    { difficulty_band: "practitioner", target_pct: 40 },
-    { difficulty_band: "expert", target_pct: 20 },
-  ];
+/** 40/40/20 — what a missing or wholly unreadable mix degrades to. */
+const DEFAULT_MIX = [
+  { difficulty_band: "foundational", target_pct: 40 },
+  { difficulty_band: "practitioner", target_pct: 40 },
+  { difficulty_band: "expert", target_pct: 20 },
+];
 
-  // Canonicalize first, then drop what still will not resolve. A mix of only
-  // junk bands is the same as no mix at all: fall back to the default.
+/** Canonicalize the mix rows, drop what still will not resolve, and fall back
+ *  to the default when nothing survives. A mix of only junk bands is the same
+ *  as no mix at all. Shared by difficultyFor and planDifficulty so the two can
+ *  never disagree about what a mix MEANS.
+ *  @param {unknown} mix
+ *  @returns {{difficulty_band: string, target_pct: number}[]} */
+function resolveMix(mix) {
   const canon = (Array.isArray(mix) ? mix : [])
     .map((b) => ({
       difficulty_band: canonicalDifficulty(b?.difficulty_band),
       target_pct: Number(b?.target_pct) || 0,
     }))
     .filter((b) => b.difficulty_band !== null);
+  return canon.length ? canon : DEFAULT_MIX;
+}
 
-  const bands = canon.length ? canon : DEFAULT_MIX;
+/**
+ * Deterministic band for a generation slot, drawn from the season's difficulty
+ * mix. Same 10-slot bag as before; what changed is that the bands are canonical
+ * and that a mix row with an unrecognised band is canonicalized (or dropped),
+ * never passed through to the insert.
+ *
+ * CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0: the WORKER no longer calls this. A bag
+ * of ten can only quantize to tenths, so Football's 14.41/29.82/55.77 came out
+ * of it as 10/30/60 per ten slots and the season banked 120/178/297 where the
+ * mix wanted 85/180/330 (measured 2026-10-06). planDifficulty() below is what
+ * the worker allocates with now. difficultyFor stays exported for
+ * scripts/far287/generate-puzzles.mjs, which still walks slot indices.
+ *
+ * @param {{difficulty_band: string, target_pct: number}[]} mix
+ * @param {number} slot
+ * @returns {string} always one of CANONICAL_BANDS
+ */
+export function difficultyFor(mix, slot) {
+  const bands = resolveMix(mix);
   const sorted = [...bands].sort(
     (a, b) => CANONICAL_BANDS.indexOf(a.difficulty_band) - CANONICAL_BANDS.indexOf(b.difficulty_band),
   );
@@ -109,4 +127,406 @@ export function resolveRowDifficulty(assigned, modelValue) {
     difficulty: canonicalDifficulty(assigned) ?? "practitioner",
     difficulty_raw: raw,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 — season-wide difficulty allocation
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Root cause this half of the module exists to kill: the worker drew each
+// slot's band from difficultyFor(mix, idx * 7 + types.indexOf(type)) — a bag of
+// ten. Two things followed directly:
+//
+//   • the configured mix was only ever honoured to the nearest tenth. Football
+//     asks for 14.41 / 29.82 / 55.77 and the bag can only say 10 / 30 / 60, so
+//     the season banked 120 foundational / 178 practitioner / 297 expert where
+//     the mix wanted 85 / 180 / 330 (measured 2026-10-06).
+//   • `difficulty_curve` — the shape the editor previews with a sparkline —
+//     was read by nothing. A commissioner could set `ramp` and get a flat,
+//     period-10 sawtooth.
+//
+// Invariants:
+//   D1  pure. No I/O, no clock, no unseeded randomness. Dates, types, mix and
+//       curve in; a Map<"type|date", band> out.
+//   D2  per TYPE, the normalized mix is converted to WHOLE puzzle counts over
+//       that type's date count by largest remainder. Every type therefore lands
+//       within ±1 puzzle of the mix, and the counts sum to exactly the date
+//       count — no rounding leak.
+//   D3  the curve only decides WHICH dates get which band; it can never change
+//       the totals D2 computed. `flat` is a seeded even interleave; `ramp` and
+//       `wave` rank-match the bands (ascending depth) to the shape
+//       curvePoints() returns; `custom` is treated as flat and the League
+//       Office warns `difficulty_curve_custom_unsupported` — there is no stored
+//       custom shape to read (see generationWarnings() in generation-logic.ts).
+//   D4  deterministic: same dates + types + mix + curve + seed ⇒ byte-identical
+//       output, in this process and in the CLI twin.
+//   D5  per-game mix rows (season_difficulty_mix.applies_to_game_id) and the
+//       per-game difficulty_floor/ceiling are OUT OF SCOPE here, but
+//       `perTypeMix` is the seam they plug into: supply a mix per runtime key
+//       and that type is apportioned against it instead of the season mix.
+//   D6  CC-DC-GEN-DIFFICULTY-CANON-1.0 is untouched — the allocator only ever
+//       emits CANONICAL_BANDS, and the model's self-report still goes nowhere
+//       near `difficulty` (resolveRowDifficulty above).
+
+/** The four shapes `season_config.difficulty_curve` accepts.
+ *  @type {readonly ["flat", "ramp", "wave", "custom"]} */
+export const DIFFICULTY_CURVES = ["flat", "ramp", "wave", "custom"];
+
+/** The League Office warning code for a curve with no shape to place (D3). */
+export const CURVE_CUSTOM_WARNING = "difficulty_curve_custom_unsupported";
+
+/** Any curve we do not know reads as `flat` — never as an error, because a
+ *  stale enum value must not be able to stop a season generating.
+ *  @param {unknown} curve
+ *  @returns {string} one of DIFFICULTY_CURVES */
+export function normalizeCurve(curve) {
+  const v = typeof curve === "string" ? curve.trim().toLowerCase() : "";
+  return DIFFICULTY_CURVES.indexOf(v) >= 0 ? v : "flat";
+}
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/**
+ * Normalized 0..1 sample points for a difficulty curve.
+ *
+ * CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — this is AUTHORITATIVE, not a
+ * preview. It used to live in season-config-logic.ts labelled "presentation
+ * only — no scoring or selection logic reads this", and that label was the bug:
+ * the editor drew a ramp the generator never honoured. The sparkline in
+ * ConfigEditor and the band placement in planDifficulty() now read the same
+ * function, so what the commissioner previews is what the season gets.
+ *
+ * Returns EXACTLY `n` points. (The preview-era version clamped to 2..200, which
+ * for a 500-day season would have truncated the shape it was asked for.)
+ *
+ * @param {string} curve
+ * @param {number} [n]
+ * @returns {number[]}
+ */
+export function curvePoints(curve, n = 24) {
+  const count = Math.floor(Number(n) || 0);
+  if (count <= 0) return [];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // A one-point curve has no slope to sample; take its midpoint.
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    switch (curve) {
+      case "ramp":
+        out.push(t);
+        break;
+      case "wave":
+        out.push(0.5 - Math.cos(t * Math.PI * 2) / 2);
+        break;
+      case "custom":
+        out.push(0.5);
+        break;
+      case "flat":
+      default:
+        out.push(0.5);
+        break;
+    }
+  }
+  return out.map((v) => round2(Math.max(0, Math.min(1, v))));
+}
+
+/** The mix as one weight per CANONICAL_BANDS entry, duplicate rows summed. A
+ *  mix whose surviving rows all read 0 is "no signal" and degrades to the
+ *  default rather than apportioning the whole season onto the first band.
+ *  @param {unknown} mix
+ *  @returns {number[]} */
+export function mixWeights(mix) {
+  const weigh = (rows) => {
+    const out = CANONICAL_BANDS.map(() => 0);
+    for (const r of rows) out[CANONICAL_BANDS.indexOf(r.difficulty_band)] += Math.max(0, r.target_pct);
+    return out;
+  };
+  const w = weigh(resolveMix(mix));
+  return w.reduce((a, v) => a + v, 0) > 0 ? w : weigh(DEFAULT_MIX);
+}
+
+/**
+ * Whole-number apportionment of `total` across `weights` by largest remainder.
+ * Always sums to exactly `total`; ties go to the lower index so the result is a
+ * pure function of the input order (D4). Mirror of largestRemainder in
+ * src/lib/generation/theme-allocation.js — difficulty.test.mjs imports both and
+ * asserts they agree on every case it checks.
+ *
+ * @param {number[]} weights
+ * @param {number} total
+ * @returns {number[]}
+ */
+export function largestRemainder(weights, total) {
+  const n = weights.length;
+  const want = Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0;
+  if (!n || want === 0) return new Array(n).fill(0);
+
+  const sum = weights.reduce((a, v) => a + Math.max(0, Number(v) || 0), 0);
+  if (sum <= 0) {
+    // "no signal" reads as an even split, the same way normalizeTo100 does.
+    const base = Math.floor(want / n);
+    const out = new Array(n).fill(base);
+    for (let i = 0; i < want - base * n; i++) out[i]++;
+    return out;
+  }
+
+  const exact = weights.map((w) => (Math.max(0, Number(w) || 0) * want) / sum);
+  const out = exact.map((v) => Math.floor(v));
+  const left = want - out.reduce((a, v) => a + v, 0);
+  const order = exact
+    .map((v, i) => ({ i, rem: v - Math.floor(v) }))
+    .sort((a, b) => b.rem - a.rem || a.i - b.i);
+  for (let k = 0; k < left; k++) out[order[k].i]++;
+  return out;
+}
+
+/** FNV-1a. Not cryptographic — it only has to be stable across processes. */
+function hash32(text) {
+  let h = 0x811c9dc5;
+  const s = String(text);
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * `flat` placement: every band laid down at its own even spacing, with a seeded
+ * phase offset so two types in the same season do not stack their expert days
+ * on the same dates. The phase shifts a band as a whole and never changes the
+ * spacing INSIDE it, which is what keeps the spread tight whatever the seed:
+ * the longest run of one band is bounded by the ratio of the band spacings.
+ *
+ * @param {number[]} counts  one per CANONICAL_BANDS entry
+ * @param {string} seed
+ * @returns {string[]}
+ */
+function evenInterleave(counts, seed) {
+  const items = [];
+  for (let bi = 0; bi < CANONICAL_BANDS.length; bi++) {
+    const c = counts[bi];
+    if (c <= 0) continue;
+    const phase = (hash32(`${seed}|${CANONICAL_BANDS[bi]}`) % 1000) / 1000;
+    for (let k = 0; k < c; k++) items.push({ bi, key: (k + phase) / c });
+  }
+  items.sort((a, b) => a.key - b.key || a.bi - b.bi);
+  return items.map((it) => CANONICAL_BANDS[it.bi]);
+}
+
+/**
+ * `ramp`/`wave` placement: rank the dates by the curve's value at that date
+ * (ties by date index, so the result is a pure function of the shape) and pour
+ * the bands in ascending depth down that ranking. The shallowest band lands on
+ * the lowest points of the curve and the deepest on the highest — a ramp gets
+ * progressively harder; a wave peaks mid-season and eases off at both ends.
+ *
+ * @param {number[]} counts  one per CANONICAL_BANDS entry
+ * @param {number[]} shape   curvePoints(curve, dates.length)
+ * @returns {string[]}
+ */
+function rankMatch(counts, shape) {
+  const order = shape
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => a.v - b.v || a.i - b.i);
+  const seq = [];
+  for (let bi = 0; bi < CANONICAL_BANDS.length; bi++)
+    for (let k = 0; k < counts[bi]; k++) seq.push(CANONICAL_BANDS[bi]);
+  const out = new Array(shape.length);
+  for (let r = 0; r < order.length; r++) out[order[r].i] = seq[r];
+  return out;
+}
+
+/**
+ * The season's whole difficulty plan: the band every (type, date) slot gets.
+ *
+ * Totals come from the mix (D2), placement comes from the curve (D3), and the
+ * two are independent — changing `curve` reshuffles the calendar without moving
+ * a single puzzle between bands.
+ *
+ * @param {{
+ *   dates: string[],
+ *   types: string[],
+ *   mix?: {difficulty_band: string, target_pct: number}[],
+ *   curve?: string,
+ *   seed?: string,
+ *   perTypeMix?: Record<string, {difficulty_band: string, target_pct: number}[]>,
+ * }} input
+ * @returns {Map<string, string>} key `"<type>|<date>"` -> a CANONICAL_BANDS value
+ */
+export function planDifficulty(input) {
+  const i = input && typeof input === "object" ? input : {};
+  const dates = (Array.isArray(i.dates) ? i.dates : []).map(String);
+  const types = (Array.isArray(i.types) ? i.types : []).map(String);
+  const curve = normalizeCurve(i.curve);
+  const seed = String(i.seed ?? "");
+  const perTypeMix = i.perTypeMix && typeof i.perTypeMix === "object" ? i.perTypeMix : {};
+
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!dates.length || !types.length) return out;
+
+  // `custom` has no stored shape, so it places as flat; the League Office says
+  // so out loud rather than letting the editor's sparkline imply otherwise.
+  const shape = curve === "ramp" || curve === "wave" ? curvePoints(curve, dates.length) : null;
+
+  for (const type of types) {
+    // D5 — a per-type mix wins over the season mix when one is supplied.
+    const mix = Object.prototype.hasOwnProperty.call(perTypeMix, type) ? perTypeMix[type] : i.mix;
+    const counts = largestRemainder(mixWeights(mix), dates.length);
+    const seq = shape ? rankMatch(counts, shape) : evenInterleave(counts, `${seed}|${type}`);
+    for (let k = 0; k < dates.length; k++) out.set(`${type}|${dates[k]}`, seq[k]);
+  }
+  return out;
+}
+
+/**
+ * The whole-puzzle target per band for ONE type over `dateCount` dates — the
+ * same arithmetic planDifficulty applies, exposed so a caller can state the
+ * target without building the whole calendar.
+ *
+ * @param {unknown} mix
+ * @param {number} dateCount
+ * @returns {Record<string, number>}
+ */
+export function difficultyTargets(mix, dateCount) {
+  const counts = largestRemainder(mixWeights(mix), dateCount);
+  /** @type {Record<string, number>} */
+  const out = {};
+  CANONICAL_BANDS.forEach((b, i) => { out[b] = counts[i]; });
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 — the per-game window, applied
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Root cause this section exists to kill: `season_games.difficulty_floor` and
+// `.difficulty_ceiling` were configured and read by NOTHING. The Football slate
+// (config 3bf84bc8-f202-4a2d-9a89-9dcc38f36711) sets Rackl and Dark Fiber to
+// expert–expert and The Brief and The Stack to practitioner–expert, and the
+// season banked 167 rows below their game's own floor anyway (measured
+// 2026-10-06: Dark Fiber 60, Rackl 59, The Brief 24, The Stack 24). The same
+// was true of the per-game override rows in season_difficulty_mix: the worker
+// filtered `applies_to_game_id` rows OUT and allocated every game from the
+// season mix.
+//
+// Invariants:
+//   P1  pure. Mix rows, a floor and a ceiling in; normalized mix rows out. No
+//       I/O, no clock, no randomness — the League Office preview, the worker
+//       and the CLI all call this and must agree to the 0.01.
+//   P2  the game's OWN mix rows (season_difficulty_mix.applies_to_game_id =
+//       this game) REPLACE the season mix when any of them names a band we
+//       know. They are an override, not an addition.
+//   P3  a band outside [floor, ceiling] is DROPPED, and what is left is
+//       renormalized to 100 — never clamped onto the nearest in-window band,
+//       which would silently invent a mix nobody configured. A null, absent or
+//       unrecognised bound is OPEN on that side.
+//   P4  a floor DEEPER than the ceiling leaves no band at all. That is a
+//       configuration fault, so the answer is null and the League Office
+//       blocks the run (`difficulty_window_empty`) rather than the generator
+//       guessing.
+//   P5  CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 is untouched: the result is fed to
+//       planDifficulty() through the `perTypeMix` seam D5 already reserved, so
+//       the largest-remainder totals and the curve placement are unchanged.
+
+/**
+ * normalizeTo100()'s semantics (src/lib/league-office/season-config-logic.ts),
+ * in plain JS so the generator, the CLI twin and the editor round identically:
+ * scale to 100, round each share to 2dp, and push the residual onto the
+ * largest element. A zero-sum input is an even split — "no signal" must never
+ * collapse the whole window onto its first band.
+ *
+ * @param {number[]} values
+ * @returns {number[]}
+ */
+function normalizePct(values) {
+  const n = values.length;
+  if (!n) return [];
+  const total = values.reduce((a, v) => a + (Number(v) || 0), 0);
+  const out =
+    total > 0
+      ? values.map((v) => round2(((Number(v) || 0) * 100) / total))
+      : new Array(n).fill(round2(100 / n));
+  const drift = round2(100 - out.reduce((a, v) => a + v, 0));
+  if (drift === 0) return out;
+  let idx = 0;
+  for (let i = 1; i < n; i++) if (out[i] > out[idx]) idx = i;
+  out[idx] = round2(out[idx] + drift);
+  return out;
+}
+
+/**
+ * The inclusive index window into CANONICAL_BANDS that a floor/ceiling pair
+ * admits, or null when it admits nothing (P4).
+ *
+ * Both bounds go through canonicalDifficulty, so the legacy vocabulary still
+ * reads (`hard` is a ceiling of `expert`) and an unknown string is treated as
+ * no bound at all — a stale enum value must not be able to empty a game's
+ * window and stop a season generating.
+ *
+ * @param {unknown} floor
+ * @param {unknown} ceiling
+ * @returns {{lo: number, hi: number}|null}
+ */
+export function difficultyWindow(floor, ceiling) {
+  const f = canonicalDifficulty(floor);
+  const c = canonicalDifficulty(ceiling);
+  const lo = f === null ? 0 : CANONICAL_BANDS.indexOf(f);
+  const hi = c === null ? CANONICAL_BANDS.length - 1 : CANONICAL_BANDS.indexOf(c);
+  return lo <= hi ? { lo, hi } : null;
+}
+
+/**
+ * The mix ONE game is actually generated against: its own override rows if it
+ * has any, else the season mix, clipped to its [floor, ceiling] window and
+ * renormalized to 100.
+ *
+ * Feed the result to planDifficulty({ perTypeMix: { [runtime_key]: rows } }).
+ *
+ * @param {{
+ *   seasonMix?: {difficulty_band: string, target_pct: number}[],
+ *   perGameRows?: {difficulty_band: string, target_pct: number}[],
+ *   floor?: unknown,
+ *   ceiling?: unknown,
+ * }} input
+ * @returns {{difficulty_band: string, target_pct: number}[]|null} canonical
+ *   order, summing to exactly 100 — or null when the window is empty (P4).
+ */
+export function effectiveTypeMix(input) {
+  const i = input && typeof input === "object" ? input : {};
+  const win = difficultyWindow(i.floor, i.ceiling);
+  if (!win) return null;
+
+  // P2 — an override set is only an override if something in it resolves. A
+  // row naming a band we do not know is not a quieter season mix, it is noise.
+  const own = (Array.isArray(i.perGameRows) ? i.perGameRows : []).filter(
+    (r) => canonicalDifficulty(r?.difficulty_band) !== null,
+  );
+  // mixWeights() applies the SAME canonicalization, duplicate-row summing and
+  // 40/40/20 degradation the allocator uses, so a mix means one thing here and
+  // another nowhere.
+  const weights = mixWeights(own.length ? own : i.seasonMix);
+
+  const kept = weights.slice(win.lo, win.hi + 1);
+  const pct = normalizePct(kept);
+  return kept.map((_, k) => ({
+    difficulty_band: CANONICAL_BANDS[win.lo + k],
+    target_pct: pct[k],
+  }));
+}
+
+/**
+ * A mix as one percentage per CANONICAL_BANDS entry (0 for a band the mix does
+ * not carry) — the shape a caller compares two mixes in.
+ *
+ * @param {{difficulty_band: string, target_pct: number}[]|null|undefined} rows
+ * @returns {number[]}
+ */
+export function mixVector(rows) {
+  const out = CANONICAL_BANDS.map(() => 0);
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const b = CANONICAL_BANDS.indexOf(canonicalDifficulty(r?.difficulty_band));
+    if (b >= 0) out[b] += Number(r?.target_pct) || 0;
+  }
+  return out;
 }

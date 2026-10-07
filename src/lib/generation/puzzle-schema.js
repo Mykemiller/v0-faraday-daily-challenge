@@ -176,6 +176,123 @@ export function copyViolations(text) {
   return v;
 }
 
+// ── CC-DC-GEN-DOMAIN-FIDELITY-1.0 — the model's domain-fit self-report ─────────
+//
+// prompts.js asks every generated element for two extra keys alongside
+// `difficulty`: `domain_fit` ("on"|"adjacent"|"off") and a <=120-char
+// `domain_fit_reason`. Both are ADVISORY. D2: a missing, misspelled or junk
+// `domain_fit` is "unknown" and passes — a model that forgets to self-report
+// must never cost a slot, because the slot is the expensive thing and the
+// self-report is the cheap one. Only an explicit "off" changes anything, and
+// what it changes is WHO LOOKS AT IT, never whether the row is written.
+//
+// `validateContent()` above is deliberately not touched: it checks the keys a
+// game NEEDS and ignores every extra one, so a model that nests `domain_fit`
+// inside the puzzle object still validates. `readDomainFit()` looks in both
+// places for exactly that reason.
+
+/** The three values the prompt offers. Anything else normalizes to "unknown". */
+export const DOMAIN_FIT_VALUES = ["on", "adjacent", "off"];
+/** The reason clamp the prompt asks for and this module enforces. */
+export const DOMAIN_FIT_REASON_MAX = 120;
+/** The validation_errors key an off-domain puzzle is flagged under. */
+export const DOMAIN_FIT_OFF_KEY = "domain_fit_off";
+/** Stand-in reason when the model's text could not be shown to be content-free. */
+export const DOMAIN_FIT_REASON_WITHHELD = "reason withheld (could not be shown content-free)";
+
+/**
+ * "on" | "adjacent" | "off" | "unknown" — never throws, never a failure (D2).
+ * @param {unknown} v
+ * @returns {"on"|"adjacent"|"off"|"unknown"}
+ */
+export function normalizeDomainFit(v) {
+  const s = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return DOMAIN_FIT_VALUES.includes(s) ? /** @type {"on"|"adjacent"|"off"} */ (s) : "unknown";
+}
+
+/**
+ * One tidy line of at most DOMAIN_FIT_REASON_MAX characters, or null. The clamp
+ * is ours, not the model's: the prompt asks for <=120 and this is what makes it
+ * true of the stored row.
+ * @param {unknown} v
+ * @returns {string|null}
+ */
+export function clampFitReason(v) {
+  const s = typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
+  if (!s) return null;
+  if (s.length <= DOMAIN_FIT_REASON_MAX) return s;
+  return s.slice(0, DOMAIN_FIT_REASON_MAX - 1).trimEnd() + "…";
+}
+
+// Words too common to treat as an answer leak; without them almost every honest
+// reason would be withheld for sharing a preposition with the answer key.
+const REASON_STOPWORDS = new Set([
+  "the", "and", "for", "with", "from", "that", "this", "into", "than", "then",
+  "over", "under", "its", "are", "was", "were", "not", "but", "all", "any",
+  "one", "two", "per", "via", "out", "off", "how", "why", "who", "new",
+]);
+
+/**
+ * True when the reason repeats the answer key or any distinctive token of it.
+ * Deliberately trigger-happy: a withheld reason costs the commissioner one
+ * click, a leaked one puts an answer in a row that renders in the panel.
+ * @param {unknown} reason
+ * @param {unknown} answerKey
+ * @returns {boolean}
+ */
+export function reasonLeaksAnswer(reason, answerKey) {
+  const r = String(reason ?? "").toLowerCase();
+  const key = String(answerKey ?? "").toLowerCase();
+  if (!r || !key) return false;
+  if (key.length > 3 && r.includes(key)) return true;
+  const words = new Set(r.split(/[^a-z0-9]+/).filter(Boolean));
+  return key
+    .split(/[^a-z0-9]+/)
+    .some((t) => t.length >= 3 && !REASON_STOPWORDS.has(t) && words.has(t));
+}
+
+/**
+ * D3 — the whole decision, as one pure function the worker and the CLI both
+ * call. "on" / "adjacent" / unknown are `passed`, exactly as before this rule
+ * existed. "off" is `review` plus ONE structural validation_errors entry.
+ *
+ * The stored reason is the model's words, clamped and screened; it is never the
+ * puzzle. When the screen cannot clear it the entry still exists (the flag is
+ * the point) with the reason replaced.
+ *
+ * @param {{domain_fit?: unknown, reason?: unknown, domain_fit_reason?: unknown, answerKey?: unknown}} [input]
+ * @returns {{fit: "on"|"adjacent"|"off"|"unknown", validation_status: "passed"|"review",
+ *   validation_errors: {key: string, reason: string}[]|null}}
+ */
+export function deriveValidation(input) {
+  const fit = normalizeDomainFit(input?.domain_fit);
+  if (fit !== "off") return { fit, validation_status: "passed", validation_errors: null };
+  const raw = input?.reason !== undefined ? input.reason : input?.domain_fit_reason;
+  let reason = clampFitReason(raw);
+  if (reason && reasonLeaksAnswer(reason, input?.answerKey)) reason = null;
+  return {
+    fit,
+    validation_status: "review",
+    validation_errors: [{ key: DOMAIN_FIT_OFF_KEY, reason: reason ?? DOMAIN_FIT_REASON_WITHHELD }],
+  };
+}
+
+/**
+ * The self-report as it arrives: on the array ELEMENT (where the prompt puts
+ * it, next to `difficulty`) or nested inside `puzzle` (where a model sometimes
+ * puts it anyway). Element wins.
+ * @param {unknown} element
+ * @returns {{domain_fit: unknown, domain_fit_reason: unknown}}
+ */
+export function readDomainFit(element) {
+  const el = element && typeof element === "object" ? /** @type {Record<string, unknown>} */ (element) : {};
+  const nested = el.puzzle && typeof el.puzzle === "object" ? /** @type {Record<string, unknown>} */ (el.puzzle) : {};
+  return {
+    domain_fit: el.domain_fit !== undefined ? el.domain_fit : nested.domain_fit,
+    domain_fit_reason: el.domain_fit_reason !== undefined ? el.domain_fit_reason : nested.domain_fit_reason,
+  };
+}
+
 // ── hashing / fingerprint ───────────────────────────────────────────────────────
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 function stableStringify(v) {

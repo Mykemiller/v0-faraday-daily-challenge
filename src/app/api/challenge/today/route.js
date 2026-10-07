@@ -38,8 +38,8 @@ import { getLivePuzzles, getTipOfTheDay } from "@/lib/puzzle-bank";
 // to the RESULT of getLivePuzzles(), so it is backend-agnostic: it works
 // identically on the Airtable and Supabase paths, and does not wait on the
 // DC_PUZZLE_SOURCE cutover.
-import { filterToSlate } from "@/lib/season-slate";
-import { resolveSeasonSlate } from "@/lib/season-slate-server";
+import { filterToSlate, narrowToScheduled } from "@/lib/season-slate";
+import { resolveSeasonSlate, resolveSeasonSchedule } from "@/lib/season-slate-server";
 import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // CC-DC-LOBBY-EMPTY-STATE-1.0 (D8): `nextSeason` so a no-season lobby can say
 // WHEN the next one starts instead of just "No challenge today." `todayCT` is
@@ -47,6 +47,20 @@ import { resolveSeasonFor } from "@/lib/seasons/resolve";
 // (CC-DC-SEASON-GOLIVE-1.0).
 import { todayCT } from "@/lib/seasons/golive";
 import { fetchNextSeason } from "@/lib/seasons/next-season";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — the season's scoring rules, so a
+// `points_override` / `hint_penalty_pct` / `streak_bonus_enabled` the
+// commissioner set is a rule the player can SEE, not a stored-only value. The
+// block is advisory to the client (it renders the number); /api/score resolves
+// the same columns itself before it writes one.
+import { resolveSeasonScoringRules } from "@/lib/scoring/season-rules-server";
+// CC-DC-HINTS-FROM-CONFIG-1.0 D2 — `hints_enabled` / `max_hints_per_game`,
+// resolved from the SAME season as the puzzles. Read through
+// `v_season_effective_config` (the one authority on which config version is in
+// force), matching teamRulesFor rather than adding a second, weaker
+// `state=eq.active` pick.
+import { hintRulesFor } from "@/lib/seasons/hint-rules";
+// FIX B2 — one definition of the CT serve day, shared with the browser.
+import { chicagoDay } from "@/lib/dc-day.js";
 
 // Read live each request; do not statically prerender at build time.
 export const dynamic = "force-dynamic";
@@ -83,12 +97,7 @@ async function resolveSubscriberId(h, token) {
 
 // CT calendar date (matches the sync's puzzle_date + the AUTO-128 rotator).
 function centralDate(d) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  return chicagoDay(d);
 }
 
 // Faraday's Take (FAR-389) + Faraday Signal (FAR-385): read today's per-puzzle
@@ -194,22 +203,48 @@ export async function GET(request) {
     const season = await resolveSeasonFor(h, subscriberId);
     const seasonId = season?.id ?? null;
 
-    const [livePuzzles, tip, takes, solveBands, slate, nextSeason] = await Promise.all([
+    const [livePuzzles, tip, takes, solveBands, slate, scheduled, nextSeason, scoring, hints] = await Promise.all([
       getLivePuzzles({ seasonId }),
       getTipOfTheDay(),
       fetchTodaysTakes(),
       fetchSolveBands(),
       resolveSeasonSlate(seasonId),
+      // CC-DC-GEN-SCHEDULE-FIELDS-1.0 D4 — which of the slate's games play
+      // TODAY. `todayCT()` is the CT serve day, imported rather than
+      // re-derived (CC-DC-SEASON-GOLIVE-1.0 owns it). null = do not narrow.
+      resolveSeasonSchedule(seasonId, todayCT()),
       // Unconditional and parallel: it costs no added latency next to the five
       // reads already in flight, and a field that is only populated in the one
       // state that renders it is a field nobody can test from the outside.
       fetchNextSeason(h, todayCT()),
+      // D7 — resolved from the SAME season the puzzles came from, in the same
+      // parallel batch so it costs no added latency. A season with no active
+      // config, a missing key or any read failure yields the identity rules
+      // (150 / 0% / streak on), which is what every season scored at before
+      // this pack, so nothing moves for them.
+      resolveSeasonScoringRules(seasonId, h),
+      // D2 — one more read in the same parallel batch. Fail-soft to
+      // { hints on, 3 }, which is exactly what every season served before
+      // this pack, so nothing moves for a season with no effective config.
+      hintRulesFor(h, seasonId),
     ]);
 
     // Narrow to the season's enabled games. A null slate leaves the set
     // untouched — see season-slate.ts for the two fail-safes and why they are
     // load-bearing (3 of 6 prod seasons have no active config).
-    const puzzles = filterToSlate(livePuzzles, slate);
+    const slated = filterToSlate(livePuzzles, slate);
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 D4 — then drop the slate games that are not
+    // SCHEDULED today (play_days_of_week, appears_on_days, the per-game
+    // window). Applied to the RESULT, exactly like the slate filter, and with
+    // the same fail-safes — plus one difference that is the point of it: a
+    // narrowing to zero games is HONOURED, because "a Saturday in a Mon–Fri
+    // season" is a correct answer of no puzzles. The lobby renders that as the
+    // `no_puzzles` empty state (season present, nothing playable) and never as
+    // mocks. `servedSlate` is narrowed in lockstep so the tile list and the
+    // puzzle set can never contradict each other.
+    const narrowed = narrowToScheduled(slated, slate, scheduled);
+    const puzzles = narrowed.puzzles;
+    const servedSlate = narrowed.slate;
     // Attach the take + signal to each puzzle by type (spoiler-safe: both are
     // rendered only on the completion screen, after the player has solved that
     // puzzle — and the signal carries no answer material by construction).
@@ -232,19 +267,31 @@ export async function GET(request) {
         puzzles,
         tip,
         solveBands,
-        slate,
+        slate: servedSlate,
         season: season ? { id: season.id, name: season.name ?? null } : null,
         // D8: { name, starts_on } | null — the earliest platform-scoped season
         // that has not started yet. Additive; the client renders it ONLY in the
         // no-season empty state (see lib/lobby-model.ts).
         nextSeason,
+        // D7: `{ [runtime_key]: { pointsMax, hintPenaltyPct }, streakBonus }`.
+        // Purely additive — a client that does not read it scores exactly as
+        // it did, and the server never trusts what comes back.
+        // CC-DC-HINTS-FROM-CONFIG-1.0 D2 — `hintsEnabled` and `maxHints` are
+        // ADDITIVE siblings of `scoring` inside the same block. `maxHints` is
+        // already min'd against the bank's three tiers, so the client never
+        // has to know the ceiling exists; a client that does not read either
+        // field behaves exactly as it did.
+        rules: { scoring, hintsEnabled: hints.hintsEnabled, maxHints: hints.maxHints },
       },
       { headers: NO_STORE }
     );
   } catch (err) {
     console.error("[/api/challenge/today] falling back to empty set:", err);
     return Response.json(
-      { puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null },
+      {
+        puzzles: {}, tip: null, solveBands: {}, slate: null, season: null, nextSeason: null,
+        rules: { scoring: { streakBonus: true }, hintsEnabled: true, maxHints: 3 },
+      },
       { headers: NO_STORE }
     );
   }

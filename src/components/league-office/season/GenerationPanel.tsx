@@ -31,6 +31,7 @@ import { ReasonDialog } from "./ReasonDialog";
 import { MiniButton, PrimaryButton } from "./fields";
 import { topFailure } from "@/lib/generation/failure-reasons";
 import { advanceUntilDone, MAX_ADVANCE_SLICES } from "@/lib/generation/advance";
+import { summarizeNotEnforced } from "@/lib/league-office/config-enforcement";
 
 type Finding = { severity: "error" | "warning"; code: string; message: string };
 type Run = {
@@ -64,6 +65,40 @@ type Status = {
   latestPilotRunStatus: string | null;
   draftCount: number;
   unapprovedDates: string[];
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — drafts the model reported as off their
+  // day's sector. Optional so an older cached payload still renders.
+  offDomain?: { date: string; game: string; reason: string | null }[] | null;
+  // CC-LO-GEN-CONFORMANCE-1.0 D4 — configured vs generated. Optional and
+  // nullable: null before any run has written a row, absent on an older
+  // cached payload.
+  conformance?: Conformance | null;
+};
+
+// CC-LO-GEN-CONFORMANCE-1.0 — mirrors generation-conformance.ts's return type.
+// The rules themselves are server-side and tested there; this component only
+// renders what it is handed.
+type ConformanceRow = {
+  dimension: string;
+  key: string;
+  target: number;
+  actual: number;
+  delta: number;
+  status: "ok" | "warn" | "fail";
+  note: string;
+};
+type Conformance = { rows: ConformanceRow[]; worst: "ok" | "warn" | "fail" };
+
+/** Percentage points for the share dimensions, a plain count for the rest —
+ *  "+10.9 pts" and "167" must not be rendered by the same formatter. */
+const SHARE_DIMENSIONS = new Set(["theater", "sector", "difficulty"]);
+
+const DIMENSION_LABELS: Record<string, string> = {
+  theater: "Theater",
+  sector: "Sector",
+  difficulty: "Difficulty",
+  difficulty_window: "Band window",
+  coverage: "Coverage",
+  exclusion: "Exclusions",
 };
 
 type Action = "pilot" | "full" | "approve_pilot" | "approve_puzzles" | "lock";
@@ -75,7 +110,18 @@ const ACTION_TO_API: Record<Exclude<Action, "lock">, string> = {
   approve_puzzles: "season.approve_puzzles",
 };
 
-export function GenerationPanel({ seasonId }: { seasonId: string }) {
+export function GenerationPanel({
+  seasonId,
+  notEnforced = [],
+}: {
+  seasonId: string;
+  /** CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D5) — labels of the settings this
+   *  season's effective config SET but that nothing reads yet, resolved on the
+   *  server by the detail page (it already holds v_season_effective_config).
+   *  Optional and defaulted, so this panel renders identically anywhere that
+   *  does not pass it. */
+  notEnforced?: string[];
+}) {
   const router = useRouter();
   const [status, setStatus] = useState<Status | null>(null);
   const [action, setAction] = useState<Action | null>(null);
@@ -229,12 +275,28 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
   const pilotReady = status.pilotFindings.length === 0;
   const fullReady = status.fullFindings.length === 0;
   const pilotDone = status.latestPilotRunStatus === "pilot_complete";
+  // D4 — a REVIEW queue, not a gate: the count and the reasons are shown here
+  // and repeated in the Approve dialog, and Approve stays enabled either way.
+  const offDomain = status.offDomain ?? [];
+  // D4 — the same report drives the table and the Approve gate, so the two can
+  // never disagree about what is failing.
+  const conf = status.conformance ?? null;
+  const confFailures = conf ? conf.rows.filter((r) => r.status === "fail") : [];
   const est = Math.max(1, Math.ceil((status.totalTarget / 10) * 1.2)); // ~1 min per 10-puzzle batch, padded
+
+  // D5 — one sentence, appended to both generate confirms. Not a blocker and
+  // not a warning: generating against a config whose every setting is not yet
+  // a rule is normal today, and the only failure is believing otherwise.
+  const notEnforcedNote = notEnforced.length
+    ? ` ${summarizeNotEnforced(notEnforced)}: ${notEnforced.join(", ")}.`
+    : "";
 
   const copy: Record<Action, { title: string; description: string; confirm: string; destructive?: boolean }> = {
     pilot: {
       title: "Generate pilot",
-      description: `Generates ONE puzzle per configured game (${status.targets.length} total) as Draft/Unpublished rows for review. Nothing is published; players see nothing.`,
+      description:
+        `Generates ONE puzzle per configured game (${status.targets.length} total) as Draft/Unpublished rows for review. Nothing is published; players see nothing.` +
+        notEnforcedNote,
       confirm: "Generate pilot",
     },
     full: {
@@ -242,7 +304,8 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       description:
         `Generates ${status.totalTarget.toLocaleString()} puzzles (${status.targets.length} games × ${status.dayCount ?? "?"} days) as Draft/Unpublished rows. ` +
         `Estimated runtime ≈ ${est} min across worker slices. ` +
-        (status.warnings.length ? `Warnings: ${status.warnings.map((w) => w.message).join(" ")}` : "No warnings."),
+        (status.warnings.length ? `Warnings: ${status.warnings.map((w) => w.message).join(" ")}` : "No warnings.") +
+        notEnforcedNote,
       confirm: "Generate puzzles",
     },
     approve_pilot: {
@@ -254,7 +317,12 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       title: "Approve puzzles",
       // CC-DC-SEASON-GOLIVE-1.0 (D5): approving no longer means "wait for the
       // nightly rotation" for today. Rows dated today go live on approval.
-      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned. Any puzzle dated today goes live immediately; later dates go live at midnight CT on their own date.`,
+      description: `Publishes ${status.draftCount.toLocaleString()} generated draft${status.draftCount === 1 ? "" : "s"} across ${status.unapprovedDates.length} day${status.unapprovedDates.length === 1 ? "" : "s"} via fn_dc_approve_puzzles — Public IDs are assigned. Any puzzle dated today goes live immediately; later dates go live at midnight CT on their own date.` +
+        // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the count follows the commissioner
+        // into the confirm step. It informs the decision; it never blocks it.
+        (offDomain.length
+          ? ` ${offDomain.length} of them ${offDomain.length === 1 ? "is" : "are"} flagged off-domain and will publish as-is.`
+          : ""),
       confirm: "Approve & publish",
       destructive: true,
     },
@@ -277,6 +345,7 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
       {status.bankAlarms.map((a) => (
         <Banner key={a.message} tone="amber">{a.message}</Banner>
       ))}
+      <OffDomainNotice flags={offDomain} />
 
       {/* checklist */}
       <div>
@@ -305,6 +374,9 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
           Slate: {status.targets.map((t) => t.gameName).join(" · ")} — {status.totalTarget.toLocaleString()} puzzles over {status.dayCount ?? "?"} days.
         </p>
       ) : null}
+
+      {/* CC-LO-GEN-CONFORMANCE-1.0 D4 — configured vs generated */}
+      <ConformancePanel report={conf} />
 
       {/* actions */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -344,6 +416,18 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
           Lock season
         </MiniButton>
       </div>
+
+      {/* CC-LO-REGENERATE-FROM-DATE-1.0 D4 — replace an approved season from a
+          future date onward, and the undo for it. Deliberately below the
+          ordinary actions and behind its own disclosure: these are the only two
+          controls on this panel that delete approved puzzles. */}
+      <RegenerationControls
+        seasonId={seasonId}
+        endsOn={s.ends_on}
+        locked={!!s.locked_at}
+        inflight={!!inflight}
+        onDone={refresh}
+      />
 
       {/* run progress */}
       {status.runs.length > 0 ? (
@@ -437,6 +521,16 @@ export function GenerationPanel({ seasonId }: { seasonId: string }) {
         description={action ? copy[action].description : ""}
         confirmLabel={action ? copy[action].confirm : "Confirm"}
         destructive={action ? copy[action].destructive : false}
+        details={
+          action === "approve_puzzles" && confFailures.length ? (
+            <ConformanceFailureList rows={confFailures} />
+          ) : undefined
+        }
+        acknowledge={
+          action === "approve_puzzles" && conf?.worst === "fail"
+            ? "I understand the bank does not match the configuration"
+            : null
+        }
         onCancel={() => setAction(null)}
         onConfirm={run}
       />
@@ -472,6 +566,31 @@ function FailureNote({ run }: { run: Run }) {
   );
 }
 
+/**
+ * CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — "N puzzles flagged off-domain", with the
+ * (date, game, reason) of each. The reason is the model's own structural note,
+ * clamped and screened server-side; no puzzle name, hint or answer is in this
+ * payload at all. Approval is NOT blocked — the commissioner is told, and then
+ * decides.
+ */
+function OffDomainNotice({ flags }: { flags: { date: string; game: string; reason: string | null }[] }) {
+  if (!flags.length) return null;
+  return (
+    <Banner tone="amber">
+      <strong>{flags.length} puzzle{flags.length === 1 ? "" : "s"} flagged off-domain</strong> — the generator
+      reported {flags.length === 1 ? "it" : "them"} as outside the day&rsquo;s sector. Approval is not blocked.
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+        {flags.map((f) => (
+          <li key={`${f.date}|${f.game}`} style={{ fontSize: 11.5 }}>
+            <span className="font-mono">{f.date}</span> · {f.game}
+            {f.reason ? ` — ${f.reason}` : ""}
+          </li>
+        ))}
+      </ul>
+    </Banner>
+  );
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".08em", textTransform: "uppercase", color: "#8d8375" }}>
@@ -501,5 +620,375 @@ function StatusDot({ status, stalled }: { status: string; stalled: boolean }) {
       <span style={{ width: 8, height: 8, borderRadius: 99, background: color }} />
       <span className="font-mono" style={{ fontSize: 10.5, color }}>{label}</span>
     </span>
+  );
+}
+
+/**
+ * CC-LO-GEN-CONFORMANCE-1.0 D4 — "Configured vs generated".
+ *
+ * Collapsed when every dimension is ok (there is nothing to read), expanded the
+ * moment one is not — and once the commissioner clicks the header, their choice
+ * wins over the default for the rest of the session.
+ *
+ * This table states a difference; it never explains one away. A slate whose
+ * per-game floors make a configured season mix unreachable will show a
+ * difficulty row in the red forever, and that is the correct reading: the
+ * configuration contradicts itself, and widening the threshold would only hide
+ * it.
+ */
+function ConformancePanel({ report }: { report: Conformance | null }) {
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  if (!report || !report.rows.length) return null;
+
+  const open = expanded ?? report.worst !== "ok";
+  const counts = {
+    warn: report.rows.filter((r) => r.status === "warn").length,
+    fail: report.rows.filter((r) => r.status === "fail").length,
+  };
+  const summary =
+    report.worst === "ok"
+      ? "every dimension within tolerance"
+      : [
+          counts.fail ? `${counts.fail} failing` : "",
+          counts.warn ? `${counts.warn} drifting` : "",
+        ].filter(Boolean).join(" · ");
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded(!open)}
+        aria-expanded={open}
+        style={{
+          display: "flex", gap: 8, alignItems: "center", width: "100%",
+          background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "#8d8375" }}>{open ? "▾" : "▸"}</span>
+        <SectionLabel>Configured vs generated</SectionLabel>
+        <StatusChip status={report.worst} />
+        <span style={{ fontSize: 11.5, color: "#8d8375" }}>{summary}</span>
+      </button>
+
+      {open ? (
+        <div style={{ overflowX: "auto", marginTop: 6 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+            <thead>
+              <tr>
+                {["Dimension", "Target", "Generated", "Δ", "Status", ""].map((h, k) => (
+                  <th
+                    key={h || `h${k}`}
+                    style={{
+                      textAlign: k >= 1 && k <= 3 ? "right" : "left",
+                      padding: "4px 10px 4px 0", color: "#8d8375", fontWeight: 600,
+                      borderBottom: "1px solid var(--color-cream-line)",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((r) => {
+                const share = SHARE_DIMENSIONS.has(r.dimension);
+                const unit = share ? "%" : "";
+                return (
+                  <tr key={`${r.dimension}|${r.key}`}>
+                    <td style={{ padding: "5px 10px 5px 0", whiteSpace: "nowrap" }}>
+                      <span style={{ color: "#8d8375" }}>{DIMENSION_LABELS[r.dimension] ?? r.dimension}</span>
+                      {share ? <> · <span style={{ color: "#141210" }}>{r.key}</span></> : null}
+                    </td>
+                    <td className="font-mono" style={{ padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11 }}>
+                      {r.target}{unit}
+                    </td>
+                    <td className="font-mono" style={{ padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11 }}>
+                      {r.actual}{unit}
+                    </td>
+                    <td
+                      className="font-mono"
+                      style={{
+                        padding: "5px 10px 5px 0", textAlign: "right", fontSize: 11,
+                        color: r.delta === 0 ? "#8d8375" : STATUS_COLORS[r.status],
+                      }}
+                    >
+                      {r.delta > 0 ? "+" : ""}{r.delta}{unit}
+                    </td>
+                    <td style={{ padding: "5px 10px 5px 0" }}><StatusChip status={r.status} /></td>
+                    <td style={{ padding: "5px 0", color: "#6b6257" }}>{r.note}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** D4 — the failing rows, repeated inside the Approve dialog. The checkbox the
+ *  dialog then requires is only honest if what is being acknowledged is on the
+ *  screen next to it. */
+function ConformanceFailureList({ rows }: { rows: ConformanceRow[] }) {
+  return (
+    <div
+      style={{
+        padding: "9px 12px", borderRadius: 6,
+        border: "1px solid #9c3b2e", background: "rgba(156,59,46,.08)",
+      }}
+    >
+      <strong style={{ fontSize: 12.5, color: "#9c3b2e" }}>
+        This bank does not match its configuration:
+      </strong>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11.5, color: "#9c3b2e" }}>
+        {rows.map((r) => {
+          const share = SHARE_DIMENSIONS.has(r.dimension);
+          const label = `${DIMENSION_LABELS[r.dimension] ?? r.dimension}${share ? ` ${r.key}` : ""}`;
+          return (
+            <li key={`${r.dimension}|${r.key}`}>
+              {label} — {share
+                ? `configured ${r.target}%, generated ${r.actual}% (${r.delta > 0 ? "+" : ""}${r.delta} pts)`
+                : r.note}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+const STATUS_COLORS: Record<"ok" | "warn" | "fail", string> = {
+  ok: "#325638", warn: "#94560a", fail: "#9c3b2e",
+};
+
+function StatusChip({ status }: { status: "ok" | "warn" | "fail" }) {
+  const color = STATUS_COLORS[status];
+  return (
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5, letterSpacing: ".06em", textTransform: "uppercase",
+        padding: "1px 6px", borderRadius: 99,
+        border: `1px solid ${color}`, color, whiteSpace: "nowrap",
+      }}
+    >
+      {status}
+    </span>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CC-LO-REGENERATE-FROM-DATE-1.0 D4 — regenerate from a date, and put it back
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// THE SHAPE, and why it is this shape: date + reason → DRY RUN → read the
+// counts → tick a checkbox that repeats those counts → execute. The dry run is
+// not a nicety, it is the default on the server (`dryRun !== false` reports),
+// so this component cannot delete anything by forgetting a flag — it has to
+// send `dryRun: false` on purpose, and it only offers that button after a dry
+// run has come back.
+//
+// "Staff only" is already true of this whole tree twice over: StaffGate renders
+// it, and /api/league-office/action re-verifies the lo_session cookie against
+// the staff allowlist before executeAction() sees the request. The gating here
+// is about ACCIDENT, not authorization.
+
+type RegenMode = "regenerate" | "restore";
+
+const REGEN_COPY: Record<RegenMode, {
+  button: string; title: string; action: string; dateLabel: string; blurb: string; confirm: string;
+}> = {
+  regenerate: {
+    button: "Regenerate from date…",
+    title: "Regenerate from date",
+    action: "season.regenerate_from",
+    dateLabel: "Cutoff date (first day to replace)",
+    blurb:
+      "Archives and removes this season's Published and Unpublished puzzles from the cutoff date onward, plus the season's theme days for the same range, then queues a normal full run that rebuilds them under the CURRENT configuration. Nothing Live or Retired is touched, and the cutoff must be at least two days out. The replacement puzzles arrive Unpublished and still need Approve Puzzles.",
+    confirm: "Delete and regenerate",
+  },
+  restore: {
+    button: "Restore superseded…",
+    title: "Restore superseded puzzles",
+    action: "season.restore_superseded",
+    dateLabel: "Restore from date",
+    blurb:
+      "Puts archived puzzles back — with their original Public IDs and approvals — into slots that are still EMPTY and dated today or later. A slot that has already been refilled keeps its new puzzle; nothing is ever overwritten.",
+    confirm: "Restore",
+  },
+};
+
+function RegenerationControls({
+  seasonId, endsOn, locked, inflight, onDone,
+}: {
+  seasonId: string;
+  endsOn: string | null;
+  locked: boolean;
+  inflight: boolean;
+  onDone: () => void;
+}) {
+  const [mode, setMode] = useState<RegenMode | null>(null);
+  const [date, setDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [acked, setAcked] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const reset = () => { setMode(null); setDate(""); setReason(""); setPreview(null); setAcked(false); };
+
+  // Two days out, in the browser's idea of today. The SERVER re-derives this
+  // from todayCT() and refuses anything closer — this only stops the obvious
+  // mistake from costing a round trip.
+  const earliest = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+
+  const send = async (dryRun: boolean) => {
+    if (!mode) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/league-office/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: REGEN_COPY[mode].action,
+          reason,
+          seasonId,
+          ...(mode === "regenerate" ? { cutoffDate: date } : { fromDate: date }),
+          dryRun,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      const message = j?.message ?? (res.ok ? "Done." : "That did not work.");
+      if (dryRun) {
+        setPreview(res.ok ? message : null);
+        setAcked(false);
+        if (!res.ok) toast(message);
+      } else {
+        toast(message);
+        if (res.ok) reset();
+        onDone();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!mode)
+    return (
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <MiniButton
+          tone="danger"
+          onClick={() => setMode("regenerate")}
+          disabled={locked || inflight}
+          title={locked ? "The season is locked — unlock it first." : inflight ? "A generation run is in flight." : undefined}
+        >
+          {REGEN_COPY.regenerate.button}
+        </MiniButton>
+        <MiniButton onClick={() => setMode("restore")} disabled={inflight}>
+          {REGEN_COPY.restore.button}
+        </MiniButton>
+      </div>
+    );
+
+  const copy = REGEN_COPY[mode];
+  const canPreview = !busy && !!date && !!reason.trim();
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${mode === "regenerate" ? "rgba(156,59,46,.30)" : "var(--color-cream-border)"}`,
+        background: mode === "regenerate" ? "rgba(156,59,46,.05)" : "#fff",
+        borderRadius: 8,
+        padding: "12px 14px",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <SectionLabel>{copy.title}</SectionLabel>
+      <p style={{ fontSize: 12.5, color: "#6b6257", margin: 0, lineHeight: 1.55 }}>{copy.blurb}</p>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "#8d8375" }}>
+            {copy.dateLabel}
+          </span>
+          <input
+            type="date"
+            value={date}
+            disabled={busy}
+            min={mode === "regenerate" ? earliest : undefined}
+            max={endsOn ?? undefined}
+            onChange={(e) => { setDate(e.target.value); setPreview(null); setAcked(false); }}
+            style={{
+              padding: "7px 9px", border: "1px solid var(--color-cream-border)",
+              borderRadius: 6, fontSize: 13, fontFamily: "inherit", color: "#141210",
+            }}
+          />
+        </label>
+      </div>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="font-mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "#8d8375" }}>
+          Reason (required)
+        </span>
+        <textarea
+          rows={2}
+          value={reason}
+          disabled={busy}
+          placeholder="Why is this season being regenerated?"
+          onChange={(e) => { setReason(e.target.value); setPreview(null); setAcked(false); }}
+          style={{
+            padding: "8px 10px", border: "1px solid var(--color-cream-border)", borderRadius: 6,
+            fontSize: 13, fontFamily: "inherit", resize: "vertical", color: "#141210",
+          }}
+        />
+      </label>
+
+      {preview ? (
+        <div
+          style={{
+            border: "1px solid rgba(156,59,46,.30)", background: "rgba(156,59,46,.08)",
+            borderRadius: 6, padding: "9px 11px", fontSize: 12.5, lineHeight: 1.5, color: "#8a3428",
+          }}
+        >
+          {preview}
+        </div>
+      ) : null}
+
+      {/* The confirm gate repeats the DRY RUN's own words, so the thing being
+          ticked is the thing the server measured — not a number this component
+          computed for itself. */}
+      {preview ? (
+        <label style={{ display: "flex", gap: 9, alignItems: "flex-start", fontSize: 12.5, color: "#8a3428", cursor: busy ? "not-allowed" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={acked}
+            disabled={busy}
+            onChange={(e) => setAcked(e.target.checked)}
+            style={{ marginTop: 2, accentColor: "#9c3b2e" }}
+          />
+          <span>
+            I have read the counts above and want to proceed. {mode === "regenerate"
+              ? "The removed puzzles stay recoverable through “Restore superseded”."
+              : "Only empty slots will be filled."}
+          </span>
+        </label>
+      ) : null}
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <MiniButton onClick={() => void send(true)} disabled={!canPreview}>
+          {busy && !preview ? "Checking…" : "Dry run"}
+        </MiniButton>
+        <MiniButton
+          tone="danger"
+          onClick={() => void send(false)}
+          disabled={busy || !preview || !acked}
+          title={preview ? undefined : "Run the dry run first."}
+        >
+          {busy && preview ? "Working…" : copy.confirm}
+        </MiniButton>
+        <MiniButton onClick={reset} disabled={busy}>Cancel</MiniButton>
+      </div>
+    </div>
   );
 }

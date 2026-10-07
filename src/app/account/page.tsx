@@ -91,7 +91,10 @@ interface Season {
   days_until_playoffs?: number | null;
 }
 
-const MAX_TEAMS = 5;
+// The cap the server falls back to when a season has no effective config
+// (CC-DC-TEAM-CAP-FROM-CONFIG-1.0). Only a placeholder until /api/teams answers
+// with the season's real `teamCap` — never the enforcement point.
+const DEFAULT_MAX_TEAMS = 5;
 
 export default function AccountPage() {
   const [ready, setReady] = useState(false);
@@ -110,6 +113,8 @@ export default function AccountPage() {
 
   // Teams
   const [myTeams, setMyTeams] = useState<Team[]>([]);
+  // The season's team cap, from /api/teams. DEFAULT_MAX_TEAMS until it answers.
+  const [maxTeams, setMaxTeams] = useState<number>(DEFAULT_MAX_TEAMS);
   const [availableTeams, setAvailableTeams] = useState<AvailableTeam[]>([]);
   const [teamSearch, setTeamSearch] = useState("");
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -167,7 +172,11 @@ export default function AccountPage() {
     setTeamsLoading(true);
     fetch(`/api/teams?scope=my&token=${encodeURIComponent(t)}`)
       .then((r) => r.ok ? r.json() : { teams: [] })
-      .then((d) => setMyTeams(Array.isArray(d.teams) ? d.teams : []))
+      .then((d) => {
+        setMyTeams(Array.isArray(d.teams) ? d.teams : []);
+        // The season's configured cap, carried on the payload we already fetch.
+        if (Number.isFinite(d?.teamCap)) setMaxTeams(Number(d.teamCap));
+      })
       .catch(() => {})
       .finally(() => setTeamsLoading(false));
   }, []);
@@ -185,12 +194,12 @@ export default function AccountPage() {
   // /api/season/active, never recomputed here (a client in another zone would
   // otherwise disagree about the boundary day).
   const isRosterFrozen = season?.roster_frozen === true;
-  // Players manage teams (join up to MAX_TEAMS, leave any time) unless the season
+  // Players manage teams (join up to `maxTeams`, leave any time) unless the season
   // is hard-locked at end-of-season or rosters are frozen for the playoffs.
   // Joins are immediate — no Free Agency deferral. Hiding the picker is never the
   // enforcement point: /api/teams re-checks both server-side on every write.
   const canEditTeams = !!token && !isLocked && !isRosterFrozen;
-  const atMaxTeams = myTeams.length >= MAX_TEAMS;
+  const atMaxTeams = myTeams.length >= maxTeams;
 
   // Load available teams when editing is open
   useEffect(() => {
@@ -259,7 +268,7 @@ export default function AccountPage() {
     if (alreadyIn) {
       next = myTeams.filter((t) => t.team_id !== teamId);
     } else {
-      if (myTeams.length >= MAX_TEAMS) return;
+      if (myTeams.length >= maxTeams) return;
       next = [...myTeams, { team_id: teamId, team_name: teamName }]; // immediate join
     }
     setMyTeams(next);
@@ -495,11 +504,12 @@ export default function AccountPage() {
               {teamError && <p className="mt-2 font-mono text-[11px] text-red-600">{teamError}</p>}
               {atMaxTeams ? (
                 <p className="mt-3 font-mono text-[11px] font-semibold text-gold">
-                  Max teams reached, leave a team to join a new team.
+                  This season allows {maxTeams} {maxTeams === 1 ? "team" : "teams"} — leave
+                  one to join another.
                 </p>
               ) : (
                 <p className="mt-3 font-mono text-[10px] text-near-black/40">
-                  Join up to {MAX_TEAMS} teams.
+                  Join up to {maxTeams} {maxTeams === 1 ? "team" : "teams"}.
                 </p>
               )}
             </>

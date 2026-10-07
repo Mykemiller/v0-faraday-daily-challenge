@@ -64,9 +64,12 @@ export default function JoinTeamPage() {
           window.location.href = `/leaderboard/team/${(json as { team_id: string }).team_id}`;
           return;
         }
-        const err = (json as { error?: string }).error;
+        // The server states the season's own numbers (CC-DC-TEAM-CAP-FROM-
+        // CONFIG-1.0), so the copy below never hardcodes a cap of 5.
+        const { error: err, message: serverMsg } = json as { error?: string; message?: string };
         setMsg(
-          err === "team_limit_reached" ? "You're already on the maximum of 5 teams. Leave one to join another."
+          err === "team_limit_reached" ? (serverMsg || "You're already on the maximum number of teams for this season. Leave one to join another.")
+          : err === "team_full" ? (serverMsg || "That team is full for this season.")
           : err === "invalid_invite" ? "This invite link is no longer valid. Ask your captain for a fresh link."
           : err === "season_locked" ? "The season is locked — team changes are closed right now."
           : "Couldn't join the team. Please try again."

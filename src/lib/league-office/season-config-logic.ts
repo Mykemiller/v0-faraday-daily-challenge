@@ -8,6 +8,24 @@
 //
 // Tests: `npm run test:season-config`.
 
+// CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve vocabulary and its shape
+// function moved OUT of this file into src/lib/generation/difficulty.js, which
+// is plain JS and therefore importable by the editor, by this module and by the
+// generation worker alike (generation-logic.ts already reaches across the same
+// boundary for theme-allocation.js). Both are re-exported below so every
+// existing importer keeps its import path; what changed is that the generator
+// now places bands along the SAME shape the sparkline draws, instead of
+// ignoring difficulty_curve entirely.
+// Relative, with the extension: this module's tests run under plain
+// `node --test`, which does not read tsconfig `paths`.
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — effectiveTypeMix comes through the
+// same door for the same reason: the slate table previews the mix a game
+// will actually be generated against, and the preview has to BE the
+// generator's arithmetic, not a second copy of it.
+import { DIFFICULTY_CURVES, curvePoints, effectiveTypeMix } from "../generation/difficulty.js";
+
+export { DIFFICULTY_CURVES, curvePoints, effectiveTypeMix };
+
 // ── states ───────────────────────────────────────────────────────────────────
 
 export const CONFIG_STATES = ["draft", "scheduled", "active", "superseded", "cancelled"] as const;
@@ -19,9 +37,22 @@ export type ScopeType = (typeof SCOPE_TYPES)[number];
 export const DIFFICULTY_BANDS = ["foundational", "practitioner", "expert"] as const;
 export type DifficultyBand = (typeof DIFFICULTY_BANDS)[number];
 
-export const DIFFICULTY_CURVES = ["flat", "ramp", "wave", "custom"] as const;
 export const TEAM_SCORE_METHODS = ["sum", "average", "top_n"] as const;
 export const LEADERBOARD_VISIBILITIES = ["public", "league", "private"] as const;
+
+/**
+ * CC-DC-HINTS-FROM-CONFIG-1.0 D1 — how many hint tiers the PUZZLE BANK stores
+ * for one game on one day. Three, everywhere: the generator writes Hint 1/2/3,
+ * `/api/challenge/day-content` serves three, and both hint surfaces render
+ * three. That is a property of the content, not a preference, so it is the
+ * hard ceiling on `season_config.max_hints_per_game` — a season asking for 4
+ * cannot be given a fourth hint by anyone, because no fourth hint exists.
+ *
+ * THE one definition. `sanitizeConfigPatch` clamps to it, `localFindings` and
+ * `generationFindings` raise `max_hints_exceeds_bank` above it, and the serve
+ * path (`src/lib/seasons/hint-rules.ts`) mins against it.
+ */
+export const BANK_HINT_SLOTS = 3;
 
 /** The seven IDF 4.0 Theaters, as carried by `dc_daily_theme.theater_id`.
  *  Names are the public labels — never D-codes (repo-wide IDF rule). */
@@ -518,33 +549,13 @@ export function seasonDayRangeLabel(
   return `Day ${a}–${b} of season`;
 }
 
-// ── difficulty curve preview ─────────────────────────────────────────────────
-
-/** Normalized 0..1 sample points for the inline sparkline. Presentation only —
- *  no scoring or selection logic reads this. */
-export function curvePoints(curve: string, n = 24): number[] {
-  const count = Math.max(2, Math.min(200, Math.floor(n)));
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1);
-    switch (curve) {
-      case "ramp":
-        out.push(t);
-        break;
-      case "wave":
-        out.push(0.5 - Math.cos(t * Math.PI * 2) / 2);
-        break;
-      case "custom":
-        out.push(0.5);
-        break;
-      case "flat":
-      default:
-        out.push(0.5);
-        break;
-    }
-  }
-  return out.map((v) => round2(Math.max(0, Math.min(1, v))));
-}
+// ── difficulty curve ─────────────────────────────────────────────────────────
+//
+// curvePoints() and DIFFICULTY_CURVES are imported and re-exported at the top
+// of this file. They live in src/lib/generation/difficulty.js now because the
+// generator places every season's difficulty bands along that exact curve
+// (CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3) — the sparkline here is a preview OF
+// the allocation, no longer a drawing that nothing honours.
 
 // ── concurrency fingerprint ──────────────────────────────────────────────────
 //
@@ -680,6 +691,14 @@ export function sanitizeConfigPatch(input: Record<string, unknown>): Record<stri
   for (const [k, fallback] of Object.entries(NOT_NULL_FALLBACKS))
     if (k in out && (out[k] === null || out[k] === undefined)) out[k] = fallback;
 
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — the hint budget is clamped to what the
+  // bank can actually serve. Above BANK_HINT_SLOTS the extra hints do not
+  // exist; below zero is not a setting. Applied AFTER the NOT NULL fallback so
+  // a cleared field lands on 3 and is then clamped to 3 (a no-op), never the
+  // other way round.
+  if (typeof out.max_hints_per_game === "number")
+    out.max_hints_per_game = Math.min(BANK_HINT_SLOTS, Math.max(0, out.max_hints_per_game));
+
   return out;
 }
 
@@ -716,6 +735,9 @@ export function localFindings(input: {
   gamesPerDay: number | null;
   teamScoreMethod: string;
   teamScoreTopN: number | null;
+  /** CC-DC-HINTS-FROM-CONFIG-1.0 D1. Optional: a caller that does not supply
+   *  it simply gets no hint finding, which is what every caller got before. */
+  maxHintsPerGame?: number | null;
 }): Finding[] {
   const out: Finding[] = [];
   const enabled = input.games.filter((g) => g.is_enabled).length;
@@ -732,6 +754,19 @@ export function localFindings(input: {
 
   if (input.teamScoreMethod === "top_n" && !input.teamScoreTopN)
     out.push({ severity: "error", code: "top_n_missing", message: "Team scoring is top-N but no N is set." });
+
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — a stored budget above the bank's three
+  // tiers. New saves are clamped by sanitizeConfigPatch, so this only fires on
+  // configs written before the clamp existed (two active ones at
+  // 2026-10-06 — Football and HOT SUMMER, both at 4). It is an ERROR rather
+  // than a warning because the number is not merely optimistic, it is
+  // unservable: players get 3 whatever it says.
+  if (input.maxHintsPerGame != null && input.maxHintsPerGame > BANK_HINT_SLOTS)
+    out.push({
+      severity: "error",
+      code: "max_hints_exceeds_bank",
+      message: `Max hints per game (${input.maxHintsPerGame}) exceeds the ${BANK_HINT_SLOTS} hints the bank stores — players will get ${BANK_HINT_SLOTS}.`,
+    });
 
   // CC-LO-MIX-NORMALIZE-1.0: an off-100 theme/difficulty total is no longer a
   // finding here. The TotalBar states it inline and every save rescales the
@@ -941,4 +976,141 @@ function nameGamesInMessage(raw: string, catalog: { id: string; display_name: st
       return name ? `“${name}”` : id;
     }
   );
+}
+
+// ── CC-LO-POSTGEN-CONFIG-GUARD-1.0: settings that shape GENERATION ───────────
+//
+// Once a season's puzzles exist, the configuration splits in two. Most of it is
+// read at PLAY time (scoring, hints, visibility, team rules) and keeps applying
+// to the bank that is already there. The settings below were read ONCE, by the
+// generator, and editing them now changes nothing that has already been
+// written — the puzzles do not move.
+//
+// That is not a reason to block the edit (the next run will honour it, and
+// `season.regenerate_from` is the path that actually replaces puzzles). It is a
+// reason to say so before the save, and to mark the audit row so a later reader
+// can tell a shaping edit apart from a scoring tweak.
+
+/** D1 — THE list, in one place. Anything not here is play-time configuration. */
+export const GENERATION_SHAPING_FIELDS = {
+  /** `season_config` columns. */
+  config: ["play_days_of_week", "games_per_day", "difficulty_curve"],
+  /** `season_games` columns, compared per slate row. */
+  slate: [
+    "is_enabled",
+    "difficulty_floor",
+    "difficulty_ceiling",
+    "puzzle_count",
+    "appears_on_days",
+    "starts_on",
+    "ends_on",
+  ],
+  /** Whole child tables — every row counts, so they are compared as a set. */
+  mixes: ["season_theme_mix", "season_difficulty_mix"],
+} as const;
+
+/** The four sets a save replaces, in the loose row shape both the editor's
+ *  working copy and a PostgREST read satisfy. */
+export type ShapingSnapshot = {
+  config: Record<string, unknown>;
+  games: Record<string, unknown>[];
+  themeMix: Record<string, unknown>[];
+  difficultyMix: Record<string, unknown>[];
+};
+
+const THEME_MIX_KEYS = [
+  "theater_id", "sector_code", "thread_code", "target_pct", "min_pct", "max_pct", "is_excluded",
+] as const;
+const DIFFICULTY_MIX_KEYS = [
+  "difficulty_band", "target_pct", "min_pct", "max_pct", "applies_to_game_id",
+] as const;
+
+/** One comparable token per value. `null`/`undefined` collapse (PostgREST and
+ *  the editor disagree about which one an empty column is), numerics are
+ *  compared at the 2dp the writer stores — `"14.00"` and `14` are the SAME
+ *  mix — and arrays are order-insensitive. */
+function shapingValue(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (Array.isArray(v)) return `[${v.map(shapingValue).sort().join(",")}]`;
+  if (typeof v === "number") return Number.isFinite(v) ? String(round2(v)) : "null";
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))
+    return String(round2(Number(v)));
+  return canonicalJson(v);
+}
+
+/** A set signature: row order from PostgREST must never read as a change. */
+function mixSignature(rows: Record<string, unknown>[], keys: readonly string[]): string {
+  return canonicalJson(
+    rows
+      .map((r) => keys.map((k) => shapingValue(r[k])))
+      .sort((a, b) => (canonicalJson(a) < canonicalJson(b) ? -1 : 1))
+  );
+}
+
+/** What a slate row that is not there at all means. A catalog game the season
+ *  never configured is an absent, disabled row — not a change. */
+function slateDefault(column: string): unknown {
+  return column === "is_enabled" ? false : null;
+}
+
+/**
+ * D3 — which GENERATION_SHAPING_FIELDS this edit touches, in declaration order.
+ * `[]` means the save cannot affect a future generation run, so it needs no
+ * acknowledgement however much else it changes.
+ *
+ * A column the `after` side does not carry AT ALL is "not supplied", not
+ * "cleared": the editor never sends `puzzle_count`, and a PATCH that omits a
+ * column must not be reported as changing it.
+ */
+export function shapingFieldsChanged(before: ShapingSnapshot, after: ShapingSnapshot): string[] {
+  const changed: string[] = [];
+
+  for (const column of GENERATION_SHAPING_FIELDS.config) {
+    if (!(column in after.config)) continue;
+    if (shapingValue(before.config[column]) !== shapingValue(after.config[column]))
+      changed.push(column);
+  }
+
+  const byGame = (rows: Record<string, unknown>[]) =>
+    new Map(rows.map((r) => [String(r.game_id ?? ""), r]));
+  const beforeGames = byGame(before.games);
+  const afterGames = byGame(after.games);
+  const gameIds = [...new Set([...beforeGames.keys(), ...afterGames.keys()])];
+
+  for (const column of GENERATION_SHAPING_FIELDS.slate) {
+    const moved = gameIds.some((id) => {
+      const b = beforeGames.get(id);
+      const a = afterGames.get(id);
+      // Both rows present but the column was not sent → nothing to compare.
+      if (b && a && !(column in a)) return false;
+      const bv = b && column in b ? b[column] : slateDefault(column);
+      const av = a && column in a ? a[column] : slateDefault(column);
+      return shapingValue(bv) !== shapingValue(av);
+    });
+    if (moved) changed.push(`slate.${column}`);
+  }
+
+  if (mixSignature(before.themeMix, THEME_MIX_KEYS) !== mixSignature(after.themeMix, THEME_MIX_KEYS))
+    changed.push("season_theme_mix");
+  if (
+    mixSignature(before.difficultyMix, DIFFICULTY_MIX_KEYS) !==
+    mixSignature(after.difficultyMix, DIFFICULTY_MIX_KEYS)
+  )
+    changed.push("season_difficulty_mix");
+
+  return changed;
+}
+
+/** A shaping key as a commissioner reads it. */
+export function shapingFieldLabel(key: string): string {
+  if (key === "season_theme_mix") return "Theme & domain mix";
+  if (key === "season_difficulty_mix") return "Difficulty mix";
+  if (key.startsWith("slate.")) return `Game slate · ${fieldLabel(key.slice("slate.".length))}`;
+  return fieldLabel(key);
+}
+
+/** "Game slate · Is enabled, Theme & domain mix" — for the dialog and the
+ *  refusal message. Empty in, empty out. */
+export function summarizeShapingFields(keys: string[]): string {
+  return keys.map(shapingFieldLabel).join(", ");
 }
