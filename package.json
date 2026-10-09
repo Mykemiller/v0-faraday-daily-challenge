@@ -11,6 +11,7 @@
     "test:tokenomics": "node --test 'src/lib/tokenomics/**/*.test.ts'",
     "test:dc-ui": "node --test 'src/lib/dc-ui/**/*.test.ts'",
     "test:contrast": "node scripts/contrast-check.mjs",
+    "test:predicts": "node --test src/lib/predicts.test.ts",
     "test:signal-drop": "node --test src/lib/signal-drop.test.js",
     "test:puzzle-bank": "node --test src/lib/supabase-puzzle-bank.test.js",
     "test:hosts": "node --test src/lib/hosts.test.ts",
