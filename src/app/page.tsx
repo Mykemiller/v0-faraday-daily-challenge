@@ -26,6 +26,7 @@ import { dcCanonicalUrl } from "@/lib/hosts";
 // is the full-width panel further down — so neither is repeated in this grid.
 const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean; external?: boolean }[] = [
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
+  { name: "Faraday Predicts", href: "/predicts", blurb: "Dated, probability-weighted calls on the AI data center buildout — and every one is graded when its date arrives.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
   { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
