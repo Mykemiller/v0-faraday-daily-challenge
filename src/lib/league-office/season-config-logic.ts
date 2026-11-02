@@ -302,6 +302,45 @@ export function derivedFreeAgency(endsOn: string | null | undefined): {
   };
 }
 
+/** A `season_config.roster_lock_on` that lands on or before free agency opens
+ *  silently cancels free agency, and one inside the free-agency band cuts it
+ *  short. That is not obvious from the wizard, because the two dates are set in
+ *  different places — the lock is typed by hand, `free_agency_start` is derived
+ *  from the end date — and because the collision is a PRECEDENCE fact, not a
+ *  date-range fact: `canMoveRoster()` checks the config lock at step 2 and the
+ *  windows only at step 5, so once the lock is in force no open window can
+ *  reopen a roster (see `src/lib/league-playoffs/phase.ts`).
+ *
+ *  This is how three seeded configs came to hold `roster_lock_on = ends_on - 3`
+ *  — the same expression that later became `free_agency_start` — which would
+ *  have shipped seasons whose free agency was dead on arrival (cleared by
+ *  migration 20260908030000). A WARNING, never a block: locking before free
+ *  agency is a legitimate commissioner choice, it just has to be a deliberate
+ *  one.
+ *
+ *  Returns a human sentence (rendered verbatim) or null when there is nothing
+ *  to say. */
+export function rosterLockWarning(
+  rosterLockOn: string | null | undefined,
+  endsOn: string | null | undefined
+): string | null {
+  const lock = parseIsoDate(rosterLockOn);
+  const end = parseIsoDate(endsOn);
+  if (!lock || !end) return null;
+
+  const { start: faStart } = derivedFreeAgency(endsOn);
+  const fa = parseIsoDate(faStart);
+  if (!fa) return null;
+
+  if (lock <= fa) {
+    return `The roster lock (${rosterLockOn}) falls on or before free agency opens (${faStart}), so free agency will never open — the config lock outranks the trading windows. Clear the roster lock to let free agency run, or keep it if locking the roster early is intended.`;
+  }
+  if (lock <= end) {
+    return `The roster lock (${rosterLockOn}) falls inside free agency (${faStart} → ${endsOn}), so free agency will close early on that date. Clear the roster lock to let it run to the end of the season, or keep it if cutting it short is intended.`;
+  }
+  return null;
+}
+
 // Seasons are independent and MAY overlap (CC-LO-SEASONS-OVERLAP-1.0). The
 // `findOverlappingSeason` pre-check that used to live here mirrored the
 // `seasons_no_overlap_per_league` exclusion constraint, dropped by migration
