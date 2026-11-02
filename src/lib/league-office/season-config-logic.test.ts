@@ -10,7 +10,7 @@ import {
   windowSummary, validateWindow, curvePoints, canonicalJson, fingerprint,
   BANK_HINT_SLOTS, configFingerprint, sanitizeConfigPatch, localFindings, summarizeFindings,
   diffConfigs, promoteIntent, countOverCap, THEATERS,
-  derivedFreeAgency,
+  derivedFreeAgency, rosterLockWarning,
   seedTradingWindows, validateTradingWindows, tradingWindowsFit, leagueWindowDefaults,
   mergeTradingWindows,
   seasonDayRangeLabel, dayOfSeason, isoAddDays, isoDiffDays, TOO_SHORT_MESSAGE,
@@ -807,4 +807,65 @@ test("shaping keys render as something a commissioner can read", () => {
     logic.summarizeShapingFields(["slate.is_enabled", "season_theme_mix"]),
     "Game slate · Is enabled, Theme & domain mix"
   );
+});
+
+// ── roster lock vs free agency ────────────────────────────────────────────────
+// A lock on or before `free_agency_start` (ends_on - 3) cancels free agency
+// outright, because canMoveRoster() ranks the config lock above the windows.
+
+test("a roster lock ON the free-agency start warns that FA never opens", () => {
+  const w = rosterLockWarning("2027-03-11", "2027-03-14");
+  assert.ok(w, "expected a warning");
+  assert.match(w, /never open/);
+  assert.match(w, /2027-03-11/);
+});
+
+test("a roster lock BEFORE free agency warns the same way", () => {
+  const w = rosterLockWarning("2027-01-20", "2027-03-14");
+  assert.ok(w);
+  assert.match(w, /never open/);
+});
+
+test("a roster lock INSIDE free agency warns that FA closes early", () => {
+  const w = rosterLockWarning("2027-03-13", "2027-03-14");
+  assert.ok(w);
+  assert.match(w, /close early/);
+  assert.doesNotMatch(w, /never open/);
+});
+
+test("a roster lock after the season ends is silent", () => {
+  assert.equal(rosterLockWarning("2027-04-01", "2027-03-14"), null);
+});
+
+test("the last day of the season still warns — the lock bites that day", () => {
+  const w = rosterLockWarning("2027-03-14", "2027-03-14");
+  assert.ok(w);
+  assert.match(w, /close early/);
+});
+
+test("no lock, no end date, or junk dates say nothing", () => {
+  assert.equal(rosterLockWarning(null, "2027-03-14"), null);
+  assert.equal(rosterLockWarning("", "2027-03-14"), null);
+  assert.equal(rosterLockWarning("2027-03-11", null), null);
+  assert.equal(rosterLockWarning("2027-03-11", ""), null);
+  assert.equal(rosterLockWarning("not-a-date", "2027-03-14"), null);
+  assert.equal(rosterLockWarning("2027-03-11", "not-a-date"), null);
+});
+
+test("the warning keys on the DERIVED free-agency start, not a guess", () => {
+  // The three seeded configs that caused this: roster_lock_on = ends_on - 3,
+  // which is exactly derivedFreeAgency().start.
+  for (const endsOn of ["2027-03-14", "2027-05-17", "2026-09-25"]) {
+    const fa = derivedFreeAgency(endsOn).start;
+    if (!fa) throw new Error(`no derived FA start for ${endsOn}`);
+
+    const onStart = rosterLockWarning(fa, endsOn);
+    assert.ok(onStart, `expected a warning for a lock on ${fa}`);
+    assert.match(onStart, /never open/);
+
+    // One day later is inside the band, so it truncates instead.
+    const inBand = rosterLockWarning(isoAddDays(fa, 1), endsOn);
+    assert.ok(inBand, "expected a warning for a lock inside the band");
+    assert.match(inBand, /close early/);
+  }
 });
