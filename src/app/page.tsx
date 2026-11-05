@@ -24,13 +24,22 @@ import { dcCanonicalUrl } from "@/lib/hosts";
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
-const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean; external?: boolean }[] = [
+const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; tag?: string; primary?: boolean; external?: boolean }[] = [
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Faraday Predicts", href: "/predicts", blurb: "Dated, probability-weighted calls on the AI data center buildout — and every one is graded when its date arrives.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
   { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
-  { name: "Thought Forge", href: "/thought-forge", blurb: "Turn Faraday intelligence into your own briefs, memos, and models.", tag: "Metered" },
+  // ThoughtForge lives on its own domain (same pattern as Signal Room). Copy
+  // approved by Myke 2026-11-05; `lede` is the one-line headline above the blurb.
+  {
+    name: "Thought Forge",
+    href: "https://www.faraday-thoughtforge.com/",
+    external: true,
+    lede: "Ten advisors. One ruling. Every datacenter decision argued in the open.",
+    blurb: "Ask the panel a datacenter question. Each advisor answers from their own domain, disagreement stays on the record, every claim carries a confidence label, and the Chief of Staff closes with a ruling and the evidence that would change it.",
+    tag: "Metered",
+  },
 ];
 
 // Pack prices are NOT written out here. They come from the locked-canon mirror
@@ -127,6 +136,9 @@ export default async function Home() {
                     <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
                   )}
                 </div>
+                {s.lede && (
+                  <p className="mt-2 font-serif text-[14px] font-semibold italic leading-snug text-forest">{s.lede}</p>
+                )}
                 <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
                 <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">
                   {s.external ? "Enter →" : "Open →"}
