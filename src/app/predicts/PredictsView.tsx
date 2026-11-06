@@ -10,7 +10,11 @@ import {
   formatDate,
   HORIZON_LABELS,
   NO_MISSES_LINE,
+  noEvidenceLine,
+  OUTCOME_CHIPS,
   parseUrlState,
+  receiptBadge,
+  RECEIPTS_EMPTY,
   trackRecord,
   verdictBadge,
   type PredictsResponse,
@@ -40,6 +44,11 @@ type Load =
   | { key: string; phase: "ready"; data: PredictsResponse };
 
 const ERROR_COPY = "Forecasts are unavailable right now — try again shortly.";
+const MORE_ERROR_COPY = "Couldn't load more receipts — try again.";
+
+// Receipts pages after the first, keyed like `load` so a filter change can never
+// append another filter's rows. (26-45-v01, FDY-114.)
+type More = { key: string; rows: PredictsRow[]; cursor: string | null; phase: "idle" | "loading" | "error" };
 
 type Phase = "loading" | "error" | "ready";
 
@@ -60,6 +69,10 @@ export default function PredictsView({ apiUrl }: Props) {
   const [meta, setMeta] = useState<{ releaseTag: string | null; record: PredictsResponse["record"] | null; horizonCounts: PredictsResponse["horizon_counts"] }>(
     { releaseTag: null, record: null, horizonCounts: {} },
   );
+  // Receipts chip counts. They depend on the sector/horizon filters only, not on
+  // the chip, so they are held across chip switches like the record strip.
+  const [outcomeCounts, setOutcomeCounts] = useState<NonNullable<PredictsResponse["outcome_counts"]>>({});
+  const [more, setMore] = useState<More | null>(null);
 
   // ── URL state (§6) ──────────────────────────────────────────────────────
   const go = useCallback((next: PredictsUrlState) => {
@@ -88,6 +101,7 @@ export default function PredictsView({ apiUrl }: Props) {
         if (!data?.ok || !Array.isArray(data.predictions)) throw new Error("bad payload");
         setLoad({ key: query, phase: "ready", data });
         setMeta({ releaseTag: data.release_tag, record: data.record, horizonCounts: data.horizon_counts ?? {} });
+        if (data.outcome_counts) setOutcomeCounts(data.outcome_counts);
       })
       .catch((err) => {
         if (ac.signal.aborted || mine !== seq.current) return;
@@ -101,6 +115,31 @@ export default function PredictsView({ apiUrl }: Props) {
   // Anything not keyed to the query now on screen is still loading.
   const phase: Phase = load?.key === query ? load.phase : "loading";
   const tr = trackRecord(meta.record);
+
+  // ── receipts paging ─────────────────────────────────────────────────────
+  const firstPage = load?.key === query && load.phase === "ready" ? load.data : null;
+  const extra = more?.key === query ? more : null;
+  const nextCursor = extra ? extra.cursor : (firstPage?.next_cursor ?? null);
+  const loadMore = useCallback(() => {
+    if (!nextCursor) return;
+    const key = query;
+    const prior = more?.key === key ? more.rows : [];
+    setMore({ key, rows: prior, cursor: nextCursor, phase: "loading" });
+    fetch(`${apiUrl}?${key}&cursor=${encodeURIComponent(nextCursor)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: PredictsResponse) => {
+        if (!data?.ok || !Array.isArray(data.predictions)) throw new Error("bad payload");
+        setMore((m) =>
+          m && m.key === key
+            ? { key, rows: [...m.rows, ...data.predictions], cursor: data.next_cursor ?? null, phase: "idle" }
+            : m,
+        );
+      })
+      .catch((err) => {
+        console.error("predicts load-more failed", err);
+        setMore((m) => (m && m.key === key ? { ...m, phase: "error" } : m));
+      });
+  }, [apiUrl, query, more, nextCursor]);
 
   return (
     <>
@@ -124,6 +163,7 @@ export default function PredictsView({ apiUrl }: Props) {
         {([
           { view: "open" as const, label: "Open forecasts" },
           { view: "right" as const, label: "Faraday got it right" },
+          { view: "receipts" as const, label: "Receipts" },
         ]).map((opt) => {
           const active = state.view === opt.view;
           return (
@@ -142,7 +182,49 @@ export default function PredictsView({ apiUrl }: Props) {
         })}
       </div>
 
-      {state.view === "open" ? (
+      {state.view === "receipts" ? (
+        <>
+          {/* ── Outcome chips (FDY-114) ───────────────────────────────── */}
+          <div role="group" aria-label="Which receipts to show" className="mt-5 flex flex-wrap gap-2">
+            {OUTCOME_CHIPS.map((c) => {
+              const active = state.outcome === c.outcome;
+              const n = outcomeCounts[c.outcome];
+              return (
+                <button
+                  key={c.outcome}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => go({ ...state, outcome: c.outcome })}
+                  className={`rounded-full border px-3.5 py-1.5 font-mono text-[12px] transition-colors ${
+                    active
+                      ? "border-gold bg-warm-cream text-near-black"
+                      : "border-warm-gray text-near-black/70 hover:border-gold hover:text-forest"
+                  }`}
+                >
+                  {c.label}
+                  {typeof n === "number" && <span className="ml-1.5 text-near-black/70">{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <Body phase={phase} data={firstPage} state={state} extraRows={extra?.rows ?? []} />
+          {phase === "ready" && nextCursor && (
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={extra?.phase === "loading"}
+                className="rounded-lg border border-warm-gray bg-warm-white px-4 py-2 font-mono text-[12px] text-near-black/80 transition-colors hover:border-gold hover:text-forest disabled:opacity-60"
+              >
+                {extra?.phase === "loading" ? "Loading…" : "Load more"}
+              </button>
+              {extra?.phase === "error" && (
+                <p role="alert" className="font-sans text-[12px] text-brick">{MORE_ERROR_COPY}</p>
+              )}
+            </div>
+          )}
+        </>
+      ) : state.view === "open" ? (
         <>
           {/* ── Horizon selector (§4) ─────────────────────────────────── */}
           <div role="group" aria-label="Forecast horizon" className="mt-5 flex flex-wrap gap-2">
@@ -202,7 +284,17 @@ export default function PredictsView({ apiUrl }: Props) {
 
 // ── body: skeleton / error / cards ─────────────────────────────────────────
 
-function Body({ phase, data, state }: { phase: Phase; data: PredictsResponse | null; state: PredictsUrlState }) {
+function Body({
+  phase,
+  data,
+  state,
+  extraRows = [],
+}: {
+  phase: Phase;
+  data: PredictsResponse | null;
+  state: PredictsUrlState;
+  extraRows?: PredictsRow[];
+}) {
   // Error FIRST: on a failed fetch there is no `data`, so an order that tested
   // for missing data first would show the skeleton forever and never surface
   // the error at all.
@@ -216,13 +308,15 @@ function Body({ phase, data, state }: { phase: Phase; data: PredictsResponse | n
 
   if (phase === "loading" || !data) return <CardSkeleton />;
 
-  const rows = data.predictions;
+  const rows = extraRows.length ? [...data.predictions, ...extraRows] : data.predictions;
   if (!rows.length) {
     return (
       <p className="mt-6 rounded-xl border border-warm-gray/60 bg-warm-white px-5 py-6 font-sans text-[14px] text-near-black/70">
         {state.view === "open"
           ? emptyHorizonMessage(state.horizon)
-          : "No graded forecasts to show yet."}
+          : state.view === "receipts"
+            ? RECEIPTS_EMPTY
+            : "No graded forecasts to show yet."}
       </p>
     );
   }
@@ -230,7 +324,9 @@ function Body({ phase, data, state }: { phase: Phase; data: PredictsResponse | n
   return (
     <ul className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-2">
       {rows.map((p) => (
-        <li key={p.prediction_id}>{state.view === "open" ? <OpenCard p={p} /> : <GradedCard p={p} />}</li>
+        <li key={p.prediction_id}>
+          {state.view === "open" ? <OpenCard p={p} /> : state.view === "receipts" ? <ReceiptCard p={p} /> : <GradedCard p={p} />}
+        </li>
       ))}
     </ul>
   );
@@ -310,6 +406,65 @@ function GradedCard({ p }: { p: PredictsRow }) {
       </div>
       {p.resolution_note && (
         <p className="mt-3 font-sans text-[12px] leading-relaxed text-near-black/60">{p.resolution_note}</p>
+      )}
+    </article>
+  );
+}
+
+// One card for every outcome (FDY-114): a miss gets the same component, size and
+// position as a hit. Only the badge and the evidence line differ.
+const RECEIPT_TONE: Record<"right" | "partly" | "miss" | "undetermined", string> = {
+  right: "border-sage-dark/40 bg-sage-dark/10 text-sage-dark",
+  partly: "border-amber-dark/40 bg-amber-dark/10 text-amber-dark",
+  miss: "border-brick/40 bg-brick/10 text-brick",
+  undetermined: "border-warm-gray bg-warm-cream text-near-black/70",
+};
+
+function ReceiptCard({ p }: { p: PredictsRow }) {
+  const badge = receiptBadge(p.outcome);
+  const called = formatDate(p.date_created);
+  const due = formatDate(p.target_resolution_date);
+  const resolved = formatDate(p.resolution_date);
+  const absence = p.outcome === "didnt_happen" && !p.evidence_url ? noEvidenceLine(p.target_resolution_date) : null;
+  return (
+    <article className={CARD} data-outcome={p.outcome ?? ""}>
+      <div className="flex items-start justify-between gap-4">
+        <p className="font-sans text-[14px] leading-relaxed text-near-black/85">{p.prediction_text}</p>
+        {badge && (
+          <span className={`shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${RECEIPT_TONE[badge.tone]}`}>
+            {badge.label}
+          </span>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {called && (
+          <span className="font-mono text-[11px] text-near-black/70">
+            Called {called} at {p.probability_score}%
+          </span>
+        )}
+        {due && <span className="font-mono text-[11px] text-near-black/70">Due {due}</span>}
+        {resolved && <span className="font-mono text-[11px] text-near-black/70">Resolved {resolved}</span>}
+        <SectorChip name={p.sector_name} />
+        {p.thin_evidence && (
+          <span className="rounded-full border border-warm-gray/60 px-2 py-0.5 font-mono text-[10px] text-near-black/60">
+            Thin evidence
+          </span>
+        )}
+      </div>
+      {p.resolution_note && (
+        <p className="mt-3 font-sans text-[12px] leading-relaxed text-near-black/60">{p.resolution_note}</p>
+      )}
+      {p.evidence_url ? (
+        <a
+          href={p.evidence_url}
+          target="_blank"
+          rel="nofollow noopener noreferrer"
+          className="mt-3 self-start font-mono text-[11px] text-forest underline underline-offset-2 hover:text-near-black"
+        >
+          Evidence
+        </a>
+      ) : (
+        absence && <p className="mt-3 font-mono text-[11px] text-near-black/60">{absence}</p>
       )}
     </article>
   );

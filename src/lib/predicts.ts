@@ -17,7 +17,7 @@
 //   3. NEVER print a count of Sectors, Theaters or Threads (IDF governance).
 //      Counting FORECASTS per horizon is fine; counting taxonomy is not.
 
-export const PREDICTS_VIEWS = ["open", "right"] as const;
+export const PREDICTS_VIEWS = ["open", "right", "receipts"] as const;
 export type PredictsView = (typeof PREDICTS_VIEWS)[number];
 
 export const PREDICTS_HORIZONS = ["30d", "60d", "90d", "6m", "12m", "24m"] as const;
@@ -37,6 +37,54 @@ export const HORIZON_LABELS: { bucket: PredictsHorizon; label: string }[] = [
 
 export const DEFAULT_HORIZON: PredictsHorizon = "30d";
 
+// ── Receipts (26-45-v01, FDY-114) ──────────────────────────────────────────
+//
+// Every graded forecast, hits and misses on the same card at the same size.
+// `missed` is wrong + didn't happen together: the filter never splits the two
+// kinds of miss, so neither can be quietly left out of the "Missed" view.
+
+export const OUTCOME_FILTERS = ["all", "right", "partly", "missed"] as const;
+export type OutcomeFilter = (typeof OUTCOME_FILTERS)[number];
+
+export const OUTCOME_CHIPS: { outcome: OutcomeFilter; label: string }[] = [
+  { outcome: "all", label: "All" },
+  { outcome: "right", label: "Right" },
+  { outcome: "partly", label: "Partly right" },
+  { outcome: "missed", label: "Missed" },
+];
+
+export type ReceiptOutcome = "right" | "partly" | "wrong" | "didnt_happen" | "undetermined";
+
+/** Badge for a receipt. Always a text label, never colour alone. Both kinds of
+ *  miss are red. */
+export function receiptBadge(
+  outcome: string | null | undefined,
+): { label: string; tone: "right" | "partly" | "miss" | "undetermined" } | null {
+  switch (outcome) {
+    case "right":
+      return { label: "Right", tone: "right" };
+    case "partly":
+      return { label: "Partly right", tone: "partly" };
+    case "wrong":
+      return { label: "Wrong", tone: "miss" };
+    case "didnt_happen":
+      return { label: "Didn't happen", tone: "miss" };
+    case "undetermined":
+      return { label: "Undetermined", tone: "undetermined" };
+    default:
+      return null;
+  }
+}
+
+export const RECEIPTS_EMPTY = "No receipts in this filter yet.";
+
+/** Shown in place of the Evidence link on a "Didn't happen" card with no link:
+ *  the absence IS the evidence, so say what was absent and by when. */
+export function noEvidenceLine(due: string | null | undefined): string | null {
+  const d = formatDate(due);
+  return d ? `No evidence it happened by ${d}` : null;
+}
+
 // ── the API contract (predicts-public) ──────────────────────────────────────
 
 export type PredictsRow = {
@@ -53,6 +101,10 @@ export type PredictsRow = {
   resolution_note: string | null;
   sector_name: string | null;
   is_new: boolean;
+  /** view=receipts only. */
+  outcome?: ReceiptOutcome;
+  thin_evidence?: boolean;
+  evidence_url?: string | null;
 };
 
 export type PredictsRecord = {
@@ -75,6 +127,10 @@ export type PredictsResponse = {
   record: PredictsRecord;
   record_as_of: string | null;
   horizon_counts: Partial<Record<PredictsHorizon, number>>;
+  /** view=receipts only: forecasts per outcome chip, under the same filters. */
+  outcome_counts?: Partial<Record<OutcomeFilter, number>>;
+  /** view=receipts only: pass back as `cursor` for the next 50; null on the last page. */
+  next_cursor?: string | null;
   count: number;
   predictions: PredictsRow[];
 };
@@ -118,10 +174,14 @@ export type TrackRecordView = {
 
 export function trackRecord(record: PredictsRecord | null | undefined): TrackRecordView | null {
   if (!record) return null;
+  // Misses sit in the strip beside the hits (FDY-114): wrong and didn't happen
+  // are counted out loud, never folded away.
   const parts = [
     `${record.graded} forecasts graded`,
     `${record.confirmed} right`,
     `${record.partial} partly right`,
+    `${record.refuted ?? 0} wrong`,
+    `${record.not_observed ?? 0} didn't happen`,
     `${record.inconclusive} undetermined`,
   ];
   // A null Brier is a missing figure, not a 0.000 — the API already refuses to
@@ -161,12 +221,15 @@ export type PredictsUrlState = {
   view: PredictsView;
   horizon: PredictsHorizon;
   includePartial: boolean;
+  /** view=receipts only. */
+  outcome: OutcomeFilter;
 };
 
 export const DEFAULT_URL_STATE: PredictsUrlState = {
   view: "open",
   horizon: DEFAULT_HORIZON,
   includePartial: false,
+  outcome: "all",
 };
 
 /** Read state from the URL. Unknown or missing values fall back to the default
@@ -184,7 +247,11 @@ export function parseUrlState(params: URLSearchParams | null | undefined): Predi
   const horizon: PredictsHorizon = (PREDICTS_HORIZONS as readonly string[]).includes(rawH ?? "")
     ? (rawH as PredictsHorizon)
     : DEFAULT_HORIZON;
-  return { view, horizon, includePartial: get("partial") === "1" };
+  const rawOutcome = get("outcome");
+  const outcome: OutcomeFilter = (OUTCOME_FILTERS as readonly string[]).includes(rawOutcome ?? "")
+    ? (rawOutcome as OutcomeFilter)
+    : "all";
+  return { view, horizon, includePartial: get("partial") === "1", outcome };
 }
 
 /** The canonical URL for a state. Only the params that matter to the current
@@ -193,7 +260,9 @@ export function buildUrl(state: PredictsUrlState): string {
   const p = new URLSearchParams();
   p.set("view", state.view);
   if (state.view === "open") p.set("h", state.horizon);
-  else if (state.includePartial) p.set("partial", "1");
+  else if (state.view === "receipts") {
+    if (state.outcome !== "all") p.set("outcome", state.outcome);
+  } else if (state.includePartial) p.set("partial", "1");
   return `/predicts?${p.toString()}`;
 }
 
@@ -204,6 +273,7 @@ export function buildApiQuery(state: PredictsUrlState): string {
   const p = new URLSearchParams();
   p.set("view", state.view);
   if (state.view === "open") p.set("horizon", state.horizon);
+  else if (state.view === "receipts") p.set("outcome", state.outcome);
   else p.set("include_partial", state.includePartial ? "true" : "false");
   return p.toString();
 }
