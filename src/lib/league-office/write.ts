@@ -238,17 +238,6 @@ export async function executeAction(
   ) => writeAudit(s, { staff_email: staffEmail, domain, action, reason, target_type: targetType, target_id: targetId, before, after, reversible, reverts_id: revertsId ?? null });
 
   switch (input.action) {
-    case "subscriber.pause":
-    case "subscriber.rejoin": {
-      if (!input.subscriberId) return { ok: false, message: "Missing subscriber." };
-      const active = input.action === "subscriber.rejoin";
-      const before = await getOne(s, `dc_subscribers?id=eq.${input.subscriberId}&select=active`);
-      const res = await patch(s, "dc_subscribers", `id=eq.${input.subscriberId}`, { active });
-      if (!res) return { ok: false, message: "Update failed." };
-      await log("subscribers", input.action, "dc_subscriber", input.subscriberId, before, { active }, true);
-      return { ok: true, message: active ? "Account reinstated — logged to Audit Log." : "Account paused — logged to Audit Log." };
-    }
-
     case "membership.approve": {
       if (!input.membershipId) return { ok: false, message: "Missing membership." };
       const before = await getOne(s, `team_memberships?id=eq.${input.membershipId}&select=pending,team_id,subscriber_id`);

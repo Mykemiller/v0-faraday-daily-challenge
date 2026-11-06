@@ -88,7 +88,6 @@ const EXCUSED = new Set([
   "lib/seasons/resolve.ts",                       // this module's own comment
   "lib/seasons/resolve.test.ts",                  // this file
   "app/league-office/seasons/[id]/page.tsx",      // a StatusChip render, not a pick
-  "app/league-office/subscribers/page.tsx",       // dc_subscribers.active filter
   "lib/league-office/season-write.ts",            // scope-change confirm gate on ONE named season
 ]);
 
