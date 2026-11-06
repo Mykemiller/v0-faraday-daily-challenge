@@ -17,6 +17,11 @@ import {
   TAXONOMY_COUNT_RE,
   trackRecord,
   verdictBadge,
+  noEvidenceLine,
+  OUTCOME_CHIPS,
+  OUTCOME_FILTERS,
+  receiptBadge,
+  RECEIPTS_EMPTY,
   type PredictsRecord,
 } from "./predicts.ts";
 
@@ -64,7 +69,7 @@ test("the strip reads counts then Brier to 3 dp", () => {
   const t = trackRecord(LIVE)!;
   assert.equal(
     t.line,
-    "70 forecasts graded · 20 right · 10 partly right · 40 undetermined · Brier 0.081",
+    "70 forecasts graded · 20 right · 10 partly right · 0 wrong · 0 didn't happen · 40 undetermined · Brier 0.081",
   );
 });
 
@@ -82,7 +87,7 @@ test("a null Brier drops the segment rather than printing 0.000", () => {
   // Number(null) is 0 — a *finite* value. Printing it would publish a perfect
   // score off a missing figure. The API refuses to coerce; so does the strip.
   const t = trackRecord({ ...LIVE, brier: null })!;
-  assert.equal(t.line, "70 forecasts graded · 20 right · 10 partly right · 40 undetermined");
+  assert.equal(t.line, "70 forecasts graded · 20 right · 10 partly right · 0 wrong · 0 didn't happen · 40 undetermined");
   assert.ok(!t.line.includes("0.000"));
   assert.ok(!t.line.includes("Brier"));
 });
@@ -149,32 +154,35 @@ const u = (s: string) => parseUrlState(new URLSearchParams(s));
 
 test("the default state is open / 30d", () => {
   assert.deepEqual(u(""), DEFAULT_URL_STATE);
-  assert.deepEqual(u(""), { view: "open", horizon: "30d", includePartial: false });
+  assert.deepEqual(u(""), { view: "open", horizon: "30d", includePartial: false, outcome: "all" });
   assert.deepEqual(parseUrlState(null), DEFAULT_URL_STATE);
 });
 
 test("the documented deep links round-trip", () => {
-  assert.deepEqual(u("view=open&h=30d"), { view: "open", horizon: "30d", includePartial: false });
-  assert.deepEqual(u("view=right"), { view: "right", horizon: "30d", includePartial: false });
-  assert.equal(buildUrl({ view: "open", horizon: "30d", includePartial: false }), "/predicts?view=open&h=30d");
-  assert.equal(buildUrl({ view: "right", horizon: "30d", includePartial: false }), "/predicts?view=right");
-  assert.equal(buildUrl({ view: "right", horizon: "30d", includePartial: true }), "/predicts?view=right&partial=1");
+  assert.deepEqual(u("view=open&h=30d"), { view: "open", horizon: "30d", includePartial: false, outcome: "all" });
+  assert.deepEqual(u("view=right"), { view: "right", horizon: "30d", includePartial: false, outcome: "all" });
+  assert.equal(buildUrl({ view: "open", horizon: "30d", includePartial: false, outcome: "all" }), "/predicts?view=open&h=30d");
+  assert.equal(buildUrl({ view: "right", horizon: "30d", includePartial: false, outcome: "all" }), "/predicts?view=right");
+  assert.equal(buildUrl({ view: "right", horizon: "30d", includePartial: true, outcome: "all" }), "/predicts?view=right&partial=1");
 });
 
 test("buildUrl → parseUrlState is a round trip for every reachable state", () => {
   for (const h of PREDICTS_HORIZONS) {
-    const s = { view: "open" as const, horizon: h, includePartial: false };
+    const s = { view: "open" as const, horizon: h, includePartial: false, outcome: "all" as const };
     assert.deepEqual(parseUrlState(new URL(buildUrl(s), "https://x").searchParams), s);
   }
   for (const partial of [true, false]) {
-    const s = { view: "right" as const, horizon: "30d" as const, includePartial: partial };
+    const s = { view: "right" as const, horizon: "30d" as const, includePartial: partial, outcome: "all" as const };
     assert.deepEqual(parseUrlState(new URL(buildUrl(s), "https://x").searchParams), s);
   }
 });
 
 test("buildUrl leaves no stale param from the other view", () => {
-  assert.ok(!buildUrl({ view: "right", horizon: "12m", includePartial: false }).includes("h="));
-  assert.ok(!buildUrl({ view: "open", horizon: "12m", includePartial: true }).includes("partial"));
+  assert.ok(!buildUrl({ view: "right", horizon: "12m", includePartial: false, outcome: "missed" }).includes("h="));
+  assert.ok(!buildUrl({ view: "right", horizon: "12m", includePartial: false, outcome: "missed" }).includes("outcome"));
+  assert.ok(!buildUrl({ view: "open", horizon: "12m", includePartial: true, outcome: "missed" }).includes("partial"));
+  assert.ok(!buildUrl({ view: "open", horizon: "12m", includePartial: true, outcome: "missed" }).includes("outcome"));
+  assert.ok(!buildUrl({ view: "receipts", horizon: "12m", includePartial: true, outcome: "missed" }).includes("h="));
 });
 
 test("a junk or stale link lands on the page instead of erroring", () => {
@@ -186,16 +194,16 @@ test("a junk or stale link lands on the page instead of erroring", () => {
 });
 
 test("buildApiQuery never sends a param the strict API would 400 on", () => {
-  const open = buildApiQuery({ view: "open", horizon: "90d", includePartial: true });
+  const open = buildApiQuery({ view: "open", horizon: "90d", includePartial: true, outcome: "missed" });
   assert.equal(open, "view=open&horizon=90d");
   assert.ok(!open.includes("include_partial"), "include_partial with view=open is a 400");
 
-  const right = buildApiQuery({ view: "right", horizon: "90d", includePartial: true });
+  const right = buildApiQuery({ view: "right", horizon: "90d", includePartial: true, outcome: "missed" });
   assert.equal(right, "view=right&include_partial=true");
   assert.ok(!right.includes("horizon"), "horizon with view=right is a 400");
 
   assert.equal(
-    buildApiQuery({ view: "right", horizon: "30d", includePartial: false }),
+    buildApiQuery({ view: "right", horizon: "30d", includePartial: false, outcome: "all" }),
     "view=right&include_partial=false",
   );
 });
@@ -208,4 +216,51 @@ test("partial is never rounded up to a win", () => {
   assert.equal(verdictBadge("active"), null);
   assert.equal(verdictBadge("inconclusive"), null);
   assert.equal(verdictBadge("refuted"), null, "a miss is not badged on the got-it-right view");
+});
+
+// ── Receipts (26-45-v01, FDY-114) ───────────────────────────────────────────
+
+test("the strip counts both kinds of miss once they exist", () => {
+  const t = trackRecord({ ...LIVE, graded: 71, confirmed: 31, partial: 18, refuted: 0, not_observed: 22, inconclusive: 0, brier: 0.189831 })!;
+  assert.equal(t.line, "71 forecasts graded · 31 right · 18 partly right · 0 wrong · 22 didn't happen · 0 undetermined · Brier 0.190");
+  assert.equal(t.noMisses, false);
+  assert.ok(!/%/.test(t.line));
+});
+
+test("receipt badges always carry a text label, and both misses are red", () => {
+  assert.deepEqual(receiptBadge("right"), { label: "Right", tone: "right" });
+  assert.deepEqual(receiptBadge("partly"), { label: "Partly right", tone: "partly" });
+  assert.deepEqual(receiptBadge("wrong"), { label: "Wrong", tone: "miss" });
+  assert.deepEqual(receiptBadge("didnt_happen"), { label: "Didn't happen", tone: "miss" });
+  assert.deepEqual(receiptBadge("undetermined"), { label: "Undetermined", tone: "undetermined" });
+  assert.equal(receiptBadge("expired"), null);
+  assert.equal(receiptBadge(undefined), null);
+});
+
+test("receipts deep links round-trip", () => {
+  assert.deepEqual(u("view=receipts&outcome=missed"), { view: "receipts", horizon: "30d", includePartial: false, outcome: "missed" });
+  assert.equal(buildUrl({ view: "receipts", horizon: "30d", includePartial: false, outcome: "missed" }), "/predicts?view=receipts&outcome=missed");
+  assert.equal(buildUrl({ view: "receipts", horizon: "30d", includePartial: false, outcome: "all" }), "/predicts?view=receipts");
+  for (const o of OUTCOME_FILTERS) {
+    const s = { view: "receipts" as const, horizon: "30d" as const, includePartial: false, outcome: o };
+    assert.deepEqual(parseUrlState(new URL(buildUrl(s), "https://x").searchParams), s);
+  }
+  assert.equal(u("view=receipts&outcome=bogus").outcome, "all", "a junk outcome lands on All");
+});
+
+test("the receipts API query sends outcome and nothing the strict API would 400 on", () => {
+  const q = buildApiQuery({ view: "receipts", horizon: "12m", includePartial: true, outcome: "missed" });
+  assert.equal(q, "view=receipts&outcome=missed");
+  assert.ok(!q.includes("include_partial"));
+});
+
+test("receipts copy: chips, empty state and the no-evidence line", () => {
+  assert.deepEqual(OUTCOME_CHIPS.map((c) => c.label), ["All", "Right", "Partly right", "Missed"]);
+  assert.equal(RECEIPTS_EMPTY, "No receipts in this filter yet.");
+  assert.equal(noEvidenceLine("2026-11-07"), "No evidence it happened by Nov 7, 2026");
+  assert.equal(noEvidenceLine(null), null);
+  for (const s of [...OUTCOME_CHIPS.map((c) => c.label), RECEIPTS_EMPTY, noEvidenceLine("2026-11-07")!]) {
+    assert.ok(!TAXONOMY_COUNT_RE.test(s), s);
+    assert.ok(!ACCURACY_CLAIM_RE.test(s), s);
+  }
 });
