@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
       // /briefing-library was the old stub route; /library is canonical for FBL 1.0
       { source: "/briefing-library", destination: "/library", permanent: true },
       { source: "/briefing-library/:path*", destination: "/library/:path*", permanent: true },
+      // Subscriber and product management moved to the Workbench "Admin" tab.
+      { source: "/league-office/subscribers", destination: "https://faraday-stuff.com/#admin", permanent: false },
+      { source: "/league-office/subscribers/:id", destination: "https://faraday-stuff.com/#admin", permanent: false },
     ];
   },
   async rewrites() { return { beforeFiles: [ { source: "/", has: [{ type: "host", value: "(www\\.)?faradaydailychallenge\\.com" }], destination: "/challenge" } ], afterFiles: [ { source: "/daily-challenge", destination: "/challenge" }, { source: "/daily-challenge/:path*", destination: "/challenge/:path*" } ] }; },

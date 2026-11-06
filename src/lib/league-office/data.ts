@@ -11,8 +11,6 @@ import { resolveSeasonFor } from "@/lib/seasons/resolve";
 import { q, type Svc } from "./service";
 // The game roster is game_catalog (CC-DC-GAME-REGISTRY-1.0), not a hardcoded
 // list of seven with its own retired neon palette.
-import { loadAllGames } from "@/lib/game-registry-server";
-import { keyOf } from "@/lib/game-registry";
 import {
   groupRosterBySubscriber,
   memberCountsPath,
@@ -111,9 +109,6 @@ const teamCols = "id,code,name,captain_id,league_id,conference_id,is_active,arch
 const seasonCols =
   "id,slug,name,starts_on,ends_on,status,tz,locked_at,generated_at,free_agency_start,free_agency_notice_start,playoff_starts_on,roster_freeze_on," +
   "trading_open_starts_on,trading_open_ends_on,trading_close_starts_on,trading_close_ends_on";
-const subCols =
-  "id,email,handle,active,play_streak,full_set_streak,last_seen_at,created_at";
-
 export const loadTeams = (s: Svc) => q<Team>(s, `teams?select=${teamCols}&order=name.asc`);
 export const loadConferenceDims = (s: Svc) =>
   q<ConferenceDim>(s, `conferences?select=id,code,name,type,league_id,is_active,archived_at&order=name.asc`);
@@ -250,93 +245,6 @@ async function loadSubscriberMap(
     `dc_subscribers?select=id,handle,email`
   );
   return Object.fromEntries(rows.map((r) => [r.id, { handle: r.handle, email: r.email }]));
-}
-
-// ── Subscribers ──────────────────────────────────────────────────────────────
-export type SubscriberRow = Subscriber & { teamCount: number };
-
-export async function listSubscribers(s: Svc): Promise<SubscriberRow[]> {
-  const [subs, memberships] = await Promise.all([
-    q<Subscriber>(s, `dc_subscribers?select=${subCols}&order=created_at.desc`),
-    q<{ subscriber_id: string }>(s, `team_memberships?select=subscriber_id&pending=is.false`),
-  ]);
-  const counts = new Map<string, number>();
-  for (const m of memberships) counts.set(m.subscriber_id, (counts.get(m.subscriber_id) ?? 0) + 1);
-  return subs.map((sub) => ({ ...sub, teamCount: counts.get(sub.id) ?? 0 }));
-}
-
-export type SubscriberDetail = {
-  sub: Subscriber | null;
-  matrix: { game: string; accent: string | null; cells: { date: string; score: number | null; played: boolean }[] }[];
-  dates: string[];
-  memberships: { team: string; conference: string | null; role: string; pending: boolean }[];
-  badges: { key: string; earnedAt: string }[];
-  totals: { attempts: number; wins: number; badges: number; teams: number };
-};
-
-export async function getSubscriber(s: Svc, id: string): Promise<SubscriberDetail> {
-  const dates = lastNDates(7);
-  const [subs, attempts, memberships, badges, teams, confs] = await Promise.all([
-    q<Subscriber>(s, `dc_subscribers?id=eq.${id}&select=${subCols}`),
-    q<{ game_type: string; play_date: string; score: number; result: string }>(
-      s,
-      `dc_daily_attempts?subscriber_id=eq.${id}&play_date=gte.${dates[0]}&select=game_type,play_date,score,result`
-    ),
-    q<{ team_id: string; pending: boolean }>(
-      s,
-      `team_memberships?subscriber_id=eq.${id}&select=team_id,pending`
-    ),
-    q<{ badge_key: string; earned_at: string }>(
-      s,
-      `dc_badges?subscriber_id=eq.${id}&select=badge_key,earned_at&order=earned_at.desc`
-    ),
-    loadTeams(s),
-    loadConferenceDims(s),
-  ]);
-
-  const byCell = new Map<string, { score: number; result: string }>();
-  for (const a of attempts) byCell.set(`${a.game_type.toLowerCase()}|${a.play_date}`, a);
-
-  const matrix = (await loadAllGames())
-    .filter((g) => g.lifecycle_state === "live")
-    .map((g) => {
-      const key = keyOf(g);
-      return {
-        game: key as string,
-        accent: g.accent_hex,
-        cells: dates.map((d) => {
-          const hit = byCell.get(`${key.toLowerCase()}|${d}`);
-          return { date: d, score: hit ? hit.score : null, played: !!hit };
-        }),
-      };
-    });
-
-  const teamMap = new Map(teams.map((t) => [t.id, t]));
-  const confMap = new Map(confs.map((c) => [c.id, c]));
-  const sub = subs[0] ?? null;
-  const memRows = memberships.map((m) => {
-    const t = teamMap.get(m.team_id);
-    return {
-      team: t?.name ?? "—",
-      conference: (t?.conference_id && confMap.get(t.conference_id)?.name) || null,
-      role: t?.captain_id && sub && t.captain_id === sub.id ? "Captain" : "Member",
-      pending: m.pending,
-    };
-  });
-
-  return {
-    sub,
-    matrix,
-    dates,
-    memberships: memRows,
-    badges: badges.map((b) => ({ key: b.badge_key, earnedAt: b.earned_at })),
-    totals: {
-      attempts: attempts.length,
-      wins: attempts.filter((a) => a.result === "win").length,
-      badges: badges.length,
-      teams: memRows.filter((m) => !m.pending).length,
-    },
-  };
 }
 
 // ── Teams ────────────────────────────────────────────────────────────────────
