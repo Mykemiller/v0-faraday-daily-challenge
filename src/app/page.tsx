@@ -2,6 +2,7 @@ import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
+import { PredictsHomeTile } from "@/components/PredictsHomeTile";
 import {
   TOKEN_PACKS,
   formatPackPrice,
@@ -48,6 +49,13 @@ const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; t
 // its own "$49 / $89 / $799" literals, a second unguarded copy of a locked
 // price in a different repository (CC-TOS-PRICING-1.0).
 const FEATURED_PACK: TokenPackKey = "tokens-1000";
+
+// Faraday Predicts tile (FDY-120). Same base + env convention as /predicts
+// (FDY-147): read on the server, passed to the client tile as a prop.
+const PREDICTS_API_URL =
+  process.env.VITE_PREDICTS_API_URL ||
+  process.env.NEXT_PUBLIC_PREDICTS_API_URL ||
+  "https://ycadmmngkdhvpcsrcuaq.supabase.co/functions/v1/predicts-public";
 
 export default async function Home() {
   // Locked lobby order from game_catalog. An eighth game appears here with no
@@ -147,7 +155,9 @@ export default async function Home() {
             );
             return (
               <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
-                {s.href === "/jurisdiction-watch" ? (
+                {s.href === "/predicts" ? (
+                  <PredictsHomeTile apiUrl={PREDICTS_API_URL} />
+                ) : s.href === "/jurisdiction-watch" ? (
                   <JwHomeTile />
                 ) : s.external ? (
                   // External storefront (Signal Room lives on its own domain);
