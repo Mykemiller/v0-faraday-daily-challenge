@@ -299,4 +299,5 @@ test("publicNote drops the leading internal verdict word", () => {
   assert.equal(publicNote("TSMC said so."), "TSMC said so.");
   assert.equal(publicNote("NOT_OBSERVED."), null);
   assert.equal(publicNote(null), null);
+  assert.equal(publicNote("NOT_OBSERVED. No update, which is required for CONFIRMED."), "No update, which is required for confirmed.");
 });

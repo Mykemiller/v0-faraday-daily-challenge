@@ -513,7 +513,19 @@ export const RESOLVES_COPY =
 /** Grader notes open with an internal verdict word ("CONFIRMED.",
  *  "NOT_OBSERVED."); the page already shows the outcome in plain words, so the
  *  code is dropped rather than shown. */
+const VERDICT_WORDS: Record<string, string> = {
+  CONFIRMED: "confirmed",
+  PARTIAL: "partly right",
+  REFUTED: "refuted",
+  NOT_OBSERVED: "not observed",
+  INCONCLUSIVE: "inconclusive",
+  EXPIRED: "expired",
+};
+
 export function publicNote(note: string | null | undefined): string | null {
-  const t = (note ?? "").replace(/^\s*[A-Z][A-Z_]{2,}[.:]\s*/, "").trim();
+  const t = (note ?? "")
+    .replace(/^\s*[A-Z][A-Z_]{2,}[.:]\s*/, "")
+    .replace(/\b(CONFIRMED|PARTIAL|REFUTED|NOT_OBSERVED|INCONCLUSIVE|EXPIRED)\b/g, (w) => VERDICT_WORDS[w])
+    .trim();
   return t || null;
 }
