@@ -368,6 +368,16 @@ export function monogram(name: string | null | undefined): string {
 
 // ── small formatters ───────────────────────────────────────────────────────
 
+/** Display label for the engine's probability band. The stored band
+ *  "Roughly Even Odds" carries a market word ("odds") that Predicts copy must
+ *  never print (Trust & Compliance), so it is shown as "Roughly even". The
+ *  stored value is untouched. */
+export function bandLabel(band: string | null | undefined): string | null {
+  if (!band) return null;
+  const cleaned = band.replace(/\s*\bodds\b/gi, "").trim();
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase() : null;
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "Nov 16" from YYYY-MM-DD, string parts only (no Date — no timezone drift). */

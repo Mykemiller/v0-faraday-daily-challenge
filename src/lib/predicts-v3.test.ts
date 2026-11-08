@@ -9,6 +9,7 @@ import {
 } from "./predicts.ts";
 import {
   activeFilterCount,
+  bandLabel,
   addDays,
   applyVote,
   DEFAULT_OPEN_STATE,
@@ -221,4 +222,11 @@ test("disclaimer is verbatim", () => {
     DISCLAIMER,
     "Faraday Predicts publishes Faraday's own analytical forecasts and grades them in public. Nothing here is a market, a wager, a price or investment advice.",
   );
+});
+
+test("band label never prints a market word", () => {
+  assert.equal(bandLabel("Roughly Even Odds"), "Roughly even");
+  assert.equal(bandLabel("Highly Likely"), "Highly likely");
+  assert.equal(bandLabel("Likely"), "Likely");
+  assert.equal(bandLabel(null), null);
 });

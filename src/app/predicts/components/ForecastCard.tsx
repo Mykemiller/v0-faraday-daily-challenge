@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { shortDate, type V3Row } from "@/lib/predicts-v3";
+import { bandLabel, shortDate, type V3Row } from "@/lib/predicts-v3";
 import { BOLD_CALL_TOOLTIP } from "@/lib/predicts";
 import Breadcrumb from "./Breadcrumb";
 import CountUp from "./CountUp";
@@ -33,7 +33,7 @@ export default function ForecastCard({ row, voteUrl, votesEnabled, badge }: Prop
           <span className="font-mono text-[30px] font-semibold leading-none text-near-black">
             <CountUp value={row.probability_score} />%
           </span>
-          {row.probability_band && <span className="ml-2 font-sans text-[14px] text-near-black/70">{row.probability_band}</span>}
+          {bandLabel(row.probability_band) && <span className="ml-2 font-sans text-[14px] text-near-black/70">{bandLabel(row.probability_band)}</span>}
         </div>
         <Sparkline points={row.sparkline} />
         {resolves && <span className="font-mono text-[12px] text-near-black/70">Resolves {resolves}</span>}
