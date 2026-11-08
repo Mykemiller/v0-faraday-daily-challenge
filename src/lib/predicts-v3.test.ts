@@ -301,3 +301,68 @@ test("publicNote drops the leading internal verdict word", () => {
   assert.equal(publicNote(null), null);
   assert.equal(publicNote("NOT_OBSERVED. No update, which is required for CONFIRMED."), "No update, which is required for confirmed.");
 });
+
+import {
+  CAL_TICKS,
+  dotRadius,
+  missedCount,
+  parseReceiptsState,
+  receiptsQuery,
+  recordTiles,
+  serializeReceiptsState,
+  showCalibration,
+} from "./predicts-v3.ts";
+
+const REC = { graded: 84, confirmed: 37, partial: 18, refuted: 1, not_observed: 28, inconclusive: 0, brier: 0.189831, caveat: null };
+
+test("missed = wrong + didn't happen", () => {
+  assert.equal(missedCount(REC), 29);
+});
+
+test("record tiles: four count labels, never a rate", () => {
+  const t = recordTiles(REC);
+  assert.deepEqual(t.map((x) => x.label), ["Graded", "Right", "Partly right", "Missed"]);
+  assert.deepEqual(t.map((x) => x.value), [84, 37, 18, 29]);
+  assert.equal(t[3].sub, "1 wrong · 28 didn't happen");
+  for (const x of t) assert.doesNotMatch(`${x.label} ${x.sub ?? ""}`, /%|rate|accura/i);
+});
+
+test("√n radius is clamped to 4–14", () => {
+  assert.equal(dotRadius(0, 40), 4);
+  assert.equal(dotRadius(40, 40), 14);
+  assert.equal(dotRadius(400, 40), 14);
+  assert.equal(dotRadius(10, 40), 9);
+  assert.ok(dotRadius(1, 40) >= 4);
+});
+
+test("calibration axis labels carry no % sign", () => {
+  for (const t of CAL_TICKS) assert.doesNotMatch(t, /%/);
+});
+
+test("calibration only when the API marks it and ≥3 bands exist", () => {
+  const caps = { taxonomy: true, companies: true, history: true, movers: true, velocity: false, calibration: true, votes: true };
+  const b = { band: "x", predicted_mid: 50, observed_rate: 50, n: 3 };
+  assert.equal(showCalibration(caps, [b, b, b]), true);
+  assert.equal(showCalibration(caps, [b, b]), false);
+  assert.equal(showCalibration({ ...caps, calibration: false }, [b, b, b]), false);
+  assert.equal(showCalibration(caps, undefined), false);
+});
+
+test("receipts URL state round-trips and maps h → horizon upstream", () => {
+  const s = parseReceiptsState(new URLSearchParams("outcome=missed&theater=The+Power+Reckoning&company=nvidia&h=30d&junk=1"));
+  assert.equal(serializeReceiptsState(s), "/predicts/receipts?outcome=missed&theater=The+Power+Reckoning&company=nvidia&h=30d");
+  assert.equal(receiptsQuery(s, "abc"), "view=receipts&outcome=missed&theater=The+Power+Reckoning&company=nvidia&horizon=30d&cursor=abc");
+  assert.deepEqual(parseReceiptsState(new URLSearchParams("outcome=wrong&h=7y&company=Bad Co")), {
+    outcome: "all", theater: null, sector: null, company: null, h: null,
+  });
+});
+
+import { publicCaveat } from "./predicts-v3.ts";
+
+test("caveat keeps its words but never shows a status code", () => {
+  assert.equal(
+    publicCaveat("every miss on record rests on absence rather than contrary evidence (22 not_observed, 0 refuted): the score is only as good as the corpus"),
+    "every miss on record rests on absence rather than contrary evidence (22 didn't happen, 0 wrong): the score is only as good as the corpus",
+  );
+  assert.equal(publicCaveat(null), null);
+});
