@@ -13,7 +13,7 @@ type Props = { row: V3Row; voteUrl: string; votesEnabled: boolean; badge?: React
 export default function ForecastCard({ row, voteUrl, votesEnabled, badge }: Props) {
   const resolves = shortDate(row.target_resolution_date);
   return (
-    <article className="rounded-xl border border-cream-border bg-warm-white p-4 transition-shadow duration-200 hover:shadow-sm">
+    <article data-row className="rounded-xl border border-cream-border bg-warm-white p-4 transition-shadow duration-200 hover:shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <Breadcrumb taxonomy={row.taxonomy} sector={row.sector_name} />
         <div className="flex items-center gap-2">
@@ -26,7 +26,7 @@ export default function ForecastCard({ row, voteUrl, votesEnabled, badge }: Prop
         </div>
       </div>
       <Link href={`/predicts/${row.prediction_id}`} className="mt-2 block">
-        <h3 className="font-serif text-[17px] font-semibold leading-snug text-near-black hover:text-forest">{row.prediction_text}</h3>
+        <h3 data-claim className="font-serif text-[17px] font-semibold leading-snug text-near-black hover:text-forest">{row.prediction_text}</h3>
       </Link>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div>

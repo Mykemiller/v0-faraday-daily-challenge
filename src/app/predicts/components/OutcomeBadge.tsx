@@ -7,5 +7,5 @@ const TONE: Record<string, string> = {
 };
 
 export default function OutcomeBadge({ label, tone }: { label: string; tone: string }) {
-  return <span className={`rounded-full px-2 py-0.5 font-mono text-[12px] font-semibold ${TONE[tone] ?? TONE.undetermined}`}>{label}</span>;
+  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[12px] font-semibold ${TONE[tone] ?? TONE.undetermined}`}>{label}</span>;
 }

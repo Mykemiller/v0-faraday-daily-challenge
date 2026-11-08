@@ -32,10 +32,10 @@ export default function ThreadCard({ group, gradedCount, voteUrl, votesEnabled }
       <ul className="mt-3 divide-y divide-cream-line">
         {rows.map((r) => (
           <li key={r.prediction_id}>
-            <Link href={`/predicts/${r.prediction_id}`} className="flex items-center gap-3 py-2.5 hover:bg-warm-panel">
+            <Link data-row href={`/predicts/${r.prediction_id}`} className="flex items-center gap-3 py-2.5 hover:bg-warm-panel">
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 font-sans text-[14px] leading-snug text-near-black">
-                  {r.prediction_text}
+                  <span data-claim>{r.prediction_text}</span>
                   {shortDate(r.target_resolution_date) && (
                     <span className="whitespace-nowrap font-mono text-[12px] text-near-black/60"> · by {shortDate(r.target_resolution_date)}</span>
                   )}

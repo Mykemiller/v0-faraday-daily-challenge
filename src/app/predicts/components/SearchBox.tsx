@@ -183,7 +183,7 @@ export default function SearchBox({ rows, companies, initial, onSubmit }: Props)
                       )}
                       {o.kind === "forecast" && (
                         <>
-                          <span className="line-clamp-2 font-serif text-[14px] text-near-black">{highlight(o.label, q)}</span>
+                          <span data-claim className="line-clamp-2 font-serif text-[14px] text-near-black">{highlight(o.label, q)}</span>
                           <span className="ml-auto shrink-0 font-mono text-[14px] font-semibold text-near-black">{o.prob}%</span>
                         </>
                       )}
