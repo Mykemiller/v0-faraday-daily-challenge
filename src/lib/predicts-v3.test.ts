@@ -230,3 +230,73 @@ test("band label never prints a market word", () => {
   assert.equal(bandLabel("Likely"), "Likely");
   assert.equal(bandLabel(null), null);
 });
+
+// ── FDY-274 ────────────────────────────────────────────────────────────────
+import {
+  clampTitle,
+  companyCountLine,
+  contiguousRuns,
+  historyChanges,
+  moverBadge,
+  sinceCalledText,
+  sortMovers,
+  statusStrip,
+  publicNote,
+} from "./predicts-v3.ts";
+
+test("history → dated changes, flat history has none", () => {
+  const h = [
+    { date: "2026-10-01", probability: 60 },
+    { date: "2026-10-02", probability: 60 },
+    { date: "2026-10-03", probability: 66 },
+    { date: "2026-10-05", probability: 62 },
+  ];
+  assert.deepEqual(historyChanges(h), [
+    { date: "2026-10-03", from: 60, to: 66, delta: 6 },
+    { date: "2026-10-05", from: 66, to: 62, delta: -4 },
+  ]);
+  assert.deepEqual(historyChanges([{ date: "2026-10-01", probability: 70 }, { date: "2026-10-02", probability: 70 }]), []);
+  assert.equal(sinceCalledText(h, 62), "▲ 2 since called");
+  assert.equal(sinceCalledText(h, 60), null);
+  assert.deepEqual(contiguousRuns(h).map((r) => r.length), [3, 1]);
+});
+
+test("title clamp ≤ 80 chars on a word boundary", () => {
+  const long = "By November 16, 2026, LG Electronics will not have issued any public announcement retracting the deal.";
+  const t = clampTitle(long);
+  assert.ok(t.length <= 80, t);
+  assert.ok(t.endsWith("…"));
+  assert.equal(clampTitle("Short claim."), "Short claim.");
+});
+
+test("movers sort by |delta| in the chosen window; badges are glyphs", () => {
+  const rows = [
+    { prediction_id: "a", delta_7d: 3, delta_14d: 9 },
+    { prediction_id: "b", delta_7d: -6, delta_14d: null },
+    { prediction_id: "c", delta_7d: 0, delta_14d: -2 },
+  ];
+  assert.deepEqual(sortMovers(rows, 7).map((r) => r.prediction_id), ["b", "a"]);
+  assert.deepEqual(sortMovers(rows, 14).map((r) => r.prediction_id), ["a", "c"]);
+  assert.equal(moverBadge(6, 7), "▲ 6 in 7d");
+  assert.equal(moverBadge(-4, 14), "▼ 4 in 14d");
+  assert.equal(moverBadge(0, 7), null);
+});
+
+test("company count line is counts only", () => {
+  assert.equal(companyCountLine(3, 2), "3 open · 2 graded");
+  assert.ok(!/%/.test(companyCountLine(3, 2)));
+});
+
+test("status strip labels", () => {
+  assert.equal(statusStrip({ status: "active", target_resolution_date: "2026-11-16", resolution_date: null }).label, "Open · resolves Nov 16, 2026");
+  assert.equal(statusStrip({ status: "not_observed", outcome: "didnt_happen", target_resolution_date: null, resolution_date: "2026-11-07" }).label, "Didn't happen · graded Nov 7, 2026");
+  assert.equal(statusStrip({ status: "confirmed", target_resolution_date: null, resolution_date: "2026-11-05" }).tone, "right");
+});
+
+test("publicNote drops the leading internal verdict word", () => {
+  assert.equal(publicNote("NOT_OBSERVED. No evidence was retrieved."), "No evidence was retrieved.");
+  assert.equal(publicNote("CONFIRMED. Multiple analyses agree."), "Multiple analyses agree.");
+  assert.equal(publicNote("TSMC said so."), "TSMC said so.");
+  assert.equal(publicNote("NOT_OBSERVED."), null);
+  assert.equal(publicNote(null), null);
+});

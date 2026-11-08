@@ -404,3 +404,116 @@ export function todayCentral(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" })
     .format(now);
 }
+
+// ── forecast page, company page, Movers (FDY-274) ─────────────────────────
+
+export type HistoryPoint = { date: string; probability: number };
+export type HistoryChange = { date: string; from: number; to: number; delta: number };
+
+/** Dated changes in the published probability, oldest first. A flat history
+ *  yields []. Built only from the points that exist — never interpolated. */
+export function historyChanges(history: HistoryPoint[] | null | undefined): HistoryChange[] {
+  const out: HistoryChange[] = [];
+  const h = history ?? [];
+  for (let i = 1; i < h.length; i++) {
+    if (h[i].probability !== h[i - 1].probability) {
+      out.push({ date: h[i].date, from: h[i - 1].probability, to: h[i].probability, delta: h[i].probability - h[i - 1].probability });
+    }
+  }
+  return out;
+}
+
+/** "▲ 6" / "▼ 4" for change since the first recorded point; null when unchanged. */
+export function sinceCalledText(history: HistoryPoint[] | null | undefined, current: number): string | null {
+  const first = history?.[0]?.probability;
+  if (typeof first !== "number" || first === current) return null;
+  const d = current - first;
+  return `${d > 0 ? "▲" : "▼"} ${Math.abs(d)} since called`;
+}
+
+/** Split a daily series into runs of consecutive days, so a chart never draws
+ *  a line across a day with no record (gaps stay gaps). */
+export function contiguousRuns(history: HistoryPoint[]): HistoryPoint[][] {
+  const runs: HistoryPoint[][] = [];
+  let cur: HistoryPoint[] = [];
+  for (const p of history) {
+    const prev = cur[cur.length - 1];
+    if (prev && addDays(prev.date, 1) !== p.date) {
+      runs.push(cur);
+      cur = [];
+    }
+    cur.push(p);
+  }
+  if (cur.length) runs.push(cur);
+  return runs;
+}
+
+/** Clamp a claim for a <title>: ≤ max chars on a word boundary, with an ellipsis. */
+export function clampTitle(text: string, max = 80): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= max) return t;
+  const head = t.slice(0, max - 1);
+  const sp = head.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? head.slice(0, sp) : head).replace(/[\s,;:.-]+$/, "")}…`;
+}
+
+export type MoverWindow = 7 | 14;
+
+/** Rows that moved in the window, by |delta| desc (ties: id). */
+export function sortMovers<T extends { prediction_id: string; delta_7d?: number | null; delta_14d?: number | null }>(
+  rows: T[],
+  window: MoverWindow,
+): T[] {
+  const d = (r: T) => (window === 7 ? r.delta_7d : r.delta_14d);
+  return rows
+    .filter((r) => typeof d(r) === "number" && d(r) !== 0)
+    .sort((a, b) => Math.abs(d(b) as number) - Math.abs(d(a) as number) || a.prediction_id.localeCompare(b.prediction_id));
+}
+
+export function moverBadge(delta: number | null | undefined, window: MoverWindow): string | null {
+  if (typeof delta !== "number" || delta === 0) return null;
+  return `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta)} in ${window}d`;
+}
+
+/** "3 open · 2 graded" — counts only, never a rate. */
+export function companyCountLine(open: number, graded: number): string {
+  return `${open} open · ${graded} graded`;
+}
+
+export type StatusStrip = { label: string; date: string | null; tone: "open" | "right" | "partly" | "miss" | "undetermined" };
+
+/** Status strip for the forecast page. Text label always present. */
+export function statusStrip(row: { status: string; outcome?: string | null; target_resolution_date: string | null; resolution_date: string | null }): StatusStrip {
+  const resolveBy = formatDate(row.target_resolution_date);
+  const graded = formatDate(row.resolution_date);
+  switch (row.outcome ?? (row.status === "active" ? "open" : row.status)) {
+    case "open":
+    case "active":
+      return { label: `Open · resolves ${resolveBy ?? "—"}`, date: resolveBy, tone: "open" };
+    case "right":
+    case "confirmed":
+      return { label: `Right · graded ${graded ?? "—"}`, date: graded, tone: "right" };
+    case "partly":
+    case "partial":
+      return { label: `Partly right · graded ${graded ?? "—"}`, date: graded, tone: "partly" };
+    case "wrong":
+    case "refuted":
+      return { label: `Wrong · graded ${graded ?? "—"}`, date: graded, tone: "miss" };
+    case "didnt_happen":
+    case "not_observed":
+      return { label: `Didn't happen · graded ${graded ?? "—"}`, date: graded, tone: "miss" };
+    default:
+      return { label: `Undetermined · graded ${graded ?? "—"}`, date: graded, tone: "undetermined" };
+  }
+}
+
+export const RESOLVES_COPY =
+  "When the resolve-by date arrives, Faraday grades the call against public evidence. A call whose event has not happened by its date is a miss.";
+
+/** Grader notes open with an internal verdict word ("CONFIRMED.",
+ *  "NOT_OBSERVED."); the page already shows the outcome in plain words, so the
+ *  code is dropped rather than shown. */
+export function publicNote(note: string | null | undefined): string | null {
+  const t = (note ?? "").replace(/^\s*[A-Z][A-Z_]{2,}[.:]\s*/, "").trim();
+  return t || null;
+}

@@ -4,7 +4,7 @@
 // VITE_PREDICTS_API_URL is read on the SERVER and handed down. The fallback is
 // the live, anonymous function URL (verify_jwt=false; no secret in it).
 
-import type { Capabilities, CompanyIndexEntry, V3Row } from "./predicts-v3.ts";
+import type { Capabilities, Company, CompanyIndexEntry, HistoryPoint, V3Row } from "./predicts-v3.ts";
 import type { PredictsRecord } from "./predicts.ts";
 
 export const PREDICTS_API_URL =
@@ -25,6 +25,14 @@ export type ApiEnvelope = {
 export type OpenResponse = ApiEnvelope & { predictions: V3Row[]; theaters?: string[]; sectors?: string[]; horizon_counts?: Record<string, number> };
 export type CompaniesResponse = ApiEnvelope & { companies: CompanyIndexEntry[] };
 export type RecordResponse = ApiEnvelope & { graded_this_week?: V3Row[] };
+export type OneResponse = ApiEnvelope & { prediction: V3Row & { history?: HistoryPoint[] }; related?: V3Row[] };
+export type CompanyResponse = ApiEnvelope & {
+  company: Company;
+  open: V3Row[];
+  graded: V3Row[];
+  company_record: { graded: number; right: number; partly: number; missed: number };
+};
+export type MoversResponse = ApiEnvelope & { predictions: V3Row[] };
 
 /** Server-side GET with the same 300s freshness the API advertises. Returns
  *  null on any failure — callers render their error/empty states, never throw. */
