@@ -1,0 +1,23 @@
+{
+  "amazon-aws": "/icons/amazon/default.svg",
+  "anthropic": "/icons/anthropic/light.svg",
+  "apple": "/icons/apple/light.svg",
+  "baseten": "/icons/baseten/mono.svg",
+  "broadcom": "/icons/broadcom/default.svg",
+  "crusoe": "/icons/crusoe/color.svg",
+  "goldman-sachs": "/icons/goldman-sachs/default.svg",
+  "google": "/icons/google/default.svg",
+  "lambda": "/icons/lambda/mono.svg",
+  "meta": "/icons/meta/default.svg",
+  "microsoft": "/icons/microsoft/default.svg",
+  "microsoft-azure": "/icons/microsoft-azure/default.svg",
+  "nebius": "/icons/nebius/mono.svg",
+  "nextera-energy": "/icons/nextera-energy/light.svg",
+  "nokia": "/icons/nokia/default.svg",
+  "nvidia": "/icons/nvidia/light.svg",
+  "openai": "/icons/openai/light.svg",
+  "oracle": "/icons/oracle/default.svg",
+  "samsung": "/icons/samsung/default.svg",
+  "schneider-electric": "/icons/schneider-electric/default.svg",
+  "spacex": "/icons/spacex/default.svg"
+}

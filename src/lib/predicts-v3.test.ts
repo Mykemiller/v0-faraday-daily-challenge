@@ -1,0 +1,224 @@
+// Faraday Predicts UI 3.0 (FDY-273) — pure-logic tests for the new shell.
+// Run: npm run test:predicts
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  ACCURACY_CLAIM_RE,
+  TAXONOMY_COUNT_RE,
+} from "./predicts.ts";
+import {
+  activeFilterCount,
+  addDays,
+  applyVote,
+  DEFAULT_OPEN_STATE,
+  DISCLAIMER,
+  FIRST_VOTE_LINE,
+  groupByThread,
+  legacyRedirect,
+  matchesOpenState,
+  monogram,
+  parseMyVotes,
+  parseOpenState,
+  parseWatchlist,
+  recordPillText,
+  resolvingSoon,
+  rowComparator,
+  serializeOpenState,
+  shortDate,
+  sparkDeltaText,
+  toggleWatch,
+  voteCountLine,
+  type V3Row,
+} from "./predicts-v3.ts";
+
+function row(over: Partial<V3Row> = {}): V3Row {
+  return {
+    prediction_id: "a",
+    prediction_text: "LG Electronics will not retract the chiller deal.",
+    probability_score: 70,
+    probability_band: "Likely",
+    horizon_bucket: "30d",
+    target_resolution_date: "2026-11-16",
+    date_created: "2026-10-17",
+    is_bold: false,
+    status: "active",
+    resolution_date: null,
+    resolution_note: null,
+    sector_name: "Cooling & Water Technology",
+    is_new: false,
+    taxonomy: { theater: "The Thermal Reckoning", sector: "Cooling & Water Technology", thread: "Immersion Cooling" },
+    companies: [{ name: "LG Electronics", slug: "lg-electronics", domain: null }],
+    thread_key: "Immersion Cooling",
+    votes: null,
+    ...over,
+  };
+}
+
+// ── URL state ───────────────────────────────────────────────────────────────
+
+test("open state round-trips and omits defaults", () => {
+  assert.equal(serializeOpenState(DEFAULT_OPEN_STATE), "/predicts");
+  const s = {
+    ...DEFAULT_OPEN_STATE,
+    h: "60d" as const,
+    theater: "The Thermal Reckoning",
+    company: "nvidia",
+    q: "chiller",
+    sort: "bold" as const,
+    bold: true,
+    watching: true,
+  };
+  const url = serializeOpenState(s);
+  assert.deepEqual(parseOpenState(new URLSearchParams(url.split("?")[1])), s);
+});
+
+test("parse is forgiving: junk falls back to defaults", () => {
+  const s = parseOpenState(new URLSearchParams("h=45d&sort=odds&company=NVIDIA&bold=yes&q="));
+  assert.deepEqual(s, DEFAULT_OPEN_STATE);
+  assert.equal(parseOpenState({ theater: ["A", "B"] }).theater, "A");
+});
+
+test("active filter badge counts only sheet filters", () => {
+  assert.equal(activeFilterCount(DEFAULT_OPEN_STATE), 0);
+  assert.equal(activeFilterCount({ ...DEFAULT_OPEN_STATE, theater: "x", q: "y" }), 0);
+  assert.equal(activeFilterCount({ ...DEFAULT_OPEN_STATE, h: "30d", bold: true, sort: "newest" }), 3);
+});
+
+// ── legacy redirects ───────────────────────────────────────────────────────
+
+test("legacy ?view= map", () => {
+  const r = (s: string) => legacyRedirect(new URLSearchParams(s));
+  assert.equal(r(""), null);
+  assert.equal(r("h=30d"), null);
+  assert.equal(r("view=right"), "/predicts/receipts?outcome=right");
+  assert.equal(r("view=right&partial=1"), "/predicts/receipts?outcome=right");
+  assert.equal(r("view=receipts"), "/predicts/receipts");
+  assert.equal(r("view=receipts&outcome=missed"), "/predicts/receipts?outcome=missed");
+  assert.equal(r("view=receipts&outcome=all"), "/predicts/receipts");
+  assert.equal(r("view=receipts&outcome=bogus"), "/predicts/receipts");
+  assert.equal(r("view=open&h=60d"), "/predicts?h=60d");
+  assert.equal(r("view=open"), "/predicts");
+  assert.equal(r("view=nonsense"), "/predicts");
+});
+
+// ── filtering, sort, grouping ──────────────────────────────────────────────
+
+test("filters match names case-insensitively; watching needs the watchlist", () => {
+  const r = row();
+  const none = new Set<string>();
+  assert.ok(matchesOpenState(r, { ...DEFAULT_OPEN_STATE, theater: "the thermal reckoning" }, none));
+  assert.ok(!matchesOpenState(r, { ...DEFAULT_OPEN_STATE, theater: "Thermal" }, none));
+  assert.ok(matchesOpenState(r, { ...DEFAULT_OPEN_STATE, company: "lg-electronics" }, none));
+  assert.ok(matchesOpenState(r, { ...DEFAULT_OPEN_STATE, q: "CHILLER" }, none));
+  assert.ok(matchesOpenState(r, { ...DEFAULT_OPEN_STATE, q: "immersion" }, none));
+  assert.ok(!matchesOpenState(r, { ...DEFAULT_OPEN_STATE, h: "60d" }, none));
+  assert.ok(!matchesOpenState(r, { ...DEFAULT_OPEN_STATE, watching: true }, none));
+  assert.ok(matchesOpenState(r, { ...DEFAULT_OPEN_STATE, watching: true }, new Set(["a"])));
+  assert.ok(!matchesOpenState(r, { ...DEFAULT_OPEN_STATE, bold: true }, none));
+});
+
+test("sort comparators", () => {
+  const rows = [
+    row({ prediction_id: "a", probability_score: 60, target_resolution_date: "2026-12-05", date_created: "2026-10-01" }),
+    row({ prediction_id: "b", probability_score: 80, target_resolution_date: "2026-11-20", date_created: "2026-09-01" }),
+    row({ prediction_id: "c", probability_score: 30, target_resolution_date: "2027-01-01", date_created: "2026-11-01", is_bold: true }),
+  ];
+  const ids = (s: Parameters<typeof rowComparator>[0]) => [...rows].sort(rowComparator(s)).map((r) => r.prediction_id);
+  assert.deepEqual(ids("probability"), ["b", "a", "c"]);
+  assert.deepEqual(ids("resolves"), ["b", "a", "c"]);
+  assert.deepEqual(ids("newest"), ["c", "a", "b"]);
+  assert.deepEqual(ids("bold"), ["c", "b", "a"]);
+});
+
+test("group by thread_key, groups ordered by their top row", () => {
+  const rows = [
+    row({ prediction_id: "1", thread_key: "Immersion Cooling", probability_score: 60 }),
+    row({ prediction_id: "2", thread_key: "GPU Roadmap", probability_score: 90, companies: [] }),
+    row({ prediction_id: "3", thread_key: "Immersion Cooling", probability_score: 75 }),
+  ];
+  const g = groupByThread(rows, "probability");
+  assert.deepEqual(g.map((x) => x.key), ["GPU Roadmap", "Immersion Cooling"]);
+  assert.deepEqual(g[1].rows.map((r) => r.prediction_id), ["3", "1"]);
+  assert.equal(g[1].sharedCompany?.slug, "lg-electronics");
+  assert.equal(g[0].sharedCompany, null);
+  // a row without thread_key falls back to its Sector
+  const g2 = groupByThread([row({ thread_key: undefined, taxonomy: undefined })], "probability");
+  assert.equal(g2[0].key, "Cooling & Water Technology");
+});
+
+// ── rails ──────────────────────────────────────────────────────────────────
+
+test("next-14-days rail is inclusive, open-only, soonest first", () => {
+  assert.equal(addDays("2026-11-08", 14), "2026-11-22");
+  const rows = [
+    row({ prediction_id: "x", target_resolution_date: "2026-11-22" }),
+    row({ prediction_id: "y", target_resolution_date: "2026-11-09" }),
+    row({ prediction_id: "z", target_resolution_date: "2026-11-23" }),
+    row({ prediction_id: "w", target_resolution_date: "2026-11-07" }),
+    row({ prediction_id: "v", target_resolution_date: "2026-11-10", status: "confirmed" }),
+  ];
+  assert.deepEqual(resolvingSoon(rows, "2026-11-08").map((r) => r.prediction_id), ["y", "x"]);
+});
+
+// ── sparkline ──────────────────────────────────────────────────────────────
+
+test("sparkline delta text: arrows, never empty strings", () => {
+  assert.equal(sparkDeltaText([70, 72, 76]), "▲ 6 · 3d");
+  assert.equal(sparkDeltaText([80, 76]), "▼ 4 · 2d");
+  assert.equal(sparkDeltaText([70, 72, 70]), null);
+  assert.equal(sparkDeltaText([70]), null);
+  assert.equal(sparkDeltaText(undefined), null);
+});
+
+// ── watchlist + votes ──────────────────────────────────────────────────────
+
+test("watchlist reducer + tolerant parse", () => {
+  assert.deepEqual(toggleWatch([], "a"), ["a"]);
+  assert.deepEqual(toggleWatch(["a", "b"], "a"), ["b"]);
+  assert.deepEqual(parseWatchlist('["a","a",3,"b"]'), ["a", "b"]);
+  assert.deepEqual(parseWatchlist("not json"), []);
+  assert.deepEqual(parseWatchlist(null), []);
+});
+
+test("vote reducer: insert, switch, idempotent repeat; counts gated at 5", () => {
+  const z = { agree: 0, disagree: 0 };
+  assert.deepEqual(applyVote(z, undefined, "agree"), { agree: 1, disagree: 0 });
+  assert.deepEqual(applyVote({ agree: 1, disagree: 0 }, "agree", "disagree"), { agree: 0, disagree: 1 });
+  assert.deepEqual(applyVote({ agree: 1, disagree: 0 }, "agree", "agree"), { agree: 1, disagree: 0 });
+  assert.deepEqual(parseMyVotes('{"a":"agree","b":"yes","c":"disagree"}'), { a: "agree", c: "disagree" });
+  assert.deepEqual(parseMyVotes("[1]"), {});
+  assert.equal(voteCountLine({ agree: 3, disagree: 1 }), FIRST_VOTE_LINE);
+  assert.equal(voteCountLine({ agree: 61, disagree: 14 }), "61 · 14");
+  assert.equal(voteCountLine(null), FIRST_VOTE_LINE);
+});
+
+// ── marks + copy ───────────────────────────────────────────────────────────
+
+test("monogram initials", () => {
+  assert.equal(monogram("LG Electronics"), "LE");
+  assert.equal(monogram("NVIDIA"), "NV");
+  assert.equal(monogram("Cooling & Water Technology"), "CW");
+  assert.equal(monogram(""), "F");
+});
+
+test("short date has no timezone drift", () => {
+  assert.equal(shortDate("2026-11-16"), "Nov 16");
+  assert.equal(shortDate("2026-12-01T00:00:00Z"), "Dec 1");
+  assert.equal(shortDate(null), null);
+});
+
+test("record pill: counts + Brier, never a rate or a taxonomy count", () => {
+  const t = recordPillText({ graded: 84, confirmed: 37, partial: 18, refuted: 1, not_observed: 28, inconclusive: 0, brier: 0.189831, caveat: null });
+  assert.equal(t, "84 graded · 37 right · 29 missed · Brier 0.190");
+  assert.ok(!ACCURACY_CLAIM_RE.test(t!));
+  assert.ok(!TAXONOMY_COUNT_RE.test(t!));
+  assert.equal(recordPillText(null), null);
+});
+
+test("disclaimer is verbatim", () => {
+  assert.equal(
+    DISCLAIMER,
+    "Faraday Predicts publishes Faraday's own analytical forecasts and grades them in public. Nothing here is a market, a wager, a price or investment advice.",
+  );
+});

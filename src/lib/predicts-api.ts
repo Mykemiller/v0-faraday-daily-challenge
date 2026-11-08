@@ -1,0 +1,40 @@
+// Faraday Predicts — API endpoints (server-side read; passed to clients as props).
+//
+// ⚠️ Only NEXT_PUBLIC_* is inlined into browser bundles, so the configured
+// VITE_PREDICTS_API_URL is read on the SERVER and handed down. The fallback is
+// the live, anonymous function URL (verify_jwt=false; no secret in it).
+
+import type { Capabilities, CompanyIndexEntry, V3Row } from "./predicts-v3.ts";
+import type { PredictsRecord } from "./predicts.ts";
+
+export const PREDICTS_API_URL =
+  process.env.VITE_PREDICTS_API_URL ||
+  process.env.NEXT_PUBLIC_PREDICTS_API_URL ||
+  "https://ycadmmngkdhvpcsrcuaq.supabase.co/functions/v1/predicts-public";
+
+/** predicts-vote lives beside predicts-public on the same functions origin. */
+export const PREDICTS_VOTE_URL = PREDICTS_API_URL.replace(/predicts-public\/?$/, "predicts-vote");
+
+export type ApiEnvelope = {
+  ok: boolean;
+  release_tag: string | null;
+  record: PredictsRecord | null;
+  capabilities?: Capabilities;
+};
+
+export type OpenResponse = ApiEnvelope & { predictions: V3Row[]; theaters?: string[]; sectors?: string[]; horizon_counts?: Record<string, number> };
+export type CompaniesResponse = ApiEnvelope & { companies: CompanyIndexEntry[] };
+export type RecordResponse = ApiEnvelope & { graded_this_week?: V3Row[] };
+
+/** Server-side GET with the same 300s freshness the API advertises. Returns
+ *  null on any failure — callers render their error/empty states, never throw. */
+export async function predictsGet<T extends { ok: boolean }>(query: string): Promise<T | null> {
+  try {
+    const r = await fetch(`${PREDICTS_API_URL}?${query}`, { next: { revalidate: 300 } });
+    if (!r.ok) return null;
+    const data = (await r.json()) as T;
+    return data?.ok ? data : null;
+  } catch {
+    return null;
+  }
+}
