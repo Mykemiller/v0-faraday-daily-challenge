@@ -4,5 +4,5 @@ import type { Taxonomy } from "@/lib/predicts-v3";
 export default function Breadcrumb({ taxonomy, sector }: { taxonomy?: Taxonomy; sector?: string | null }) {
   const parts = [taxonomy?.theater, taxonomy?.sector ?? sector].filter(Boolean) as string[];
   if (!parts.length) return null;
-  return <p className="font-mono text-[11px] uppercase tracking-wide text-sage-dark">{parts.join(" › ")}</p>;
+  return <p data-claim className="font-mono text-[11px] uppercase tracking-wide text-sage-dark">{parts.join(" › ")}</p>;
 }

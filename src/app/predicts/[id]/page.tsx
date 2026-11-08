@@ -71,7 +71,7 @@ export default async function ForecastPage({ params }: { params: P }) {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 md:py-8">
-      <nav aria-label="Breadcrumb" className="font-mono text-[11px] uppercase tracking-wide text-sage-dark">
+      <nav data-claim aria-label="Breadcrumb" className="font-mono text-[11px] uppercase tracking-wide text-sage-dark">
         <Link href="/predicts" className="underline-offset-2 hover:underline">Predicts</Link>
         {theater && (
           <>
@@ -141,7 +141,7 @@ export default async function ForecastPage({ params }: { params: P }) {
         <p className="mt-2 font-sans text-[15px] leading-relaxed text-near-black/80">{RESOLVES_COPY}</p>
         {graded && (
           <div className="mt-3 rounded-lg border border-cream-border bg-warm-white p-3 font-sans text-[15px] leading-relaxed text-near-black/85">
-            {publicNote(r.resolution_note) ? <p>{publicNote(r.resolution_note)}</p> : r.outcome === "didnt_happen" ? <p>{noEvidenceLine(r.target_resolution_date)}</p> : null}
+            {publicNote(r.resolution_note) ? <p data-claim>{publicNote(r.resolution_note)}</p> : r.outcome === "didnt_happen" ? <p>{noEvidenceLine(r.target_resolution_date)}</p> : null}
             {r.evidence_url && (
               <a href={r.evidence_url} rel="noopener noreferrer nofollow" target="_blank" className="mt-2 inline-flex min-h-[44px] items-center font-medium text-forest underline">
                 Evidence

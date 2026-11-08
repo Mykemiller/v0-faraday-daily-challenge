@@ -529,3 +529,111 @@ export function publicNote(note: string | null | undefined): string | null {
     .trim();
   return t || null;
 }
+
+// ── Record + Receipts (FDY-275) ───────────────────────────────────────────
+
+export type CalibrationBand = { band: string; predicted_mid: number; observed_rate: number; n: number };
+export type HorizonTally = { horizon_bucket: string; graded: number; right: number; partly: number; missed: number };
+export type BrierPoint = { date: string; brier: number; graded: number };
+
+/** Missed = wrong + didn't happen, kept together (same rule as the receipts filter). */
+export function missedCount(r: Pick<PredictsRecord, "refuted" | "not_observed">): number {
+  return (r.refuted ?? 0) + (r.not_observed ?? 0);
+}
+
+export type RecordTile = { label: string; value: number; sub?: string };
+
+/** The four count tiles. Counts only — never a rate. */
+export function recordTiles(r: PredictsRecord): RecordTile[] {
+  return [
+    { label: "Graded", value: r.graded },
+    { label: "Right", value: r.confirmed },
+    { label: "Partly right", value: r.partial },
+    { label: "Missed", value: missedCount(r), sub: `${r.refuted} wrong · ${r.not_observed} didn't happen` },
+  ];
+}
+
+/** Calibration dot radius: √n scaled into [4, 14] px against the largest band. */
+export function dotRadius(n: number, maxN: number): number {
+  if (!(n > 0) || !(maxN > 0)) return 4;
+  return Math.max(4, Math.min(14, 4 + 10 * Math.sqrt(Math.min(n, maxN) / maxN)));
+}
+
+/** Axis ticks are bare numbers: no % sign anywhere on the chart. */
+export const CAL_TICKS = ["0", "25", "50", "75", "100"] as const;
+
+export function showCalibration(caps: Capabilities | null | undefined, bands: CalibrationBand[] | null | undefined): boolean {
+  return !!caps?.calibration && (bands?.length ?? 0) >= 3;
+}
+
+export function brierText(b: number | null | undefined): string | null {
+  return typeof b === "number" && Number.isFinite(b) ? b.toFixed(3) : null;
+}
+
+export const HORIZON_LABEL: Record<string, string> = {
+  "30d": "30 days",
+  "60d": "60 days",
+  "90d": "90 days",
+  "6m": "6 months",
+  "12m": "12 months",
+  "24m": "24 months",
+};
+
+export type ReceiptsOutcome = "all" | "right" | "partly" | "missed";
+export type ReceiptsState = {
+  outcome: ReceiptsOutcome;
+  theater: string | null;
+  sector: string | null;
+  company: string | null;
+  h: string | null;
+};
+
+const RECEIPT_OUTCOMES = new Set(["all", "right", "partly", "missed"]);
+
+export function parseReceiptsState(src: ParamSource): ReceiptsState {
+  const o = getParam(src, "outcome");
+  const company = getParam(src, "company");
+  const h = getParam(src, "h");
+  return {
+    outcome: o && RECEIPT_OUTCOMES.has(o) ? (o as ReceiptsOutcome) : "all",
+    theater: cleanText(getParam(src, "theater"), 120),
+    sector: cleanText(getParam(src, "sector"), 120),
+    company: company && /^[a-z0-9][a-z0-9-]{0,79}$/.test(company) ? company : null,
+    h: h && h in HORIZON_LABEL ? h : null,
+  };
+}
+
+export function serializeReceiptsState(s: ReceiptsState): string {
+  const p = new URLSearchParams();
+  if (s.outcome !== "all") p.set("outcome", s.outcome);
+  if (s.theater) p.set("theater", s.theater);
+  if (s.sector) p.set("sector", s.sector);
+  if (s.company) p.set("company", s.company);
+  if (s.h) p.set("h", s.h);
+  const qs = p.toString();
+  return qs ? `/predicts/receipts?${qs}` : "/predicts/receipts";
+}
+
+/** API query for view=receipts (horizon is `horizon` upstream). */
+export function receiptsQuery(s: ReceiptsState, cursor?: string | null): string {
+  const p = new URLSearchParams({ view: "receipts" });
+  if (s.outcome !== "all") p.set("outcome", s.outcome);
+  if (s.theater) p.set("theater", s.theater);
+  if (s.sector) p.set("sector", s.sector);
+  if (s.company) p.set("company", s.company);
+  if (s.h) p.set("horizon", s.h);
+  if (cursor) p.set("cursor", cursor);
+  return p.toString();
+}
+
+/** The API caveat, kept word for word except internal status codes, which
+ *  become the public outcome words used everywhere else on the site. */
+export function publicCaveat(c: string | null | undefined): string | null {
+  if (!c) return null;
+  return c
+    .replace(/\bnot_observed\b/g, "didn't happen")
+    .replace(/\brefuted\b/g, "wrong")
+    .replace(/\bconfirmed\b/g, "right")
+    .replace(/\bpartial\b/g, "partly right")
+    .replace(/\binconclusive\b/g, "undetermined");
+}
