@@ -70,7 +70,7 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: SP 
       {publicCaveat(rec?.caveat) && <p className="mt-2 max-w-3xl font-serif text-[14px] italic text-sage-dark">{publicCaveat(rec?.caveat)}</p>}
 
       {theaters.length > 0 && (
-        <nav aria-label="Theater" className="mt-2 flex gap-2 overflow-x-auto pb-1">
+        <nav data-claim aria-label="Theater" className="mt-2 flex gap-2 overflow-x-auto pb-1">
           <Link href={at({ theater: null, sector: null })} aria-current={!s.theater ? "page" : undefined} className={chip(!s.theater)}>All Theaters</Link>
           {theaters.map((t) => (
             <Link key={t} href={at({ theater: t, sector: null })} aria-current={s.theater === t ? "page" : undefined} className={chip(s.theater === t)}>{t}</Link>
@@ -85,7 +85,7 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: SP 
           {s.theater && <input type="hidden" name="theater" value={s.theater} />}
           <label className="font-sans text-[14px] text-near-black/80">
             Sector
-            <select name="sector" defaultValue={s.sector ?? ""} className="mt-1 block min-h-[44px] w-full rounded-lg border border-cream-border bg-warm-white px-2">
+            <select data-claim name="sector" defaultValue={s.sector ?? ""} className="mt-1 block min-h-[44px] w-full rounded-lg border border-cream-border bg-warm-white px-2">
               <option value="">Any</option>
               {sectors.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>

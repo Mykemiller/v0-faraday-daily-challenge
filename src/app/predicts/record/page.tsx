@@ -1,6 +1,7 @@
 import { NO_MISSES_LINE } from "@/lib/predicts";
 import { predictsGet, type RecordResponse } from "@/lib/predicts-api";
 import {
+  bandLabel,
   brierText,
   publicCaveat,
   HORIZON_LABEL,
@@ -97,7 +98,7 @@ export default async function RecordPage() {
                   <tbody>
                     {bands.map((b) => (
                       <tr key={b.band} className="border-b border-cream-line font-mono">
-                        <td className="py-2">{b.band}</td>
+                        <td className="py-2 font-sans">{bandLabel(b.band) ?? b.band}</td>
                         <td className="py-2">{b.predicted_mid}</td>
                         <td className="py-2">{b.observed_rate}</td>
                         <td className="py-2">{b.n}</td>

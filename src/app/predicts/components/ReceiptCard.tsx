@@ -36,7 +36,7 @@ export default function ReceiptCard({ row }: { row: V3Row }) {
           ))}
         </ul>
       )}
-      {note && <p className="mt-2 line-clamp-2 font-sans text-[14px] leading-relaxed text-near-black/75">{note}</p>}
+      {note && <p data-claim className="mt-2 line-clamp-2 font-sans text-[14px] leading-relaxed text-near-black/75">{note}</p>}
       {row.evidence_url ? (
         <a href={row.evidence_url} target="_blank" rel="noopener noreferrer nofollow" className="mt-1 inline-flex min-h-[44px] items-center font-sans text-[14px] font-medium text-forest underline">
           Evidence
