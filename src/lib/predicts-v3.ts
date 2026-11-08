@@ -404,3 +404,236 @@ export function todayCentral(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" })
     .format(now);
 }
+
+// ── forecast page, company page, Movers (FDY-274) ─────────────────────────
+
+export type HistoryPoint = { date: string; probability: number };
+export type HistoryChange = { date: string; from: number; to: number; delta: number };
+
+/** Dated changes in the published probability, oldest first. A flat history
+ *  yields []. Built only from the points that exist — never interpolated. */
+export function historyChanges(history: HistoryPoint[] | null | undefined): HistoryChange[] {
+  const out: HistoryChange[] = [];
+  const h = history ?? [];
+  for (let i = 1; i < h.length; i++) {
+    if (h[i].probability !== h[i - 1].probability) {
+      out.push({ date: h[i].date, from: h[i - 1].probability, to: h[i].probability, delta: h[i].probability - h[i - 1].probability });
+    }
+  }
+  return out;
+}
+
+/** "▲ 6" / "▼ 4" for change since the first recorded point; null when unchanged. */
+export function sinceCalledText(history: HistoryPoint[] | null | undefined, current: number): string | null {
+  const first = history?.[0]?.probability;
+  if (typeof first !== "number" || first === current) return null;
+  const d = current - first;
+  return `${d > 0 ? "▲" : "▼"} ${Math.abs(d)} since called`;
+}
+
+/** Split a daily series into runs of consecutive days, so a chart never draws
+ *  a line across a day with no record (gaps stay gaps). */
+export function contiguousRuns(history: HistoryPoint[]): HistoryPoint[][] {
+  const runs: HistoryPoint[][] = [];
+  let cur: HistoryPoint[] = [];
+  for (const p of history) {
+    const prev = cur[cur.length - 1];
+    if (prev && addDays(prev.date, 1) !== p.date) {
+      runs.push(cur);
+      cur = [];
+    }
+    cur.push(p);
+  }
+  if (cur.length) runs.push(cur);
+  return runs;
+}
+
+/** Clamp a claim for a <title>: ≤ max chars on a word boundary, with an ellipsis. */
+export function clampTitle(text: string, max = 80): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= max) return t;
+  const head = t.slice(0, max - 1);
+  const sp = head.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? head.slice(0, sp) : head).replace(/[\s,;:.-]+$/, "")}…`;
+}
+
+export type MoverWindow = 7 | 14;
+
+/** Rows that moved in the window, by |delta| desc (ties: id). */
+export function sortMovers<T extends { prediction_id: string; delta_7d?: number | null; delta_14d?: number | null }>(
+  rows: T[],
+  window: MoverWindow,
+): T[] {
+  const d = (r: T) => (window === 7 ? r.delta_7d : r.delta_14d);
+  return rows
+    .filter((r) => typeof d(r) === "number" && d(r) !== 0)
+    .sort((a, b) => Math.abs(d(b) as number) - Math.abs(d(a) as number) || a.prediction_id.localeCompare(b.prediction_id));
+}
+
+export function moverBadge(delta: number | null | undefined, window: MoverWindow): string | null {
+  if (typeof delta !== "number" || delta === 0) return null;
+  return `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta)} in ${window}d`;
+}
+
+/** "3 open · 2 graded" — counts only, never a rate. */
+export function companyCountLine(open: number, graded: number): string {
+  return `${open} open · ${graded} graded`;
+}
+
+export type StatusStrip = { label: string; date: string | null; tone: "open" | "right" | "partly" | "miss" | "undetermined" };
+
+/** Status strip for the forecast page. Text label always present. */
+export function statusStrip(row: { status: string; outcome?: string | null; target_resolution_date: string | null; resolution_date: string | null }): StatusStrip {
+  const resolveBy = formatDate(row.target_resolution_date);
+  const graded = formatDate(row.resolution_date);
+  switch (row.outcome ?? (row.status === "active" ? "open" : row.status)) {
+    case "open":
+    case "active":
+      return { label: `Open · resolves ${resolveBy ?? "—"}`, date: resolveBy, tone: "open" };
+    case "right":
+    case "confirmed":
+      return { label: `Right · graded ${graded ?? "—"}`, date: graded, tone: "right" };
+    case "partly":
+    case "partial":
+      return { label: `Partly right · graded ${graded ?? "—"}`, date: graded, tone: "partly" };
+    case "wrong":
+    case "refuted":
+      return { label: `Wrong · graded ${graded ?? "—"}`, date: graded, tone: "miss" };
+    case "didnt_happen":
+    case "not_observed":
+      return { label: `Didn't happen · graded ${graded ?? "—"}`, date: graded, tone: "miss" };
+    default:
+      return { label: `Undetermined · graded ${graded ?? "—"}`, date: graded, tone: "undetermined" };
+  }
+}
+
+export const RESOLVES_COPY =
+  "When the resolve-by date arrives, Faraday grades the call against public evidence. A call whose event has not happened by its date is a miss.";
+
+/** Grader notes open with an internal verdict word ("CONFIRMED.",
+ *  "NOT_OBSERVED."); the page already shows the outcome in plain words, so the
+ *  code is dropped rather than shown. */
+const VERDICT_WORDS: Record<string, string> = {
+  CONFIRMED: "confirmed",
+  PARTIAL: "partly right",
+  REFUTED: "refuted",
+  NOT_OBSERVED: "not observed",
+  INCONCLUSIVE: "inconclusive",
+  EXPIRED: "expired",
+};
+
+export function publicNote(note: string | null | undefined): string | null {
+  const t = (note ?? "")
+    .replace(/^\s*[A-Z][A-Z_]{2,}[.:]\s*/, "")
+    .replace(/\b(CONFIRMED|PARTIAL|REFUTED|NOT_OBSERVED|INCONCLUSIVE|EXPIRED)\b/g, (w) => VERDICT_WORDS[w])
+    .trim();
+  return t || null;
+}
+
+// ── Record + Receipts (FDY-275) ───────────────────────────────────────────
+
+export type CalibrationBand = { band: string; predicted_mid: number; observed_rate: number; n: number };
+export type HorizonTally = { horizon_bucket: string; graded: number; right: number; partly: number; missed: number };
+export type BrierPoint = { date: string; brier: number; graded: number };
+
+/** Missed = wrong + didn't happen, kept together (same rule as the receipts filter). */
+export function missedCount(r: Pick<PredictsRecord, "refuted" | "not_observed">): number {
+  return (r.refuted ?? 0) + (r.not_observed ?? 0);
+}
+
+export type RecordTile = { label: string; value: number; sub?: string };
+
+/** The four count tiles. Counts only — never a rate. */
+export function recordTiles(r: PredictsRecord): RecordTile[] {
+  return [
+    { label: "Graded", value: r.graded },
+    { label: "Right", value: r.confirmed },
+    { label: "Partly right", value: r.partial },
+    { label: "Missed", value: missedCount(r), sub: `${r.refuted} wrong · ${r.not_observed} didn't happen` },
+  ];
+}
+
+/** Calibration dot radius: √n scaled into [4, 14] px against the largest band. */
+export function dotRadius(n: number, maxN: number): number {
+  if (!(n > 0) || !(maxN > 0)) return 4;
+  return Math.max(4, Math.min(14, 4 + 10 * Math.sqrt(Math.min(n, maxN) / maxN)));
+}
+
+/** Axis ticks are bare numbers: no % sign anywhere on the chart. */
+export const CAL_TICKS = ["0", "25", "50", "75", "100"] as const;
+
+export function showCalibration(caps: Capabilities | null | undefined, bands: CalibrationBand[] | null | undefined): boolean {
+  return !!caps?.calibration && (bands?.length ?? 0) >= 3;
+}
+
+export function brierText(b: number | null | undefined): string | null {
+  return typeof b === "number" && Number.isFinite(b) ? b.toFixed(3) : null;
+}
+
+export const HORIZON_LABEL: Record<string, string> = {
+  "30d": "30 days",
+  "60d": "60 days",
+  "90d": "90 days",
+  "6m": "6 months",
+  "12m": "12 months",
+  "24m": "24 months",
+};
+
+export type ReceiptsOutcome = "all" | "right" | "partly" | "missed";
+export type ReceiptsState = {
+  outcome: ReceiptsOutcome;
+  theater: string | null;
+  sector: string | null;
+  company: string | null;
+  h: string | null;
+};
+
+const RECEIPT_OUTCOMES = new Set(["all", "right", "partly", "missed"]);
+
+export function parseReceiptsState(src: ParamSource): ReceiptsState {
+  const o = getParam(src, "outcome");
+  const company = getParam(src, "company");
+  const h = getParam(src, "h");
+  return {
+    outcome: o && RECEIPT_OUTCOMES.has(o) ? (o as ReceiptsOutcome) : "all",
+    theater: cleanText(getParam(src, "theater"), 120),
+    sector: cleanText(getParam(src, "sector"), 120),
+    company: company && /^[a-z0-9][a-z0-9-]{0,79}$/.test(company) ? company : null,
+    h: h && h in HORIZON_LABEL ? h : null,
+  };
+}
+
+export function serializeReceiptsState(s: ReceiptsState): string {
+  const p = new URLSearchParams();
+  if (s.outcome !== "all") p.set("outcome", s.outcome);
+  if (s.theater) p.set("theater", s.theater);
+  if (s.sector) p.set("sector", s.sector);
+  if (s.company) p.set("company", s.company);
+  if (s.h) p.set("h", s.h);
+  const qs = p.toString();
+  return qs ? `/predicts/receipts?${qs}` : "/predicts/receipts";
+}
+
+/** API query for view=receipts (horizon is `horizon` upstream). */
+export function receiptsQuery(s: ReceiptsState, cursor?: string | null): string {
+  const p = new URLSearchParams({ view: "receipts" });
+  if (s.outcome !== "all") p.set("outcome", s.outcome);
+  if (s.theater) p.set("theater", s.theater);
+  if (s.sector) p.set("sector", s.sector);
+  if (s.company) p.set("company", s.company);
+  if (s.h) p.set("horizon", s.h);
+  if (cursor) p.set("cursor", cursor);
+  return p.toString();
+}
+
+/** The API caveat, kept word for word except internal status codes, which
+ *  become the public outcome words used everywhere else on the site. */
+export function publicCaveat(c: string | null | undefined): string | null {
+  if (!c) return null;
+  return c
+    .replace(/\bnot_observed\b/g, "didn't happen")
+    .replace(/\brefuted\b/g, "wrong")
+    .replace(/\bconfirmed\b/g, "right")
+    .replace(/\bpartial\b/g, "partly right")
+    .replace(/\binconclusive\b/g, "undetermined");
+}

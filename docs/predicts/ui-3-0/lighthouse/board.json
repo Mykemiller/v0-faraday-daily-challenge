@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:3100/predicts",
+  "formFactor": "mobile",
+  "performance": 0.99,
+  "accessibility": 1,
+  "bestPractices": 0.96,
+  "fetchTime": "2026-11-08T10:54:01.071Z"
+}

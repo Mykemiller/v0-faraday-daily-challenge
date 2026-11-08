@@ -4,9 +4,9 @@ import { sparkDeltaText } from "@/lib/predicts-v3";
 // Fixed 0–100 vertical scale — the line never exaggerates a small move. Nothing
 // renders when the series is absent or a single point.
 
-type Props = { points?: number[] | null; width?: number; height?: number; showDelta?: boolean; label?: string };
+type Props = { points?: number[] | null; width?: number; height?: number; showDelta?: boolean; label?: string; className?: string };
 
-export default function Sparkline({ points, width = 96, height = 28, showDelta = true, label }: Props) {
+export default function Sparkline({ points, width = 96, height = 28, showDelta = true, label, className }: Props) {
   if (!points || points.length < 2) return null;
   const pad = 3;
   const step = (width - pad * 2) / (points.length - 1);
@@ -20,6 +20,8 @@ export default function Sparkline({ points, width = 96, height = 28, showDelta =
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio={className ? "none" : undefined}
+        className={className}
         role="img"
         aria-label={label ?? `Faraday's probability over the last ${points.length} days, from ${points[0]} to ${points[points.length - 1]}`}
       >
