@@ -12,6 +12,7 @@ import {
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
 import { dcCanonicalUrl } from "@/lib/hosts";
+import { SIGNAL_ROOM_URL, loadSignalRoomHealth, signalRoomTile } from "@/lib/signal-room";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -25,12 +26,15 @@ import { dcCanonicalUrl } from "@/lib/hosts";
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
-const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; tag?: string; primary?: boolean; external?: boolean }[] = [
+const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; tag?: string; stat?: string; primary?: boolean; external?: boolean }[] = [
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Faraday Predicts", href: "/predicts", blurb: "Faraday's dated, probability-weighted calls on the AI data center buildout — browse them by Theater or company, watch the ones you care about, and see every grade.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: JW_HOME_URL, external: true, blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
-  { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
+  // Signal Room carries no tag here on purpose: "Live" and the 24-hour count are
+  // filled in per request from the Signal Room's own health endpoint
+  // (src/lib/signal-room.ts), so the tile cannot advertise a feed that is down.
+  { name: "Signal Room", href: SIGNAL_ROOM_URL, external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread." },
   // ThoughtForge lives on its own domain (same pattern as Signal Room). Copy
   // approved by Myke 2026-11-05; `lede` is the one-line headline above the blurb.
   {
@@ -54,7 +58,13 @@ export default async function Home() {
   // Locked lobby order from game_catalog. An eighth game appears here with no
   // code change; an unreachable catalog renders the section with no tiles
   // rather than a stale hardcoded seven.
-  const dcGames = await loadLiveGames();
+  // The Signal Room probe runs alongside the catalog read; it never throws and
+  // gives up after 2.5s, so it cannot hold the homepage up.
+  const [dcGames, signalRoomHealth] = await Promise.all([loadLiveGames(), loadSignalRoomHealth()]);
+  const signalRoom = signalRoomTile(signalRoomHealth);
+  const storefronts = STOREFRONTS.map((s) =>
+    s.href === SIGNAL_ROOM_URL ? { ...s, tag: signalRoom.tag, stat: signalRoom.stat } : s,
+  );
 
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
@@ -123,7 +133,7 @@ export default async function Home() {
 
         {/* Storefront tiles — Live Agent is the primary path, the rest subordinated */}
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {STOREFRONTS.map((s) => {
+          {storefronts.map((s) => {
             const cardClass = `group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
               s.primary
                 ? "border-gold bg-warm-cream hover:border-gold"
@@ -141,6 +151,9 @@ export default async function Home() {
                   <p className="mt-2 font-serif text-[14px] font-semibold italic leading-snug text-forest">{s.lede}</p>
                 )}
                 <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
+                {s.stat && (
+                  <p className="mt-2 font-mono text-[11px] tracking-[0.04em] text-forest">{s.stat}</p>
+                )}
                 <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">
                   {s.external ? "Enter →" : "Open →"}
                 </span>
@@ -151,8 +164,8 @@ export default async function Home() {
                 {s.href === JW_HOME_URL ? (
                   <JwHomeTile />
                 ) : s.external ? (
-                  // External storefront (Signal Room lives on its own domain);
-                  // same tab per spec, rel=noopener for safety.
+                  // External storefront (Signal Room, Thought Forge — each on
+                  // its own domain); same tab per spec, rel=noopener for safety.
                   <a href={s.href} rel="noopener noreferrer" className={cardClass}>
                     {inner}
                   </a>
