@@ -53,6 +53,12 @@ Both "front doors" live in **one repo** — the engine-as-site. The prompt assum
 
 ## 5. Jurisdiction Watch — the off-domain leak (locked fix)
 
+> **Superseded 2026-11-10 (Myke):** the Home tile links directly to the live product at
+> `https://www.jurisdiction-watch.com/` again (`src/lib/jw-url.ts`). The in-engine
+> `/jurisdiction-watch` page carries an illustrative map, not the product, and the
+> `jurisdiction-watch.faraday-intelligence.ai` subdomain below was never attached. The
+> `/jurisdiction-watch` route itself is unchanged. The rest of this section is history.
+
 **Before:** the home tile `href` and the `/jurisdiction-watch` route both pointed to **`https://jurisdiction-watch.com`** (a hard 301 off-domain) — a brand/session leak mid-funnel.
 
 **Decision (locked by Myke): subdomain.** JW runs under the brand at
