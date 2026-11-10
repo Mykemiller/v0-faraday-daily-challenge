@@ -2,6 +2,7 @@ import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
+import { JW_HOME_URL } from "@/lib/jw-url";
 import {
   TOKEN_PACKS,
   formatPackPrice,
@@ -28,7 +29,7 @@ const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; t
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Faraday Predicts", href: "/predicts", blurb: "Faraday's dated, probability-weighted calls on the AI data center buildout — browse them by Theater or company, watch the ones you care about, and see every grade.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
-  { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
+  { name: "Jurisdiction Watch", href: JW_HOME_URL, external: true, blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
   { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
   // ThoughtForge lives on its own domain (same pattern as Signal Room). Copy
   // approved by Myke 2026-11-05; `lede` is the one-line headline above the blurb.
@@ -147,7 +148,7 @@ export default async function Home() {
             );
             return (
               <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
-                {s.href === "/jurisdiction-watch" ? (
+                {s.href === JW_HOME_URL ? (
                   <JwHomeTile />
                 ) : s.external ? (
                   // External storefront (Signal Room lives on its own domain);
