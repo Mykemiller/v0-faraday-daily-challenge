@@ -26,7 +26,7 @@ export default function PredictsShell({ children, record, releaseTag, showMovers
     {
       href: "/predicts",
       label: "Open",
-      match: (p: string) => p === "/predicts" || /^\/predicts\/(?!movers|record|receipts)[^/]+/.test(p),
+      match: (p: string) => p === "/predicts" || /^\/predicts\/(?!movers|record|receipts|preferences)[^/]+/.test(p),
       icon: (
         <svg {...ICON}>
           <rect x="3" y="3" width="7" height="7" rx="1.5" />
