@@ -12,6 +12,7 @@
     "test:dc-ui": "node --test 'src/lib/dc-ui/**/*.test.ts'",
     "test:contrast": "node scripts/contrast-check.mjs",
     "test:predicts": "node --test src/lib/predicts.test.ts src/lib/predicts-v3.test.ts",
+    "test:predicts-preferences": "node --test src/lib/predicts-preferences.test.ts && node scripts/predicts-preferences-contrast.mjs",
     "test:signal-drop": "node --test src/lib/signal-drop.test.js",
     "test:puzzle-bank": "node --test src/lib/supabase-puzzle-bank.test.js",
     "test:hosts": "node --test src/lib/hosts.test.ts",
