@@ -37,7 +37,9 @@ export function VelocityEvidence({ posture, layers, className = "" }: { posture:
       {names.length > 0 && (
         <details className="group mt-1">
           <summary className="inline-flex min-h-[32px] cursor-pointer list-none items-center gap-1 font-sans text-[13px] font-medium text-forest hover:underline [&::-webkit-details-marker]:hidden">
-            <span aria-hidden className="inline-block w-3 text-center text-[16px] leading-none transition-transform group-open:rotate-90">›</span>
+            <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90">
+              <path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             {WHAT_WE_LOOKED_AT}
           </summary>
           <ul className="mt-1 flex flex-wrap gap-1.5 pl-3">

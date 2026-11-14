@@ -359,8 +359,3 @@ export function sourceNames(raw: unknown): string[] {
   }
   return out;
 }
-
-/** True when the card has any Velocity 3.0 element to show. */
-export function hasVelocity(row: Pick<PredictsRow, "velocity_tag" | "evidence_posture" | "source_layers">): boolean {
-  return velocityChip(row.velocity_tag) !== null || evidenceLine(row.evidence_posture) !== null || sourceNames(row.source_layers).length > 0;
-}

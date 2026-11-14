@@ -8,6 +8,7 @@ and legacy, so the board also shows cards with **no** velocity elements (D4).
 
 | File | What it shows |
 |---|---|
+| `board-default-375.png`, `board-default-1200.png` | The default board: Thread rows carry the chip only (rows are links; the evidence block cannot nest inside one) |
 | `board-375.png` | Search results (`?q=cooling`) at 375px, first disclosure opened |
 | `board-1200.png` | The same at 1200px |
 | `forecast-375.png`, `forecast-1200.png` | One forecast page with the chip in the status strip and the evidence block |
@@ -15,3 +16,5 @@ and legacy, so the board also shows cards with **no** velocity elements (D4).
 DOM checks run with the captures (both widths): 16 cards, 14 with an evidence block, no horizontal
 overflow, no `L<n>` code and no word "layer" anywhere in `<main>`. The `<summary>` takes focus and
 opens with Enter.
+
+Default board (both widths): 77 Thread rows visible, 56 with a chip (the fixture leaves every fourth forecast legacy), no overflow, no codes.

@@ -269,7 +269,6 @@ test("receipts copy: chips, empty state and the no-evidence line", () => {
 
 import {
   evidenceLine,
-  hasVelocity,
   LAYER_CODE_RE,
   sourceNames,
   VELOCITY_CHIPS,
@@ -316,13 +315,6 @@ test("source names: strings only, de-duplicated, order kept; codes, digits and '
   ]);
   assert.deepEqual(sourceNames(undefined), []);
   assert.deepEqual(sourceNames("market data"), []);
-});
-
-test("hasVelocity is false for a legacy forecast and true when any element is present", () => {
-  assert.equal(hasVelocity({}), false);
-  assert.equal(hasVelocity({ velocity_tag: undefined, evidence_posture: undefined, source_layers: [] }), false);
-  assert.equal(hasVelocity({ velocity_tag: "stable" }), true);
-  assert.equal(hasVelocity({ source_layers: ["market data"] }), true);
 });
 
 test("field-leak (UI side): rendered velocity copy never carries a code, a layer count, a taxonomy count or an accuracy %", () => {
