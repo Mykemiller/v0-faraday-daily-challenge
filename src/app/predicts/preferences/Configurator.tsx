@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   COPY, clampInt, filterNamed, formatDate, formatProbability, sameDocument, toDocument, toggle,
   type GetResponse, type Horizon, type KeyPlayer, type Named, type Options, type Prefs, type Preview,
 } from "@/lib/predicts-preferences";
+import { PWA_COPY } from "@/lib/predicts-pwa";
+import { usePredictsToken } from "../hooks/usePredictsToken";
+import PushToggle from "./PushToggle";
 
 // The configurator (FDY-119). Sections in the decided order, chips are buttons with
 // aria-pressed, sliders pair with labelled number inputs, and the live preview re-fetches
@@ -38,8 +40,11 @@ function Notice({ text }: { text: string }) {
   );
 }
 
-export default function Configurator({ apiUrl }: { apiUrl: string }) {
-  const token = useSearchParams()?.get("t") ?? "";
+type PushProps = { pushUrl: string; vapidKey: string | null };
+
+export default function Configurator({ apiUrl, pushUrl, vapidKey }: { apiUrl: string } & PushProps) {
+  // FDY-127: ?t= wins; an installed app (no ?t=) uses the token this device kept from its last link visit.
+  const { token, forget } = usePredictsToken();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function Configurator({ apiUrl }: { apiUrl: string }) {
       if (!token) return { kind: "invalid" } as Phase;
       try {
         const r = await fetch(`${apiUrl}?t=${encodeURIComponent(token)}`, FETCH_INIT);
-        if (r.status === 404) return { kind: "invalid" } as Phase;
+        if (r.status === 404) { forget(); return { kind: "invalid" } as Phase; }
         if (!r.ok) return { kind: "error" } as Phase;
         const data = (await r.json()) as GetResponse;
         return data?.ok ? ({ kind: "ready", data } as Phase) : ({ kind: "error" } as Phase);
@@ -58,17 +63,17 @@ export default function Configurator({ apiUrl }: { apiUrl: string }) {
     };
     run().then((p) => { if (live) setPhase(p); });
     return () => { live = false; };
-  }, [apiUrl, token]);
+  }, [apiUrl, token, forget]);
 
   if (phase.kind === "loading") return <ConfiguratorSkeleton />;
   if (phase.kind === "invalid") return <Notice text={COPY.invalidToken} />;
   if (phase.kind === "error") return <Notice text={COPY.unavailable} />;
-  return <Editor apiUrl={apiUrl} token={token} data={phase.data} />;
+  return <Editor apiUrl={apiUrl} token={token} data={phase.data} pushUrl={pushUrl} vapidKey={vapidKey} />;
 }
 
 // ── the editor ───────────────────────────────────────────────────────────────
 
-function Editor({ apiUrl, token, data }: { apiUrl: string; token: string; data: GetResponse }) {
+function Editor({ apiUrl, token, data, pushUrl, vapidKey }: { apiUrl: string; token: string; data: GetResponse } & PushProps) {
   const opts = data.options;
   const [saved, setSaved] = useState<Prefs>(data.effective_preferences);
   const [draft, setDraft] = useState<Prefs>(data.effective_preferences);
@@ -114,6 +119,8 @@ function Editor({ apiUrl, token, data }: { apiUrl: string; token: string; data: 
   }, [doc, url]);
 
   async function save(body: Record<string, unknown>) {
+    // FDY-127 D2: no offline writes, and none queued.
+    if (typeof navigator !== "undefined" && !navigator.onLine) { setErrors([PWA_COPY.offlineWriteRefused]); return; }
     setBusy(true);
     setErrors([]);
     setStatus("");
@@ -211,6 +218,9 @@ function Editor({ apiUrl, token, data }: { apiUrl: string; token: string; data: 
                 </li>
               ))}
             </ul>
+            <div className="mt-3">
+              <PushToggle token={token} subscribeUrl={pushUrl} vapidKey={vapidKey} />
+            </div>
           </Section>
 
           <Section title="Quiet hours">
