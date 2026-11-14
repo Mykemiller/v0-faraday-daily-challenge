@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { velocityChip } from "@/lib/predicts";
 import { monogram, shortDate, THREAD_CARD_MAX_ROWS, type ThreadGroup } from "@/lib/predicts-v3";
 import Breadcrumb from "./Breadcrumb";
 import CompanyMark, { Monogram } from "./CompanyMark";
@@ -43,7 +44,7 @@ export default function ThreadCard({ group, gradedCount, voteUrl, votesEnabled }
                 </p>
                 {/* FDY-262: thread rows are links, so they carry the chip only; the evidence
                     line and "What we looked at" live on the full card and the forecast page. */}
-                {r.velocity_tag && (
+                {velocityChip(r.velocity_tag) && (
                   <div className="mt-1">
                     <VelocityChip tag={r.velocity_tag} />
                   </div>
