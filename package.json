@@ -16,7 +16,7 @@
     "test:predicts-preferences": "node --test src/lib/predicts-preferences.test.ts && node scripts/predicts-preferences-contrast.mjs",
     "test:signal-drop": "node --test src/lib/signal-drop.test.js",
     "test:puzzle-bank": "node --test src/lib/supabase-puzzle-bank.test.js",
-    "test:hosts": "node --test src/lib/hosts.test.ts",
+    "test:hosts": "node --test src/lib/hosts.test.ts src/lib/dc-manifest-scope.test.ts",
     "test:signal-room": "node --test src/lib/signal-room.test.ts",
     "test:take": "node --test src/lib/faradays-take.test.ts",
     "test:messaging": "node --test src/lib/messaging/rules.test.ts src/lib/messaging/dock-menu.test.ts",
