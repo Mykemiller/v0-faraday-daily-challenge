@@ -264,3 +264,88 @@ test("receipts copy: chips, empty state and the no-evidence line", () => {
     assert.ok(!ACCURACY_CLAIM_RE.test(s), s);
   }
 });
+
+// ── Velocity 3.0 on the card (FDY-262) ──────────────────────────────────────
+
+import {
+  evidenceLine,
+  hasVelocity,
+  LAYER_CODE_RE,
+  sourceNames,
+  VELOCITY_CHIPS,
+  velocityChip,
+  WHAT_WE_LOOKED_AT,
+} from "./predicts.ts";
+
+// The shape predicts-public sends after the FDY-262 allow-list change.
+const VELOCITY_ROW = {
+  velocity_tag: "accelerating",
+  evidence_posture: { observed: 3, projected: 4 },
+  source_layers: ["market data", "official filings", "vendor reference designs"],
+};
+
+test("velocity chip: the three tags map to label + arrow; anything else is no chip (D3, D4)", () => {
+  assert.deepEqual(velocityChip("accelerating"), { label: "Accelerating", glyph: "↑", tone: "accelerating" });
+  assert.deepEqual(velocityChip("Stable"), { label: "Stable", glyph: "→", tone: "stable" });
+  assert.deepEqual(velocityChip("decelerating"), { label: "Decelerating", glyph: "↓", tone: "decelerating" });
+  for (const bad of [undefined, null, "", "fast", "toString", "__proto__", 3]) assert.equal(velocityChip(bad), null);
+});
+
+test("velocity chip: every chip has a text label and a glyph, never colour alone", () => {
+  for (const c of Object.values(VELOCITY_CHIPS)) {
+    assert.ok(c.label.length > 0);
+    assert.ok(c.glyph.length > 0);
+  }
+});
+
+test("evidence line reads 'Evidence: n observed · n projected'", () => {
+  assert.equal(evidenceLine({ observed: 3, projected: 4 }), "Evidence: 3 observed · 4 projected");
+  assert.equal(evidenceLine({ observed: 0, projected: 2 }), "Evidence: 0 observed · 2 projected");
+});
+
+test("evidence line is absent for a legacy, malformed or all-zero posture (D4, no fabrication)", () => {
+  for (const bad of [undefined, null, {}, [], "3/4", { observed: 0, projected: 0 }, { observed: 2 }, { observed: 1.5, projected: 1 }, { observed: -1, projected: 2 }, { observed: "3", projected: "4" }]) {
+    assert.equal(evidenceLine(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("source names: strings only, de-duplicated, order kept; codes, digits and 'layer' are dropped (FD-2)", () => {
+  assert.deepEqual(sourceNames(["market data", " market data ", "official filings", "L5", "l10", "3 sources", "source layer", 7, null, ""]), [
+    "market data",
+    "official filings",
+  ]);
+  assert.deepEqual(sourceNames(undefined), []);
+  assert.deepEqual(sourceNames("market data"), []);
+});
+
+test("hasVelocity is false for a legacy forecast and true when any element is present", () => {
+  assert.equal(hasVelocity({}), false);
+  assert.equal(hasVelocity({ velocity_tag: undefined, evidence_posture: undefined, source_layers: [] }), false);
+  assert.equal(hasVelocity({ velocity_tag: "stable" }), true);
+  assert.equal(hasVelocity({ source_layers: ["market data"] }), true);
+});
+
+test("field-leak (UI side): rendered velocity copy never carries a code, a layer count, a taxonomy count or an accuracy %", () => {
+  const rendered = [
+    velocityChip(VELOCITY_ROW.velocity_tag)!.label,
+    evidenceLine(VELOCITY_ROW.evidence_posture)!,
+    WHAT_WE_LOOKED_AT,
+    ...sourceNames(VELOCITY_ROW.source_layers),
+  ].join(" | ");
+  assert.doesNotMatch(rendered, LAYER_CODE_RE);
+  assert.doesNotMatch(rendered, /\b\d+\s+(?:source\s+)?(?:layers?|sources)\b/i);
+  assert.doesNotMatch(rendered, TAXONOMY_COUNT_RE);
+  assert.doesNotMatch(rendered, ACCURACY_CLAIM_RE);
+  assert.doesNotMatch(rendered, /%/);
+});
+
+test("field-leak (UI side): a code smuggled into source_layers never reaches the card", () => {
+  const names = sourceNames(["L1", "L10", "market data"]);
+  assert.deepEqual(names, ["market data"]);
+});
+
+test("the three copy elements are exactly the reviewed strings (Growth / T&C / Editor)", () => {
+  assert.deepEqual(Object.values(VELOCITY_CHIPS).map((c) => c.label), ["Accelerating", "Stable", "Decelerating"]);
+  assert.equal(WHAT_WE_LOOKED_AT, "What we looked at");
+  assert.match(evidenceLine({ observed: 1, projected: 1 })!, /^Evidence: 1 observed · 1 projected$/);
+});

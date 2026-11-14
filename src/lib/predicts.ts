@@ -105,6 +105,12 @@ export type PredictsRow = {
   outcome?: ReceiptOutcome;
   thin_evidence?: boolean;
   evidence_url?: string | null;
+  /** FDY-262 (Velocity 3.0). Each is present only when the forecast carries it;
+   *  predicts-public omits the key otherwise (legacy forecasts). */
+  velocity_tag?: string;
+  evidence_posture?: { observed?: unknown; projected?: unknown };
+  /** Plain source NAMES, already translated server-side. Never codes. */
+  source_layers?: unknown;
 };
 
 export type PredictsRecord = {
@@ -289,3 +295,72 @@ export function verdictBadge(status: string): { label: string; tone: "right" | "
 }
 
 export const BOLD_CALL_TOOLTIP = "A contrarian call, scored separately — labeled, not inflated.";
+
+// ── Velocity 3.0 on the card (FDY-262) ──────────────────────────────────────
+//
+// Three copy elements, and only three (pending Growth, Trust & Compliance and
+// Editor review): the velocity chip label, the evidence line, and the "What we
+// looked at" heading over a list of source names. Rules:
+//   - D4: a forecast without the field renders NOTHING for it. Never a default
+//     tag, never "Evidence: 0 observed", never an empty list.
+//   - FD-2: never an L-code and never a count of source layers. The list is
+//     shown, its length is not printed anywhere.
+//   - D3: the chip is text plus an arrow glyph, never colour alone; brand
+//     palette only (Gold = Accelerating, Sage = Stable, Near-black = Decelerating).
+
+export type VelocityTone = "accelerating" | "stable" | "decelerating";
+
+export const VELOCITY_CHIPS: Readonly<Record<VelocityTone, { label: string; glyph: string }>> = {
+  accelerating: { label: "Accelerating", glyph: "↑" },
+  stable: { label: "Stable", glyph: "→" },
+  decelerating: { label: "Decelerating", glyph: "↓" },
+};
+
+/** The chip for a forecast, or null (unknown or absent tag → no chip). */
+export function velocityChip(tag: unknown): { label: string; glyph: string; tone: VelocityTone } | null {
+  if (typeof tag !== "string") return null;
+  const t = tag.trim().toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(VELOCITY_CHIPS, t)) return null;
+  const tone = t as VelocityTone;
+  return { ...VELOCITY_CHIPS[tone], tone };
+}
+
+function evidenceCount(v: unknown): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+}
+
+/** "Evidence: 3 observed · 4 projected", or null when the posture is absent,
+ *  malformed, or both counts are zero (no fabricated line). */
+export function evidenceLine(posture: unknown): string | null {
+  if (!posture || typeof posture !== "object" || Array.isArray(posture)) return null;
+  const p = posture as { observed?: unknown; projected?: unknown };
+  const observed = evidenceCount(p.observed);
+  const projected = evidenceCount(p.projected);
+  if (observed === null || projected === null || observed + projected === 0) return null;
+  return `Evidence: ${observed} observed · ${projected} projected`;
+}
+
+export const WHAT_WE_LOOKED_AT = "What we looked at";
+
+/** Internal source-layer codes (L1–L10). The API never sends one; this is the
+ *  card's second line of defence. */
+export const LAYER_CODE_RE = /\bL\d+\b/i;
+
+/** The source names to list: strings only, trimmed, de-duplicated, in the
+ *  API's order. Anything code-like or numeric is dropped, never shown. */
+export function sourceNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== "string") continue;
+    const name = v.trim();
+    if (!name || name.length > 60 || LAYER_CODE_RE.test(name) || /\d/.test(name) || /layer/i.test(name)) continue;
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/** True when the card has any Velocity 3.0 element to show. */
+export function hasVelocity(row: Pick<PredictsRow, "velocity_tag" | "evidence_posture" | "source_layers">): boolean {
+  return velocityChip(row.velocity_tag) !== null || evidenceLine(row.evidence_posture) !== null || sourceNames(row.source_layers).length > 0;
+}
