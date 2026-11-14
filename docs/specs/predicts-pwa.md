@@ -1,8 +1,9 @@
 # Faraday Predicts — installable mobile app + push for Flashes
 
 **CC-PREDICTS-PWA-1.0 · FDY-127 (26-47-v01) · Phase 1 spec · 2026-11-06**
-Status: **spec only — nothing built, nothing deployed, no database row written.**
-Phase 2 build is a HARD STOP until Myke replies "go" on FDY-127.
+Status (Phase 1): spec only. **Phase 2 built 2026-11-13 on Myke's "go" — shipped dark, nothing
+deployed, no migration applied, no secret created, nothing sent. See §13 for what was built and
+where it deviates from this spec.**
 
 ---
 
@@ -287,6 +288,17 @@ These are the only new subscriber-facing strings. All are proposals.
 | Offline banner | "You're offline — showing the calls as of {date}." |
 | Offline write refused | "You're offline. Preference changes need a connection." |
 | Install prompt (Android/desktop) | "Install Faraday Predicts" |
+| *Phase 2 additions (proposals, same review):* | |
+| Offline banner, when the cache time is unknown | "You're offline — showing the calls as of your last visit." |
+| Browser without push support (not iOS) | "This browser can't show Flash alerts." |
+| Followed forecasts — title / intro | "Followed forecasts" / "Open calls that match your preferences." |
+| Followed forecasts — no link on this device | "Open the "Manage your preferences" link in your latest Faraday Predicts email on this device to see the calls you follow." |
+| Followed forecasts — nothing matches | "No open call matches your preferences right now." |
+| Push notification title | "Faraday Predicts" |
+| Push notification body | the Flash headline (FDY-117 decision 5), plus " (resolves by Nov 7, 2026)" when the Flash carries a new forecast; ≤120 characters; URLs and [S1] markers stripped |
+
+Reused verbatim from FDY-119 (no new copy): "Preferences are unavailable right now - try again shortly." for a failed
+subscribe/unsubscribe or preferences read.
 
 ## 9. iOS
 
@@ -433,3 +445,67 @@ grep -rn "serviceWorker" src | head                      -- no output
 npm test                                                 -- 52 pass / 0 fail
 npm run test:predicts                                    -- 25 pass / 0 fail
 ```
+
+---
+
+## 13. Phase 2 — as built (2026-11-13, 26-47-v01)
+
+Built on Myke's written "go" after FDY-117 and FDY-119 closed. **Everything ships dark**: the push toggle
+renders nothing until `NEXT_PUBLIC_PREDICTS_VAPID_PUBLIC_KEY` exists; the engine functions are not
+deployed; the migration is not applied; no cron exists for the sender.
+
+**Live checks (SELECT-only, `ycadmmngkdhvpcsrcuaq`, 2026-11-13 23:02 CT):** `predicts_flash_events` and
+`predicts_flash_decisions` exist (0 events, 0 selected decisions), `predicts_flash_eligible(uuid)` exists,
+cron `predicts-flash-detect-hourly` exists, `predicts_push_subscriptions` does not; `audience_gate`
+(predicts) is armed with 2 pinned addresses; `predicts_config.release_tag` = `26-46-v01`; 16 recipients.
+Deployed Predicts functions do **not** include `predicts-preferences` (FDY-119) or
+`predicts-flash-detect` (FDY-117) — both are merged but undeployed, so the hourly cron currently hits a
+missing function, and the configurator page cannot load until predicts-preferences is deployed.
+`supabase_migrations.schema_migrations` has no `fdy117` row although its objects exist (applied outside
+`apply_migration`).
+
+| Part | Site (this repo) | Engine (Mykemiller/Faraday) |
+|---|---|---|
+| 2a shell | `predicts/manifest.webmanifest` route, `predicts/layout.tsx` metadata, `PredictsPwa.tsx` (register, offline banner, install button), `public/predicts/sw.js`, `next.config.ts` headers | — |
+| 2b plumbing | `preferences/PushToggle.tsx` in the Channels section, `hooks/usePredictsToken.ts` | migration `20261114051409_fdy127_push_subscriptions.sql`, `predicts-push-subscribe` |
+| 2c send | — | `predicts-push-send`, `_shared/web-push.ts` (RFC 8291 + 8292), `_shared/predicts-push-pure.ts` |
+| 2d following | `/predicts/following` (not in the tab bar) | — |
+
+**Deviations from this spec, and why**
+
+1. **Scope is `/predicts`, not `/predicts/`.** The site runs with `trailingSlash: false`, so `/predicts/`
+   308s to `/predicts`, and `/predicts` is not inside a `/predicts/` scope. A start_url outside its scope
+   makes browsers fall back to `/` — the whole site. The worker therefore registers with scope
+   `/predicts` and needs `Service-Worker-Allowed: /predicts` (§3 said no header was needed; that only
+   holds for a `/predicts/` scope).
+2. **Consent lives on the subscription row** (`consent_at`, per device), not with the recipient's channel
+   consents (§6). The toggle is per device ("on this device"), and `predicts_recipients.preferences` is
+   guarded by `predicts_recipients_preferences_valid` (`predicts_validate_preferences`), so a push key
+   there would need an FDY-119 validator change. Turning the toggle off revokes this device's endpoint
+   only, not every subscription.
+3. **Unsubscribe revokes push in the database**, by an AFTER UPDATE trigger on `predicts_recipients`
+   (`optin_status → 'unsubscribed'`), instead of editing the deployed `predicts-unsubscribe` function. It
+   covers every unsubscribe path, and the sender re-checks the recipient at send time anyway.
+4. **Subscribe/unsubscribe are both POST** (`action` field) so `predicts-push-subscribe` can reuse
+   predicts-preferences' `cors.ts` byte for byte (GET/POST only). The token travels in the JSON body.
+5. **Push click URL is `/predicts/<prediction_id>`** (UI 3.0 detail route) instead of
+   `/predicts?view=open#<id>`, which UI 3.0 now redirects.
+6. **Topic header** is the Flash id without hyphens (32 hex chars), because RFC 8030 caps Topic at 32
+   characters; the notification `tag` is `flash-<flash_id>`.
+7. **Two allowlists, both enforced.** The sender partitions by the FDY-291 `audience_gate`, then calls
+   `assertPushAllowed()` (FDY-112 `isAllowlisted()`, code constant) immediately before every provider
+   call. So even a lifted gate does not open push until the code constant changes.
+8. **Followed forecasts match by name.** The public API carries Sector/Theater/Thread/company names, the
+   preferences carry codes; the page maps codes to names with the FDY-119 `options` and applies the
+   FDY-113 rule. A public row has one Theater and one Thread, so overlap is single-valued.
+9. **Push is never the only Flash channel**, in fact as well as in copy: FDY-117 selects a recipient only
+   when email or SMS is on, and the sender reads FDY-117's `selected` rows.
+10. **No maskable icon** is declared: there is no maskable asset yet, and declaring the 512 icon as
+    maskable would crop the roundel.
+
+**Lighthouse / installability** cannot run here (no deploy from this session, and the container cannot
+reach Vercel previews). Myke's check on the preview: open `<preview>/predicts` in desktop Chrome →
+DevTools → Application → Manifest (no installability errors; scope `/predicts`) and Service Workers
+(`/predicts/sw.js` activated, scope `/predicts`); then Lighthouse (mobile) for Performance/Best
+Practices (Lighthouse 12 dropped the PWA category); then DevTools → Network → Offline and reload
+`/predicts` (cached page + offline banner).

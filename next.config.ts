@@ -26,6 +26,21 @@ const nextConfig: NextConfig = {
       { source: "/league-office/subscribers/:id", destination: "https://faraday-stuff.com/#admin", permanent: false },
     ];
   },
+  // FDY-127 (CC-PREDICTS-PWA-1.0 §3): the Predicts service worker is always revalidated, so a new
+  // worker is picked up on the next visit, and may control /predicts itself (the file sits in
+  // /predicts/, whose default maximum scope is "/predicts/" — which does NOT include "/predicts").
+  async headers() {
+    return [
+      {
+        source: "/predicts/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "text/javascript; charset=utf-8" },
+          { key: "Service-Worker-Allowed", value: "/predicts" },
+        ],
+      },
+    ];
+  },
   async rewrites() { return { beforeFiles: [ { source: "/", has: [{ type: "host", value: "(www\\.)?faradaydailychallenge\\.com" }], destination: "/challenge" } ], afterFiles: [ { source: "/daily-challenge", destination: "/challenge" }, { source: "/daily-challenge/:path*", destination: "/challenge/:path*" } ] }; },
 };
 
