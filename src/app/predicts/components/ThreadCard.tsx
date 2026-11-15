@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { velocityChip } from "@/lib/predicts";
 import { monogram, shortDate, THREAD_CARD_MAX_ROWS, type ThreadGroup } from "@/lib/predicts-v3";
 import Breadcrumb from "./Breadcrumb";
 import CompanyMark, { Monogram } from "./CompanyMark";
 import ForecastCard from "./ForecastCard";
+import { VelocityChip } from "./Velocity";
 
 // The board unit (Founder decision 6): one card per Thread, one row per call.
 type Props = { group: ThreadGroup; gradedCount?: number; voteUrl: string; votesEnabled: boolean };
@@ -40,6 +42,13 @@ export default function ThreadCard({ group, gradedCount, voteUrl, votesEnabled }
                     <span className="whitespace-nowrap font-mono text-[12px] text-near-black/60"> · by {shortDate(r.target_resolution_date)}</span>
                   )}
                 </p>
+                {/* FDY-262: thread rows are links, so they carry the chip only; the evidence
+                    line and "What we looked at" live on the full card and the forecast page. */}
+                {velocityChip(r.velocity_tag) && (
+                  <div className="mt-1">
+                    <VelocityChip tag={r.velocity_tag} />
+                  </div>
+                )}
                 <div className="mt-1.5 h-[3px] w-full rounded bg-cream-line" aria-hidden>
                   <div className={`h-[3px] rounded ${r.is_bold ? "bg-gold" : "bg-forest"}`} style={{ width: `${r.probability_score}%` }} />
                 </div>

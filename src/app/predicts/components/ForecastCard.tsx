@@ -4,6 +4,7 @@ import { BOLD_CALL_TOOLTIP } from "@/lib/predicts";
 import Breadcrumb from "./Breadcrumb";
 import CountUp from "./CountUp";
 import Sparkline from "./Sparkline";
+import { VelocityChip, VelocityEvidence } from "./Velocity";
 import VotePills from "./VotePills";
 import WatchStar from "./WatchStar";
 
@@ -16,8 +17,9 @@ export default function ForecastCard({ row, voteUrl, votesEnabled, badge }: Prop
     <article data-row className="rounded-xl border border-cream-border bg-warm-white p-4 transition-shadow duration-200 hover:shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <Breadcrumb taxonomy={row.taxonomy} sector={row.sector_name} />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {badge}
+          <VelocityChip tag={row.velocity_tag} />
           {row.is_bold && (
             <span title={BOLD_CALL_TOOLTIP} className="rounded-full border border-gold px-2 py-0.5 font-mono text-[11px] text-amber-dark">
               Bold Call
@@ -41,6 +43,7 @@ export default function ForecastCard({ row, voteUrl, votesEnabled, badge }: Prop
           <WatchStar id={row.prediction_id} />
         </span>
       </div>
+      <VelocityEvidence posture={row.evidence_posture} layers={row.source_layers} className="mt-2" />
       <div className="mt-2">
         <VotePills id={row.prediction_id} votes={row.votes} voteUrl={voteUrl} enabled={votesEnabled && row.status === "active"} />
       </div>

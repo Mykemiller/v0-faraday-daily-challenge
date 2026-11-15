@@ -20,6 +20,7 @@ import CompanyMark from "../components/CompanyMark";
 import CountUp from "../components/CountUp";
 import HistoryChart from "../components/HistoryChart";
 import ShareButton from "../components/ShareButton";
+import { VelocityChip, VelocityEvidence } from "../components/Velocity";
 import VotePills from "../components/VotePills";
 import WatchStar from "../components/WatchStar";
 
@@ -106,6 +107,7 @@ export default async function ForecastPage({ params }: { params: P }) {
         <span>{strip.label}</span>
         <span className="text-near-black/70">Called {shortDate(r.date_created)}</span>
         {r.is_bold && <span className="rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[12px] font-semibold text-near-black">Bold call</span>}
+        <VelocityChip tag={r.velocity_tag} />
         <span className="sr-only">{r.probability_score}% · {shortDate(r.target_resolution_date)}</span>
       </div>
 
@@ -120,6 +122,7 @@ export default async function ForecastPage({ params }: { params: P }) {
           {band && <span className="font-sans text-[16px] text-near-black/80">{band}</span>}
           {since && !graded && <span className="font-mono text-[14px] text-forest">{since}</span>}
         </p>
+        <VelocityEvidence posture={r.evidence_posture} layers={r.source_layers} className="mt-3" />
         {caps?.history !== false && (
           <div className="mt-4">
             <HistoryChart history={history} called={history[0]?.probability ?? r.probability_score} resolutionDate={graded ? r.resolution_date : null} />
