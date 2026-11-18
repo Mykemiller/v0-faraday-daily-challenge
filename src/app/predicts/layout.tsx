@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { connection } from "next/server";
 import "./predicts.css";
+import GatePage from "@/lib/faraday-gate/ui/GatePage.tsx";
+import { PREDICTS_APP, PREDICTS_APP_NAME, PREDICTS_GATE_COPY, guardPredicts } from "@/lib/faradayGate";
 import { predictsGet, type ApiEnvelope } from "@/lib/predicts-api";
 import { PREDICTS_MANIFEST_PATH, PWA_COPY } from "@/lib/predicts-pwa";
 import PredictsShell from "./PredictsShell";
@@ -16,7 +20,18 @@ export const metadata: Metadata = {
 // Movers tab come from one cached view=movers read (300s). That view loads the
 // probability history, so its capabilities.movers is the authoritative flag
 // (other views report history=false simply because they did not load it).
+//
+// FDY-414 (ADM-1.7): the Faraday beta access gate runs first. In mode "open" (the seeded default) it
+// passes straight through and the shell below renders exactly as before. Before the estate_entitled
+// migration lands the probe errors, and that also passes through unless FARADAY_GATE_ENFORCE=1
+// (src/lib/faradayGate.ts). connection() keeps the gate a per-request decision: without it a build
+// with no Supabase env would prerender the pass-through and freeze it.
 export default async function PredictsLayout({ children }: { children: React.ReactNode }) {
+  await connection();
+  const gate = await guardPredicts({ cookieHeader: (await headers()).get("cookie") });
+  if (!gate.pass) {
+    return <GatePage app={PREDICTS_APP} appName={PREDICTS_APP_NAME} copy={PREDICTS_GATE_COPY} view={gate.view} email={gate.email} />;
+  }
   const env = await predictsGet<ApiEnvelope>("view=movers");
   return (
     <PredictsShell record={env?.record ?? null} releaseTag={env?.release_tag ?? null} showMovers={env?.capabilities?.movers ?? false}>
