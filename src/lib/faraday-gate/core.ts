@@ -72,7 +72,7 @@ export function displayCopy(copy: GateCopy | null | undefined, appName: string):
   }
   return {
     title: appName,
-    story: `${appName} is in a private beta. Request demo access, or join the waitlist and we will be in touch.`,
+    story: `${appName} is in a private beta. Every request is reviewed by hand, and we reply by email.`,
     points: [],
   };
 }
