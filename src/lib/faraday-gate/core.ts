@@ -55,7 +55,7 @@ export function gateView(e: Entitlement, signedIn: boolean): GateView {
 
 /** The only commercial sentence the gate may print (no prices, ever). */
 export const COMMERCIAL_LINE =
-  "Faraday is offered as a monthly subscription, with plans for individuals and enterprise plans by inquiry.";
+  "Faraday is offered as a monthly subscription, with plans for individuals and enterprise plans by inquiry. A demonstration period is available at no charge upon inquiry.";
 
 export interface GateCopy {
   access_key: string;
