@@ -1,10 +1,11 @@
 "use client";
 // faraday-gate · ui/GatePage.tsx (FDY-414). The standard gate page. React 18 and 19.
-// Brand Bible 5.0 S3 masthead: forest full width; mark left, wordmark centre, context right; gold rules above and below.
+// Brand Bible 5.0 S3 masthead comes from the shared faraday-masthead package (FDY-444): no second copy of its markup here.
 // Tokens only. No prices, no counts, no stock photography. Copy comes from gate-copy/<access_key>.json and shows
 // neutral text until its status is "approved".
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { COMMERCIAL_LINE, displayCopy, type GateCopy, type GateView } from "../core.ts";
+import { Masthead } from "../../faraday-masthead/ui/Masthead.tsx";
 
 const T = {
   forest: "#1C3424", forestMid: "#244228", forestLight: "#325638", gold: "#C4922A", goldLight: "#DAB050",
@@ -94,22 +95,9 @@ export default function GatePage(props: GatePageProps) {
     <div style={{ minHeight: "100vh", background: T.surface, color: T.ink, fontFamily: BODY }}>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600&family=IBM+Plex+Mono&family=IBM+Plex+Serif:wght@500;600&display=swap" />
       <style>{`.fg-btn:focus-visible,.fg-in:focus-visible,.fg-link:focus-visible{outline:3px solid ${T.goldLight};outline-offset:2px}`}</style>
-      <header>
-        <div style={{ height: 3, background: T.gold }} />
-        <div style={{ background: T.forest, color: T.surface, display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12, padding: "14px 16px" }}>
-          <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 6, background: T.forestLight, border: `1px solid ${T.gold}`, display: "grid", placeItems: "center", fontFamily: SERIF, fontWeight: 600, color: T.goldLight }}>F</span>
-          <span style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, letterSpacing: 0.5, textAlign: "center" }}>Faraday</span>
-          <span style={{ justifySelf: "end", textAlign: "right", fontSize: 13, lineHeight: 1.3 }}>
-            <span style={{ display: "block", color: T.sage }}>{appName}</span>
-            {email
-              ? <span style={{ fontFamily: MONO, fontSize: 12, wordBreak: "break-all" }}>{email}</span>
-              : <button type="button" className="fg-link" onClick={() => { setPanel("signin"); setStatus(null); }} style={{ background: "none", border: 0, color: T.goldLight, cursor: "pointer", fontFamily: BODY, fontSize: 13, padding: 0, minHeight: 24, textDecoration: "underline" }}>Sign in</button>}
-          </span>
-        </div>
-        <div style={{ height: 3, background: T.gold }} />
-      </header>
+      <Masthead appName={appName} email={email} onSignIn={() => { setPanel("signin"); setStatus(null); }} skipTo="fg-main" />
 
-      <main style={{ maxWidth: 640, margin: "0 auto", padding: "32px 16px 48px" }}>
+      <main id="fg-main" style={{ maxWidth: 640, margin: "0 auto", padding: "32px 16px 48px" }}>
         <h1 style={{ fontFamily: SERIF, fontSize: 30, lineHeight: 1.2, margin: "0 0 12px", color: T.forest }}>{heading}</h1>
         {view !== "unavailable" && <p style={{ fontSize: 17, lineHeight: 1.55, margin: "0 0 16px" }}>{text.story}</p>}
         {view === "unavailable" && <p style={{ fontSize: 17, lineHeight: 1.55 }}>We could not confirm access just now. Refresh the page in a moment.</p>}

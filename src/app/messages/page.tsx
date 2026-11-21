@@ -49,7 +49,7 @@ export default function MessagesPage() {
         onUnreadChange={setUnread}
       />
 
-      <main className="pb-16 pt-6">
+      <main id="main" className="pb-16 pt-6">
         <div className="mx-auto max-w-5xl px-5">
           <h1 className="font-serif text-3xl font-bold text-forest">Messages</h1>
           <p className="mt-1 mb-5 text-sm text-near-black/60">

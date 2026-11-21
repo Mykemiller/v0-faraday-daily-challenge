@@ -53,7 +53,7 @@ export default function AboutTodayPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav authed={authed} handle={handle} />
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <div className="font-mono text-[10px] uppercase tracking-widest text-near-black/40">
           About Today&rsquo;s Challenge{data?.puzzle_date ? ` · ${data.puzzle_date}` : ""}
         </div>

@@ -3,6 +3,8 @@
 // that one bundles with esbuild, which this repo does not install, so the .tsx is compiled with the
 // TypeScript compiler this repo already ships (devDependency) into node_modules/.cache, where `react`
 // resolves. Run: npm run test:faraday-gate
+// FDY-445: since faraday-gate 1.1.0 GatePage imports the shared masthead from the sibling vendored
+// package (../../faraday-masthead/ui/Masthead.tsx), so both packages are compiled side by side.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -13,14 +15,19 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
 const VENDOR = path.join(HERE, "faraday-gate");
+const MASTHEAD = path.join(HERE, "faraday-masthead");
 const require = createRequire(path.join(ROOT, "package.json"));
 const ts = require("typescript");
 const React = require("react");
 const server = require("react-dom/server");
 
 function compile(outDir) {
-  for (const rel of ["core.ts", "ui/GatePage.tsx"]) {
-    const src = fs.readFileSync(path.join(VENDOR, rel), "utf8");
+  const files = [
+    [VENDOR, "faraday-gate", "core.ts"], [VENDOR, "faraday-gate", "ui/GatePage.tsx"],
+    [MASTHEAD, "faraday-masthead", "core.ts"], [MASTHEAD, "faraday-masthead", "ui/Masthead.tsx"],
+  ];
+  for (const [srcDir, pkg, rel] of files) {
+    const src = fs.readFileSync(path.join(srcDir, rel), "utf8");
     const out = ts.transpileModule(src, {
       fileName: rel,
       compilerOptions: {
@@ -28,12 +35,12 @@ function compile(outDir) {
         esModuleInterop: true, rewriteRelativeImportExtensions: true,
       },
     }).outputText;
-    const dest = path.join(outDir, rel.replace(/\.tsx?$/, ".js"));
+    const dest = path.join(outDir, pkg, rel.replace(/\.tsx?$/, ".js"));
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, out);
   }
   fs.writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n');
-  return createRequire(path.join(outDir, "ui", "GatePage.js"))("./GatePage.js").default;
+  return createRequire(path.join(outDir, "faraday-gate", "ui", "GatePage.js"))("./GatePage.js").default;
 }
 
 test("GatePage renders under React " + React.version + " with no price or $ in any view", () => {
@@ -53,6 +60,10 @@ test("GatePage renders under React " + React.version + " with no price or $ in a
         if (view !== "unavailable" && view !== "waitlist") assert.ok(visible.includes("Join the waitlist"));
         if (email) assert.ok(visible.includes(email)); else assert.ok(visible.includes("Sign in"));
         assert.ok(visible.includes("v3.0") && visible.includes("Terms") && visible.includes("Privacy"));
+        // FDY-445: the gate's masthead is the shared one, from the vendored faraday-masthead package.
+        const fmVersion = fs.readFileSync(path.join(MASTHEAD, "VERSION"), "utf8").trim();
+        assert.ok(html.includes(`<header class="fm" role="banner" data-fm="${fmVersion}">`), "shared masthead renders");
+        assert.ok(html.includes(`<span class="fm-app">Faraday Predicts</span>`), "app name in the masthead context slot");
       }
     }
     // The real Predicts copy file is still draft: its story must not render; the neutral text must.

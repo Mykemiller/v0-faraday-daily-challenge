@@ -24,6 +24,10 @@ import OTPGate from "@/components/OTPGate";
 import BroadcastBanner from "@/components/BroadcastBanner";
 import PlayoffBanner from "@/components/PlayoffBanner";
 import MessageDock from "@/components/messaging/MessageDock";
+// FDY-445 (CC-BRAND-MASTHEAD-1.0): the shared Faraday masthead + AppBar (vendored — never edit
+// src/lib/faraday-masthead) and the one copy of the `.dc-*` nav CSS both mastheads share.
+import { Masthead, AppBar } from "@/lib/faraday-masthead/ui/Masthead.tsx";
+import { DC_NAV_CSS } from "@/components/dcAppBarStyles";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
 // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — the season's scoring. The SAME
@@ -323,18 +327,6 @@ function HintControl({ gameType, hints }) {
 }
 
 // Uniform nav pill used in the header for all four nav items + sign-in button.
-// Track viewport width so labels can be hidden on mobile (≤430px) without a
-// layout shift. SSR-safe: starts desktop-first (1024) and syncs on mount.
-function useWindowWidth() {
-  const [w, setW] = useState(1024);
-  useEffect(() => {
-    const onResize = () => setW(window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return w;
-}
 
 // Icon-first nav button (FAR-207). Renders a processed emblem image (40×40 in
 // the header, 80×80 expanded) on the #0D1810 canvas plus an optional chrome
@@ -2706,7 +2698,7 @@ function HeaderIconNav({ menus }) {
   }
 
   return (
-    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow">
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (
@@ -2761,7 +2753,6 @@ function HeaderIconNav({ menus }) {
 // in the same render.
 function DailyChallengeInner() {
   const registry = useGameRegistry();
-  const navIconsLabelHidden = useWindowWidth() <= 430;  // FAR-207: icon-only on mobile
   const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | account
   const [activeGame, setActiveGame] = useState(null);
   const [email,      setEmail]      = useState(null);     // registered email
@@ -3085,37 +3076,9 @@ function DailyChallengeInner() {
       /* Game tile hover — lift + neon glow in the game's locked color */
       .fdc-game:hover { transform:translateY(-2px); border-color:#1C3424 !important; }
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
-      /* Mobile nav collapse (FAR-207): label visibility is controlled in JS via
-         useWindowWidth (≤430px → icon only), so no CSS override is needed here. */
 
-      /* ── Header icon-dropdown nav (feature/header-icon-nav) ─────────────── */
-      .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
-      .dc-trigger { display:flex; flex-direction:column; align-items:center; gap:5px;
-        background:none; border:none; cursor:pointer; padding:4px 2px; -webkit-tap-highlight-color:transparent; }
-      .dc-trigger svg { width:19px; height:19px; stroke:rgba(238,230,218,0.62); fill:none; transition:stroke .12s; }
-      .dc-navwrap.open .dc-trigger svg, .dc-trigger:hover svg { stroke:${C.gold}; }
-      .dc-caret { width:6px; height:6px; border-right:1.4px solid rgba(238,230,218,0.35);
-        border-bottom:1.4px solid rgba(238,230,218,0.35); transform:rotate(45deg); margin-top:-1px;
-        transition:transform .15s, border-color .15s; }
-      .dc-navwrap.open .dc-caret { transform:rotate(-135deg); border-color:${C.gold}; }
-      .dc-dd { position:absolute; top:calc(100% + 12px); right:-8px; text-align:left;
-        background:${C.forest}; border:1px solid rgba(196,146,42,0.35); border-radius:8px;
-        min-width:174px; padding:6px; box-shadow:0 12px 28px rgba(20,18,16,0.4);
-        opacity:0; visibility:hidden; transform:translateY(-4px);
-        transition:opacity .15s ease, transform .15s ease; z-index:60; }
-      .dc-navwrap.open .dc-dd { opacity:1; visibility:visible; transform:translateY(0); }
-      .dc-dd-label { font-family:'IBM Plex Mono',monospace; font-size:8.5px; letter-spacing:0.12em;
-        color:rgba(238,230,218,0.4); text-transform:uppercase; padding:6px 10px 4px; }
-      .dc-dd-item { display:block; width:100%; text-align:left; font-family:'IBM Plex Mono',monospace;
-        font-size:11px; color:${C.cream}; text-decoration:none; padding:8px 10px; border-radius:5px;
-        background:none; border:none; cursor:pointer; }
-      .dc-dd-item:hover, .dc-dd-item:focus-visible { background:rgba(196,146,42,0.15); color:${C.gold}; }
-      .dc-dd-item.current { color:${C.gold}; }
-      .dc-dd-item.disabled, .dc-dd-item.disabled:hover { background:none; color:rgba(238,230,218,0.32); cursor:default; }
-      .dc-dd hr { border:none; border-top:1px solid rgba(238,230,218,0.1); margin:4px 6px; }
-      @media (prefers-reduced-motion: reduce){
-        .dc-dd, .dc-caret, .dc-trigger svg { transition:none; }
-      }
+      /* ── Header icon-dropdown nav: lives in the shared AppBar (FDY-445) ──── */
+      ${DC_NAV_CSS}
     `;
     document.head.appendChild(style);
   }, []);
@@ -3356,70 +3319,62 @@ function DailyChallengeInner() {
         </div>
       )}
 
-      {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
-      <div style={{ height:"2px", background:C.gold }} />
-      <header style={{ background:C.forest, position:"sticky", top:0, zIndex:50 }}>
-        <div className="fdc-header-inner">
-          {/* Wordmark flush left — no bounding box / icon (per header overhaul).
-              Clickable → lobby: the old grid menu's "Today's Puzzle" item was the
-              way home; the wordmark now carries that (mirrors SiteHeaderNav). */}
-          <button
-            type="button"
-            onClick={() => setScreen("lobby")}
-            aria-label="Daily Challenge lobby"
-            style={{ lineHeight:1.25, background:"none", border:"none", padding:0, cursor:"pointer", textAlign:"left", WebkitTapHighlightColor:"transparent" }}
-          >
-            <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
-            <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
-          </button>
-
-          {/* Right cluster: ambient status (handle + Today/Season) then the five
-              icon-dropdown triggers. Status is hidden on the narrowest phones
-              (≤430px) where the icon row fills the strip — the totals still show on
-              the Account page and in the Account dropdown's Streak & Stats. */}
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:"16px", flexWrap:"nowrap" }}>
-            {displayHandle && !navIconsLabelHidden && (
-              <div style={{ display:"flex", alignItems:"center", gap:"14px", minWidth:0 }}>
-                <button
-                  type="button"
-                  onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
-                  title="Account"
-                  style={{
-                    ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
-                    color:C.gold, letterSpacing:"0.04em",
-                    background:"transparent", border:"none", cursor:"pointer",
-                    padding:"4px 6px", whiteSpace:"nowrap",
-                    WebkitTapHighlightColor:"transparent",
-                  }}
-                >
-                  @{displayHandle}
-                </button>
-                <div style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
-                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</div>
-                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</div>
-                  </div>
-                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</div>
-                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* Chat-bubbles trigger + slide-down message dock, between the
-                @handle chip and the grid icon (CC-DC-MSG-DOCK-1.0 D1). A pure
-                sibling overlay inside the masthead — it never wraps or
-                re-parents the game tree, so opening/closing it can't unmount a
-                puzzle or trip the game-switcher discard confirm. Renders
-                nothing when signed out (D7). No initialUnread prop → the dock
-                fetches its own badge total (closes the old lobby-mirror
-                follow-up). */}
+      {/* ── MASTHEAD — the shared Faraday masthead (FDY-445, CC-BRAND-MASTHEAD-1.0) ──
+          Mark + "Faraday" wordmark link to the DC home (/challenge — the lobby).
+          The @handle + Today's/Season score chips sit in its context slot
+          (under 640px they fold into the masthead's own menu, so they are no
+          longer hidden on the narrowest phones). Sign in opens the in-app gate. */}
+      <Masthead
+        appName="Daily Challenge"
+        homeHref="/challenge"
+        email={email || null}
+        onSignIn={() => { setGateReason("default"); setScreen("gate"); }}
+        context={displayHandle ? (
+          <span className="dc-ctx">
+            <button
+              type="button"
+              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+              title="Account"
+              className="dc-status"
+              style={{
+                ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
+                color:C.gold, letterSpacing:"0.04em",
+                background:"transparent", border:"none", cursor:"pointer",
+                padding:"4px 6px", minHeight:"44px", whiteSpace:"nowrap",
+                WebkitTapHighlightColor:"transparent",
+              }}
+            >
+              @{displayHandle}
+            </button>
+            <span style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
+              <span style={{ display:"block", textAlign:"center", lineHeight:1.1 }}>
+                <span style={{ display:"block", ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</span>
+                <span style={{ display:"block", ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</span>
+              </span>
+              <span style={{ display:"block", textAlign:"center", lineHeight:1.1 }}>
+                <span style={{ display:"block", ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</span>
+                <span style={{ display:"block", ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</span>
+              </span>
+            </span>
+          </span>
+        ) : undefined}
+      />
+      {/* ── APP BAR — the message dock + the five icon dropdowns (All Games ·
+          Help & Feedback · Compete · Account · More Faraday), unchanged items
+          and targets, in the shared AppBar row. Sticky (the masthead scrolls
+          away, the nav stays). The dock is a pure sibling overlay — it never
+          wraps or re-parents the game tree, so opening/closing it can't
+          unmount a puzzle or trip the game-switcher discard confirm. Renders
+          nothing when signed out (CC-DC-MSG-DOCK-1.0 D7); with no
+          initialUnread prop it fetches its own badge total. */}
+      <div className="dc-appbar">
+        <AppBar label="Daily Challenge">
+          <div className="dc-appbar-row">
             <MessageDock token={sessionToken} />
             <HeaderIconNav menus={headerMenus} />
           </div>
-        </div>
-      </header>
-      <div style={{ height:"2px", background:C.gold }} />
+        </AppBar>
+      </div>
 
       {/* League Office announcement — the single most recent live broadcast this
           player hasn't dismissed. Renders nothing when signed out. In-flow (not
@@ -3435,7 +3390,7 @@ function DailyChallengeInner() {
       </div>
 
       {/* ── BODY ── */}
-      <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
+      <main id="main" style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
 
         {/* LOBBY */}
         {screen === "lobby" && (

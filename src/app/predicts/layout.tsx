@@ -26,6 +26,10 @@ export const metadata: Metadata = {
 // migration lands the probe errors, and that also passes through unless FARADAY_GATE_ENFORCE=1
 // (src/lib/faradayGate.ts). connection() keeps the gate a per-request decision: without it a build
 // with no Supabase env would prerender the pass-through and freeze it.
+//
+// FDY-445 (CC-BRAND-MASTHEAD-1.0): both branches wear the shared Faraday masthead. GatePage (faraday-gate
+// 1.1.0) renders it from the vendored src/lib/faraday-masthead; PredictsShell renders it with the email the
+// gate verified (null in mode "open", which does no identity lookup, so the masthead shows "Sign in").
 export default async function PredictsLayout({ children }: { children: React.ReactNode }) {
   await connection();
   const gate = await guardPredicts({ cookieHeader: (await headers()).get("cookie") });
@@ -34,7 +38,7 @@ export default async function PredictsLayout({ children }: { children: React.Rea
   }
   const env = await predictsGet<ApiEnvelope>("view=movers");
   return (
-    <PredictsShell record={env?.record ?? null} releaseTag={env?.release_tag ?? null} showMovers={env?.capabilities?.movers ?? false}>
+    <PredictsShell record={env?.record ?? null} releaseTag={env?.release_tag ?? null} showMovers={env?.capabilities?.movers ?? false} email={gate.email}>
       <PredictsPwa />
       {children}
     </PredictsShell>

@@ -1,0 +1,16 @@
+{
+  "package": "faraday-masthead",
+  "version": "1.0.0",
+  "files": {
+    "VERSION": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+    "README.md": "2483daeedc1a6ec02052359f20f89958a5006cf868246e3288b2d85fa6eae3f2",
+    "core.ts": "f794800b963aab4301b073d67bbc3a9af312fa6db3becb5f24974b69ef3e181c",
+    "ui/Masthead.tsx": "39752db5e9b58b144b91149d95111bceda0764f351c9355a4619e32f26cbe71a",
+    "static/masthead.css": "c56e1f5abd9f76cb65fc21f8537fc87fa179ed4a16d80c9758c664c99762bd89",
+    "static/masthead.html": "fad74f8e46d9494652c45323bf146e62c6ed334f18450bd304db9de774576459",
+    "check-drift.mjs": "50b754dccf72f847a48287472272c1786469e700694b341cd8c8070e47977a20",
+    "scripts/build.mjs": "1c5e885aed3f7f687dc7314519dee31c46e95d42c5a8965d77f89cf014d530b7",
+    "test/masthead.test.ts": "4a0c9fd5c111b5d8d4a68da3cef1cfa496023be2c5256a2d3671e217ad7a7e06",
+    "test/render.test.mjs": "4e4f04f56c2ea1f1733049691ab4c7b7aaa5acc218c36f85c084dba143c24450"
+  }
+}

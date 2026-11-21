@@ -64,9 +64,11 @@ async function loadAccents() {
 }
 
 const GAME_ACCENT = await loadAccents();
+// FDY-445: without the key only the ACCENT checks skip (they must never run against a stale copy).
+// The static pairings below are this repo's own constants, so they always run — including the shared
+// masthead + AppBar pairings added with the masthead adoption.
 if (!GAME_ACCENT) {
-  console.log("contrast-check: SKIPPED — could not read game_catalog accents (set SUPABASE_SERVICE_ROLE_KEY).");
-  process.exit(0);
+  console.log("contrast-check: game accent checks SKIPPED — could not read game_catalog accents (set SUPABASE_SERVICE_ROLE_KEY).\n");
 }
 
 // [foreground, background, label, minRatio]
@@ -97,13 +99,34 @@ const CASES = [
   ["#141210", CREAM, "home near-black on cream", 4.5],
   ["#94560A", WHITE, "home amber-dark (Open →)", 4.5],
   [over("#141210", 0.65, WHITE), WHITE, "home near-black/0.65", 4.5],
+
+  // FDY-445 (CC-BRAND-MASTHEAD-1.0) — the shared Faraday masthead (forest) and the DC / Predicts /
+  // Intelligent Alert AppBar (surface-warm #EEE6DA). The masthead's own pairings are asserted by the
+  // vendored package's tests; these are the colours THIS app puts in the context slot and the AppBar.
+  // Constants mirror src/components/dcAppBarStyles.ts.
+  ["#C4922A", FOREST, "masthead context: @handle chip (gold)", 4.5],
+  ["#DAB050", FOREST, "masthead context: @handle hover (gold-light)", 4.5],
+  ["#C4922A", FOREST, "masthead context: today's score (gold, 15px bold)", 3.0],
+  ["#F8F5F0", FOREST, "masthead context: season score (warm white)", 4.5],
+  ["#8CA68A", FOREST, "masthead context: score labels (sage)", 4.5],
+  ["#141210", CREAM, "AppBar link (ink) on surface-warm", 4.5],
+  ["#1C3424", CREAM, "AppBar current link (forest) on surface-warm", 4.5],
+  ["#1C3424", CREAM, "AppBar icon trigger glyph (forest, non-text)", 3.0],
+  ["#1C3424", over("#1C3424", 0.08, CREAM), "AppBar icon trigger glyph on hover/open tint", 3.0],
+  ["#55524D", CREAM, "AppBar trigger caret (ink/0.7, non-text)", 3.0],
+  ["#94560A", CREAM, "AppBar unread dot (deep amber, non-text)", 3.0],
+  ["#F8F5F0", FOREST, "AppBar dropdown item (warm white on forest)", 4.5],
+  ["#8CA68A", FOREST, "AppBar dropdown label/heading (sage on forest)", 4.5],
+  ["#DAB050", FOREST, "AppBar dropdown current item (gold-light)", 4.5],
+  ["#DAB050", over("#C4922A", 0.15, FOREST), "AppBar dropdown item hover/focus (gold-light on gold tint)", 4.5],
+  ["#8CA68A", FOREST, "message dock menu hint (sage on forest)", 4.5],
 ];
 
 // FAR-394 per-game jewel pictograms sit on the forest game-tile (darkest stop
 // #1C3424). They are decorative graphics (aria-hidden), so the WCAG bar is the
 // 3:1 non-text UI-component threshold, not 4.5:1. Validate every accent clears
 // it so no glyph gets lost once raw neon's luminance is gone.
-for (const [game, hex] of Object.entries(GAME_ACCENT)) {
+for (const [game, hex] of Object.entries(GAME_ACCENT ?? {})) {
   CASES.push([hex, FOREST, `game accent ${game} on forest tile`, 3.0]);
 }
 
@@ -119,7 +142,7 @@ console.log(`\n${CASES.length - failed}/${CASES.length} passed`);
 // Distinguishability guard (FAR-394): each per-game jewel must be visually
 // separable from every other jewel AND from gold/sage. Uses a weighted sRGB
 // distance (a cheap ΔE proxy); ~40+ reads as clearly distinct to the eye.
-const REFS = { ...GAME_ACCENT, Gold: "#C4922A", Sage: "#8CA68A" };
+const REFS = GAME_ACCENT ? { ...GAME_ACCENT, Gold: "#C4922A", Sage: "#8CA68A" } : {};
 function dist(a, b) {
   const px = (h) => [0, 2, 4].map((i) => parseInt(h.replace("#", "").slice(i, i + 2), 16));
   const [r1, g1, b1] = px(a), [r2, g2, b2] = px(b);
@@ -141,7 +164,7 @@ for (let i = 0; i < keys.length; i++) {
     }
   }
 }
-console.log(`\nClosest jewel/accent pair: ${minPair.a} ↔ ${minPair.b} (Δ${minPair.d.toFixed(0)})`);
+if (GAME_ACCENT) console.log(`\nClosest jewel/accent pair: ${minPair.a} ↔ ${minPair.b} (Δ${minPair.d.toFixed(0)})`);
 
 if (failed) {
   console.error(`\n${failed} contrast failure(s) — readable text must clear WCAG AA.`);
@@ -151,4 +174,6 @@ if (tooClose) {
   console.error(`\n${tooClose} jewel/accent pair(s) below Δ${DISTINCT_MIN} — may be hard to tell apart.`);
   process.exit(1);
 }
-console.log("All readable pairings clear WCAG AA; all per-game jewels are distinguishable.");
+console.log(GAME_ACCENT
+  ? "All readable pairings clear WCAG AA; all per-game jewels are distinguishable."
+  : "All static readable pairings clear WCAG AA (game accent checks skipped — no service key).");
