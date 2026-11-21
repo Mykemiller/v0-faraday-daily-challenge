@@ -39,7 +39,7 @@ export default function GlossaryPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-20 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-20 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Glossary</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">
@@ -47,7 +47,8 @@ export default function GlossaryPage() {
           Lexicon — the same term bank that powers the games.
         </p>
 
-        <div className="sticky top-[68px] z-10 mt-6 bg-warm-white pb-2 pt-1">
+        {/* Sticks under the 49px sticky Daily Challenge AppBar (FDY-445; was 68px under the old forest header). */}
+        <div className="sticky top-[49px] z-10 mt-6 bg-warm-white pb-2 pt-1">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

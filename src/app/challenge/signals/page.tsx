@@ -134,7 +134,7 @@ export default function SignalsPage() {
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav authed={authed} handle={handle} />
 
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         {/* Top return affordance — always visible, above the fold. */}
         <div className="mb-6">
           <BackToChallenge placement="top" />

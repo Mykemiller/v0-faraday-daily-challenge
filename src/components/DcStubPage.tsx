@@ -21,7 +21,7 @@ export default function DcStubPage({
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-10">
         <span className="inline-block rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-dark">
           Coming soon
         </span>

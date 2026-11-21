@@ -314,7 +314,7 @@ export default function AccountPage() {
     return (
       <div className="min-h-screen bg-warm-white">
         <SiteHeaderNav current="account" />
-        <main className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
+        <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 rounded-lg bg-warm-cream" />
           ))}
@@ -329,7 +329,7 @@ export default function AccountPage() {
     return (
       <div className="min-h-screen bg-warm-white font-sans text-near-black">
         <SiteHeaderNav current="account" authed={false} />
-        <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+        <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-10">
           <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
           <p className="mb-8 mt-1 text-sm text-near-black/60">
             Sign in to manage your handle, teams, and game status.
@@ -372,7 +372,7 @@ export default function AccountPage() {
         onSignOut={signOut}
       />
 
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Account &amp; settings</h1>
 
         {/* Global feedback */}

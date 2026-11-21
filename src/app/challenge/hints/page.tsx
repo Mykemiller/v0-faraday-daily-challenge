@@ -202,7 +202,7 @@ export default function HintsTodayPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav authed={authed} handle={handle} />
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Hints Today</h1>
         <p className="mt-1 text-sm text-near-black/60">
           Revealed one tap at a time — the same {budget}-hint daily budget as the

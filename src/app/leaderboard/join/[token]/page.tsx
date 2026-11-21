@@ -90,7 +90,7 @@ export default function JoinTeamPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav current="leaderboard" authed={!!session} handle={session ? handle : null} onSignOut={signOut} />
-      <main className="mx-auto max-w-md px-5 pb-16 pt-10">
+      <main id="main" className="mx-auto max-w-md px-5 pb-16 pt-10">
         <div className="rounded-lg border border-forest/15 bg-warm-cream/50 p-8 text-center">
           {(phase === "checking" || phase === "joining") && (
             <>

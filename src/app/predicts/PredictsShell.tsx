@@ -2,24 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import BrandMark from "@/components/BrandMark";
 import SiteFooter from "@/components/SiteFooter";
 import { DISCLAIMER } from "@/lib/predicts-v3";
 import type { PredictsRecord } from "@/lib/predicts";
-import PredictsMark from "./components/PredictsMark";
+import { Masthead, AppBar } from "@/lib/faraday-masthead/ui/Masthead.tsx";
 import RecordPill from "./components/RecordPill";
 import { useWatchlist } from "./hooks/useWatchlist";
 
-// The /predicts app shell: forest masthead (kept), sticky app bar, segmented
-// tabs ≥768px, fixed bottom tab bar on phones, and the disclaimer footer.
+// The /predicts app shell: the shared Faraday masthead (FDY-445, CC-BRAND-MASTHEAD-1.0 — vendored at
+// src/lib/faraday-masthead, never edited here), a sticky AppBar carrying the existing Predicts nav
+// (section tabs ≥768px, the record pill, "← All storefronts"), the fixed bottom tab bar on phones
+// (unchanged — on phones it is the section nav, so the AppBar does not repeat the tabs there), and
+// the disclaimer footer.
 
-type Props = { children: React.ReactNode; record: PredictsRecord | null; releaseTag: string | null; showMovers: boolean };
+type Props = {
+  children: React.ReactNode; record: PredictsRecord | null; releaseTag: string | null; showMovers: boolean;
+  /** The email the access gate verified, when it looked one up (mode "open" does no identity lookup). */
+  email?: string | null;
+};
 
 type Tab = { href: string; label: string; icon: React.ReactNode; match: (p: string) => boolean };
 
 const ICON = { width: 22, height: 22, viewBox: "0 0 22 22", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
 
-export default function PredictsShell({ children, record, releaseTag, showMovers }: Props) {
+export default function PredictsShell({ children, record, releaseTag, showMovers, email = null }: Props) {
   const pathname = usePathname() ?? "/predicts";
   const { list } = useWatchlist();
   const tabs: Tab[] = [
@@ -72,55 +78,29 @@ export default function PredictsShell({ children, record, releaseTag, showMovers
 
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
-      <div className="h-0.5 bg-gold" />
-      <div className="bg-forest">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
-          <Link href="/" className="flex min-h-[36px] items-center gap-2" aria-label="Faraday home">
-            <BrandMark size={18} framed />
-            <span className="font-serif text-[14px] font-bold tracking-wide text-warm-white">Faraday</span>
-          </Link>
-          <Link href="/" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-            ← All storefronts
-          </Link>
-        </div>
-      </div>
-      <div className="h-0.5 bg-gold" />
-
-      <header className="sticky top-0 z-20 border-b border-cream-border bg-warm-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
-          <Link href="/predicts" className="flex min-h-[44px] items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-forest">
-              <PredictsMark size={28} onDark />
-            </span>
-            <span className="font-serif text-[18px] font-bold text-near-black">Faraday Predicts</span>
-          </Link>
-          <div className="ml-auto">
-            <RecordPill record={record} />
-          </div>
-        </div>
-        <nav className="mx-auto hidden max-w-6xl px-4 md:block" aria-label="Predicts sections">
-          <div role="tablist" className="flex gap-6">
+      <Masthead appName="Faraday Predicts" homeHref="/predicts" email={email} signInHref="/account" />
+      <div className="sticky top-0 z-30">
+        <AppBar label="Faraday Predicts">
+          <span className="hidden items-center gap-1 md:flex">
             {tabs.map((t) => {
               const sel = t.match(pathname);
               return (
-                <Link
-                  key={t.href}
-                  href={t.href}
-                  role="tab"
-                  aria-selected={sel}
-                  className={`border-b-2 pb-2 pt-1 font-sans text-[15px] font-medium ${
-                    sel ? "border-gold text-near-black" : "border-transparent text-near-black/65 hover:text-near-black"
-                  }`}
-                >
+                <Link key={t.href} href={t.href} className="fm-applink" aria-current={sel ? "page" : undefined}>
                   {t.label}
                 </Link>
               );
             })}
-          </div>
-        </nav>
-      </header>
+          </span>
+          <span className="ml-auto flex items-center gap-1">
+            <RecordPill record={record} />
+            <Link href="/" className="fm-applink">
+              ← All storefronts
+            </Link>
+          </span>
+        </AppBar>
+      </div>
 
-      <div className="pb-24 md:pb-0">
+      <div id="main" className="pb-24 md:pb-0">
         {children}
         <SiteFooter />
         <div className="mx-auto max-w-5xl px-5 pb-8">
