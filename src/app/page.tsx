@@ -27,7 +27,7 @@ import { SIGNAL_ROOM_URL, loadSignalRoomHealth, signalRoomTile } from "@/lib/sig
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
 const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; tag?: string; stat?: string; primary?: boolean; external?: boolean }[] = [
-  { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
+  { name: "Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
   { name: "Faraday Predicts", href: "/predicts", blurb: "Faraday's dated, probability-weighted calls on the AI data center buildout — browse them by Theater or company, watch the ones you care about, and see every grade.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
   { name: "Jurisdiction Watch", href: JW_HOME_URL, external: true, blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },

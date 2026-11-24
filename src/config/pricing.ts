@@ -142,7 +142,7 @@ export const TIERS: Record<TierId, Tier> = {
       "Everything in Signal",
       "Higher monthly token allowance",
       "Full attribute and confidence detail on unlocked jurisdictions",
-      "Faraday Intelligent Alert",
+      "Intelligent Alert",
       "Live Agent — grounded Q&A over the Faraday corpus",
     ],
     order: 2,
