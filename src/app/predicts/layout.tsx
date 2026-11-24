@@ -30,11 +30,12 @@ export const metadata: Metadata = {
 // FDY-445 (CC-BRAND-MASTHEAD-1.0): both branches wear the shared Faraday masthead. GatePage (faraday-gate
 // 1.1.0) renders it from the vendored src/lib/faraday-masthead; PredictsShell renders it with the email the
 // gate verified (null in mode "open", which does no identity lookup, so the masthead shows "Sign in").
+// FDY-460: faraday-gate 1.2.0 takes homeHref, so the gate's mark + wordmark go to /predicts (were "/").
 export default async function PredictsLayout({ children }: { children: React.ReactNode }) {
   await connection();
   const gate = await guardPredicts({ cookieHeader: (await headers()).get("cookie") });
   if (!gate.pass) {
-    return <GatePage app={PREDICTS_APP} appName={PREDICTS_APP_NAME} copy={PREDICTS_GATE_COPY} view={gate.view} email={gate.email} />;
+    return <GatePage app={PREDICTS_APP} appName={PREDICTS_APP_NAME} homeHref="/predicts" copy={PREDICTS_GATE_COPY} view={gate.view} email={gate.email} />;
   }
   const env = await predictsGet<ApiEnvelope>("view=movers");
   return (

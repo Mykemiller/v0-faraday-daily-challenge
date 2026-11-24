@@ -317,7 +317,7 @@ export default function SiteHeaderNav({
         ) : undefined}
       />
       <div className="dc-appbar">
-        <AppBar label="Daily Challenge">
+        <AppBar label="Daily Challenge" overflow="visible">
           <div className="dc-appbar-row">
             {/* Chat-bubbles trigger + slide-down dock, first in the row, before
                 the grid icon (CC-DC-MSG-DOCK-1.0 D1). Renders nothing when

@@ -2606,10 +2606,10 @@ Faraday Academy Polo · Faraday Academy Quarter-Zip.
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
 
 > **FDY-445 (CC-BRAND-MASTHEAD-1.0) supersedes the wordmark/status layout below.** The forest bar is the
-> vendored shared masthead `src/lib/faraday-masthead/` (+ `faraday-gate` 1.1.0 beside it) — **never edit
+> vendored shared masthead `src/lib/faraday-masthead/` 1.1.0 (+ `faraday-gate` 1.2.0 beside it, FDY-460) — **never edit
 > either vendored copy**; re-vendor from the Workbench package (`npm test` runs `check-drift.mjs`). DC passes
 > `appName="Daily Challenge"`, `homeHref="/challenge"`, the @handle + score chips as `context`. The dock + five
-> dropdowns live in `<AppBar>`; their CSS is ONE copy in `src/components/dcAppBarStyles.ts` (AppBar colours are
+> dropdowns live in `<AppBar overflow="visible">` (never re-add a local `.fm-appbar-in` override); their CSS is ONE copy in `src/components/dcAppBarStyles.ts` (AppBar colours are
 > asserted in `scripts/contrast-check.mjs`). Menu items/links are still edited in `buildHeaderMenus` /
 > `buildSiteMenus`. Predicts + `/intelligent-alert` wear the same masthead. Evidence: `docs/brand/FDY-445-masthead.md`.
 

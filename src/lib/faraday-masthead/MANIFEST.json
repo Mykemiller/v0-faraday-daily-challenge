@@ -1,16 +1,16 @@
 {
   "package": "faraday-masthead",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "files": {
-    "VERSION": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
-    "README.md": "2483daeedc1a6ec02052359f20f89958a5006cf868246e3288b2d85fa6eae3f2",
-    "core.ts": "f794800b963aab4301b073d67bbc3a9af312fa6db3becb5f24974b69ef3e181c",
-    "ui/Masthead.tsx": "39752db5e9b58b144b91149d95111bceda0764f351c9355a4619e32f26cbe71a",
-    "static/masthead.css": "c56e1f5abd9f76cb65fc21f8537fc87fa179ed4a16d80c9758c664c99762bd89",
-    "static/masthead.html": "fad74f8e46d9494652c45323bf146e62c6ed334f18450bd304db9de774576459",
+    "VERSION": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8",
+    "README.md": "c8fe337693681c08a391e8c6c3ab2fb009215ea1f78d208e6a801f150bc0aa9e",
+    "core.ts": "4c94587f98cbf6ac6b5f90316b573c22f657c704d3b8230d914385a7dfda5332",
+    "ui/Masthead.tsx": "938bbcc51700419e5f5219af09b9fb3c4efef6b495f9b032d5f1fee089628c34",
+    "static/masthead.css": "7ab07c9bf8cc026dd94bf53a67d6c86c1285c2392e313deb8a02a68a2b6ff676",
+    "static/masthead.html": "5e00f19a2f51c228ac085e1c11ec3b2ecc9c274170a243e731e1540a3df9b117",
     "check-drift.mjs": "50b754dccf72f847a48287472272c1786469e700694b341cd8c8070e47977a20",
-    "scripts/build.mjs": "1c5e885aed3f7f687dc7314519dee31c46e95d42c5a8965d77f89cf014d530b7",
-    "test/masthead.test.ts": "4a0c9fd5c111b5d8d4a68da3cef1cfa496023be2c5256a2d3671e217ad7a7e06",
-    "test/render.test.mjs": "4e4f04f56c2ea1f1733049691ab4c7b7aaa5acc218c36f85c084dba143c24450"
+    "scripts/build.mjs": "5014b171ab02ee7484cee324dedec4a2c535e17aab20a06c1e6e7e93185f5d37",
+    "test/masthead.test.ts": "d220b5527c288671e098024f6d1f9aad086883f9665cff5110c1af4b81d1b9be",
+    "test/render.test.mjs": "9cb566e461aedcbb154fd2b8eba71ad2b45152720c76e8a537d638678a72006f"
   }
 }
