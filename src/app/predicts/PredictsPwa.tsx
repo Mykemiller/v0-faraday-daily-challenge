@@ -10,12 +10,13 @@ import { PREDICTS_SCOPE, PREDICTS_SW_PATH, PWA_COPY, formatCachedAt } from "@/li
 //   · shows the offline banner (spec §8) with the time the page on screen was cached;
 //   · offers "Install Faraday Predicts" where the browser fires beforeinstallprompt (Android/desktop
 //     Chromium). iOS has no such event; its hint lives with the push toggle.
-// Kill switch: NEXT_PUBLIC_PREDICTS_PWA=off unregisters the worker and renders nothing.
+// Kill switch: the `disabled` prop (FDY-297: the layout reads it on the server from the console setting
+// FP predicts_pwa_enabled, falling back to NEXT_PUBLIC_PREDICTS_PWA=off) unregisters the worker and renders nothing.
 // No permission prompt ever happens here — only the preferences toggle asks (§6).
 
 type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
-const DISABLED = process.env.NEXT_PUBLIC_PREDICTS_PWA === "off";
+const ENV_DISABLED = process.env.NEXT_PUBLIC_PREDICTS_PWA === "off";
 
 async function askCachedAt(): Promise<number | null> {
   const ctl = navigator.serviceWorker?.controller;
@@ -28,13 +29,13 @@ async function askCachedAt(): Promise<number | null> {
   });
 }
 
-export default function PredictsPwa() {
+export default function PredictsPwa({ disabled = ENV_DISABLED }: { disabled?: boolean } = {}) {
   const [offlineAt, setOfflineAt] = useState<string | null | undefined>(undefined); // undefined = online
   const [install, setInstall] = useState<InstallEvent | null>(null);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
-    if (DISABLED) {
+    if (disabled) {
       navigator.serviceWorker.getRegistrations()
         .then((rs) => rs.filter((r) => new URL(r.scope).pathname.startsWith(PREDICTS_SCOPE)).forEach((r) => r.unregister()))
         .catch(() => {});
@@ -42,10 +43,10 @@ export default function PredictsPwa() {
     }
     if (process.env.NODE_ENV !== "production") return;
     navigator.serviceWorker.register(PREDICTS_SW_PATH, { scope: PREDICTS_SCOPE }).catch(() => {});
-  }, []);
+  }, [disabled]);
 
   useEffect(() => {
-    if (DISABLED) return;
+    if (disabled) return;
     const update = async () => {
       if (navigator.onLine) { setOfflineAt(undefined); return; }
       setOfflineAt(formatCachedAt(await askCachedAt()) ?? null);
@@ -54,18 +55,18 @@ export default function PredictsPwa() {
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
-  }, []);
+  }, [disabled]);
 
   useEffect(() => {
-    if (DISABLED) return;
+    if (disabled) return;
     const onPrompt = (e: Event) => { e.preventDefault(); setInstall(e as InstallEvent); };
     const onInstalled = () => setInstall(null);
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
-  }, []);
+  }, [disabled]);
 
-  if (DISABLED) return null;
+  if (disabled) return null;
   return (
     <>
       {offlineAt !== undefined && (
