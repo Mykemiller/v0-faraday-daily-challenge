@@ -6,7 +6,7 @@ import {
   type GetResponse, type Horizon, type KeyPlayer, type Named, type Options, type Prefs, type Preview,
 } from "@/lib/predicts-preferences";
 import { PWA_COPY } from "@/lib/predicts-pwa";
-import { usePredictsToken } from "../hooks/usePredictsToken";
+import { usePredictsToken } from "@/app/predicts/hooks/usePredictsToken";
 import PushToggle from "./PushToggle";
 
 // The configurator (FDY-119). Sections in the decided order, chips are buttons with

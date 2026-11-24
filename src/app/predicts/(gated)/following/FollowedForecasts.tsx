@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { COPY, type GetResponse } from "@/lib/predicts-preferences";
 import { PWA_COPY, followNamesFrom, followedForecasts } from "@/lib/predicts-pwa";
 import type { V3Row } from "@/lib/predicts-v3";
-import ForecastCard from "../components/ForecastCard";
-import { usePredictsToken } from "../hooks/usePredictsToken";
+import ForecastCard from "@/app/predicts/components/ForecastCard";
+import { usePredictsToken } from "@/app/predicts/hooks/usePredictsToken";
 
 // Reads the subscriber's effective preferences from predicts-preferences (FDY-119, token-authorised,
 // GET only — this page never writes) and filters the Open rows it was handed. The preferences read

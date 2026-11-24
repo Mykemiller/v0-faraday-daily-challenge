@@ -7,7 +7,7 @@ import {
   type RecordResponse,
 } from "@/lib/predicts-api";
 import { legacyRedirect, parseOpenState } from "@/lib/predicts-v3";
-import OpenBoard from "./OpenBoard";
+import OpenBoard from "@/app/predicts/OpenBoard";
 
 // Faraday Predicts — the Open board (UI 3.0, FDY-273).
 //

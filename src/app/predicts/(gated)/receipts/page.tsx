@@ -16,7 +16,7 @@ import {
   serializeReceiptsState,
   type ReceiptsState,
 } from "@/lib/predicts-v3";
-import ReceiptCard from "../components/ReceiptCard";
+import ReceiptCard from "@/app/predicts/components/ReceiptCard";
 import LoadMore from "./LoadMore";
 
 // Faraday Predicts — Receipts on the 3.0 shell (FDY-275): every graded call,

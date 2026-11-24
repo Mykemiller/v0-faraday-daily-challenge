@@ -47,7 +47,7 @@ test("helpers", () => {
 });
 
 test("IDF §06: no count of Theaters, Sectors or Threads and no 'selected' badge in the page source or copy", () => {
-  const src = ["../app/predicts/preferences/Configurator.tsx", "../app/predicts/preferences/page.tsx", "./predicts-preferences.ts"]
+  const src = ["../app/predicts/(open)/preferences/Configurator.tsx", "../app/predicts/(open)/preferences/page.tsx", "./predicts-preferences.ts"]
     .map((p) => readFileSync(new URL(p, import.meta.url), "utf8")).join("\n");
   assert.ok(!COUNT_PHRASE_RE.test(src));
   assert.ok(!/\bselected\b/i.test(src.replace(/aria-selected|selected_key_players|\/\/.*$/gm, "")), "a 'selected' badge appears in the page");

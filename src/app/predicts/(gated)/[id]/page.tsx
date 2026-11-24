@@ -14,15 +14,15 @@ import {
   sinceCalledText,
   statusStrip,
 } from "@/lib/predicts-v3";
-import ChangesTable from "../components/ChangesTable";
-import CompactCard from "../components/CompactCard";
-import CompanyMark from "../components/CompanyMark";
-import CountUp from "../components/CountUp";
-import HistoryChart from "../components/HistoryChart";
-import ShareButton from "../components/ShareButton";
-import { VelocityChip, VelocityEvidence } from "../components/Velocity";
-import VotePills from "../components/VotePills";
-import WatchStar from "../components/WatchStar";
+import ChangesTable from "@/app/predicts/components/ChangesTable";
+import CompactCard from "@/app/predicts/components/CompactCard";
+import CompanyMark from "@/app/predicts/components/CompanyMark";
+import CountUp from "@/app/predicts/components/CountUp";
+import HistoryChart from "@/app/predicts/components/HistoryChart";
+import ShareButton from "@/app/predicts/components/ShareButton";
+import { VelocityChip, VelocityEvidence } from "@/app/predicts/components/Velocity";
+import VotePills from "@/app/predicts/components/VotePills";
+import WatchStar from "@/app/predicts/components/WatchStar";
 
 // Faraday Predicts — one forecast (UI 3.0, FDY-274).
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { predictsGet, type MoversResponse } from "@/lib/predicts-api";
 import { moverBadge, shortDate, sortMovers, type MoverWindow } from "@/lib/predicts-v3";
-import Sparkline from "../components/Sparkline";
+import Sparkline from "@/app/predicts/components/Sparkline";
 
 // Faraday Predicts — Movers (UI 3.0, FDY-274): open calls whose published
 // probability changed in the last 7 or 14 days, biggest move first.
