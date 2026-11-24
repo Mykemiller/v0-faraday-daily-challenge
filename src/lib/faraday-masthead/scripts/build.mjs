@@ -27,10 +27,11 @@ export function staticTemplate() {
     .replace(/(aria-label="Open menu">)[^<]*(<\/button>)/, "$1{{INITIAL}}$2");
 }
 
-/** The masthead block the static gate page carries (app name filled server-side via the gate's {{APP_NAME}}). */
+/** The masthead block the static gate page carries (app name and home filled server-side via the gate's
+ *  {{APP_NAME}} and {{HOME}}; faraday-gate's fillGateHtml defaults HOME to "/"). */
 export function gateBlock() {
-  return `<style data-fm-css="${core.MASTHEAD_VERSION}">${core.MASTHEAD_CSS}</style>` + core.renderMastheadHtml({ appName: "@@APP@@", homeHref: "/", signInHtml: "" })
-    .replaceAll("@@APP@@", "{{APP_NAME}}")
+  return `<style data-fm-css="${core.MASTHEAD_VERSION}">${core.MASTHEAD_CSS}</style>` + core.renderMastheadHtml({ appName: "@@APP@@", homeHref: "@@HOME@@", signInHtml: "" })
+    .replaceAll("@@APP@@", "{{APP_NAME}}").replaceAll("@@HOME@@", "{{HOME}}")
     .replace(/(aria-label="Open menu">)[^<]*(<\/button>)/, "$1F$2");
 }
 

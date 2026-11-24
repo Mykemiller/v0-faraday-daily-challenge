@@ -7,8 +7,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  APPBAR_HEIGHT, BAR_HEIGHT, BAR_HEIGHT_NARROW, CONTRAST_PAIRS, FORBIDDEN_IN_BAR, MASTHEAD_CSS, MASTHEAD_VERSION, RULE,
-  TOKENS, contrastRatio, esc, initialOf, renderAppBarHtml, renderMastheadHtml,
+  APPBAR_HEIGHT, BAR_HEIGHT, BAR_HEIGHT_NARROW, CONTRAST_PAIRS, FORBIDDEN_IN_BAR, MASTHEAD_CLOSE_EVENT, MASTHEAD_CSS,
+  MASTHEAD_SCRIPT, MASTHEAD_VERSION, RULE, TOKENS, appBarClass, contrastRatio, esc, initialOf, renderAppBarHtml,
+  renderMastheadHtml,
 } from "../core.ts";
 
 const PKG = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -107,6 +108,80 @@ test("AppBar renders the app's links with aria-current", () => {
   assert.match(h, /^<nav class="fm-appbar" aria-label="Academy">/);
   assert.match(h, /<a class="fm-applink" href="\/academy" aria-current="page">Lobby<\/a>/);
   assert.match(h, /<a class="fm-applink" href="\/academy\/courses">Courses<\/a>/);
+});
+
+test("AppBar overflow: default keeps the scroller; overflow=visible opts into fm-appbar--menus (no clipping, wraps)", () => {
+  const links = [{ label: "Map", href: "/map" }];
+  const def = renderAppBarHtml({ label: "JW", links });
+  assert.equal(def, renderAppBarHtml({ label: "JW", links, overflow: "scroll" }), "scroll is the default");
+  assert.match(def, /^<nav class="fm-appbar" aria-label="JW"><div class="fm-appbar-in">/);
+  const vis = renderAppBarHtml({ label: "JW", links, overflow: "visible" });
+  assert.match(vis, /^<nav class="fm-appbar fm-appbar--menus" aria-label="JW"><div class="fm-appbar-in">/);
+  assert.equal(vis.replace(" fm-appbar--menus", ""), def, "only the class differs");
+  assert.equal(appBarClass(), "fm-appbar"); assert.equal(appBarClass("visible"), "fm-appbar fm-appbar--menus");
+  assert.match(MASTHEAD_CSS, /\.fm-appbar-in\{[^}]*overflow-x:auto/, "default row still scrolls");
+  assert.match(MASTHEAD_CSS, /\.fm-appbar--menus \.fm-appbar-in\{overflow:visible;flex-wrap:wrap\}/);
+});
+
+test("narrow menu: data-open drives it; :focus-within is only the no-script fallback", () => {
+  assert.match(MASTHEAD_CSS, /\.fm-ctx\[data-open="true"\] \.fm-panel,\.fm-ctx:not\(\[data-fm-js\]\):focus-within \.fm-panel\{display:flex\}/);
+  assert.equal(/\.fm-ctx:focus-within/.test(MASTHEAD_CSS), false, "a focused button cannot hold the menu open once the script runs");
+  assert.equal(renderMastheadHtml({ appName: "X" }).includes("data-fm-js"), false, "server markup never carries data-fm-js");
+});
+
+// A minimal DOM (tree, attributes, closest/contains, capture + bubble dispatch) to run MASTHEAD_SCRIPT in plain Node.
+class FakeEl {
+  tag: string; attrs: Record<string, string> = {}; children: FakeEl[] = []; parent: FakeEl | null = null;
+  listeners: Record<string, { fn: (e: any) => void; cap: boolean }[]> = {}; doc: FakeDoc | null = null;
+  constructor(tag: string, attrs: Record<string, string> = {}) { this.tag = tag; Object.assign(this.attrs, attrs); }
+  append(...kids: FakeEl[]) { for (const k of kids) { k.parent = this; this.children.push(k); } return this; }
+  setAttribute(k: string, v: string) { this.attrs[k] = String(v); }
+  getAttribute(k: string) { return k in this.attrs ? this.attrs[k] : null; }
+  hasAttribute(k: string) { return k in this.attrs; }
+  contains(n: FakeEl | null) { for (let x = n; x; x = x.parent) if (x === this) return true; return false; }
+  matches(sel: string) {
+    return sel.split(",").some((one) => { const s = one.trim(); return s.startsWith(".") ? (this.attrs.class || "").split(" ").includes(s.slice(1)) : this.tag === s; });
+  }
+  closest(sel: string) { for (let x: FakeEl | null = this; x && x.tag !== "#document"; x = x.parent) if (x.matches(sel)) return x; return null; }
+  querySelector(sel: string): FakeEl | null { for (const c of this.children) { if (c.matches(sel)) return c; const r = c.querySelector(sel); if (r) return r; } return null; }
+  addEventListener(type: string, fn: (e: any) => void, cap?: boolean) { (this.listeners[type] ||= []).push({ fn, cap: !!cap }); }
+  focus() { root(this).activeElement = this; }
+}
+class FakeDoc extends FakeEl { activeElement: FakeEl | null = null; constructor() { super("#document"); } }
+function root(n: FakeEl): FakeDoc { let x = n; while (x.parent) x = x.parent; return x as FakeDoc; }
+function fire(target: FakeEl, type: string, extra: Record<string, unknown> = {}) {
+  const path: FakeEl[] = []; for (let x: FakeEl | null = target; x; x = x.parent) path.push(x);
+  const e = { type, target, ...extra };
+  for (const n of [...path].reverse()) for (const l of n.listeners[type] || []) if (l.cap) l.fn(e);
+  for (const n of path) for (const l of n.listeners[type] || []) if (!l.cap) l.fn(e);
+}
+
+test("static MASTHEAD_SCRIPT closes the narrow menu when a link or button inside the panel is activated", () => {
+  const doc = new FakeDoc();
+  const avatar = new FakeEl("button", { class: "fm-avatar", "aria-expanded": "false" });
+  const app = new FakeEl("span", { class: "fm-app" });
+  const signIn = new FakeEl("button", { class: "fm-signin" });
+  const inner = new FakeEl("span");
+  const link = new FakeEl("a", { class: "chip" }).append(inner);
+  const panel = new FakeEl("div", { class: "fm-panel" }).append(link, app, signIn);
+  const ctx = new FakeEl("div", { class: "fm-ctx", "data-open": "false" }).append(avatar, panel);
+  const outside = new FakeEl("button", { class: "elsewhere" });
+  doc.append(new FakeEl("header", { class: "fm" }).append(ctx), outside);
+  new Function("document", MASTHEAD_SCRIPT)(doc);
+  const isOpen = () => ctx.getAttribute("data-open") === "true";
+  const open = () => { if (!isOpen()) fire(avatar, "click"); assert.ok(isOpen()); assert.equal(avatar.getAttribute("aria-expanded"), "true"); };
+
+  assert.ok(ctx.hasAttribute("data-fm-js"), "the script marks the context so CSS stops using :focus-within");
+  open(); fire(app, "click"); assert.ok(isOpen(), "plain text in the panel does not close it");
+  fire(signIn, "click"); assert.equal(isOpen(), false, "a button inside the panel closes it");
+  assert.equal(avatar.getAttribute("aria-expanded"), "false");
+  open(); fire(inner, "click"); assert.equal(isOpen(), false, "a click inside a link inside the panel closes it");
+  open(); fire(avatar, "click"); assert.equal(isOpen(), false, "the initial button toggles it shut");
+  open(); fire(doc, MASTHEAD_CLOSE_EVENT); assert.equal(isOpen(), false, "the fm:close event closes it");
+  open(); fire(doc, "keydown", { key: "Escape" }); assert.equal(isOpen(), false); assert.equal(doc.activeElement, avatar, "Escape returns focus");
+  open(); fire(signIn, "focusout", { relatedTarget: link }); assert.ok(isOpen(), "focus moving within the menu keeps it");
+  fire(signIn, "focusout", { relatedTarget: outside }); assert.equal(isOpen(), false, "focus leaving the menu closes it");
+  open(); fire(outside, "click"); assert.equal(isOpen(), false, "a click outside closes it");
 });
 
 test("generated files are up to date (static css/html, gate.html header, MANIFEST)", () => {

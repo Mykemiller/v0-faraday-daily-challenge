@@ -10,7 +10,7 @@
 // The markup is defined ONCE, here, as `renderMastheadHtml` / `renderAppBarHtml`. ui/Masthead.tsx emits the same
 // tree for React (a parity test compares the two byte for byte), and static/*.html are generated from these functions.
 
-export const MASTHEAD_VERSION = "1.0.0";
+export const MASTHEAD_VERSION = "1.1.0";
 
 /** Brand Bible tokens. The only colours the masthead may use. */
 export const TOKENS = Object.freeze({
@@ -65,24 +65,40 @@ export const MASTHEAD_CSS = [
     + `.fm-word{font-size:20px}`
     + `.fm-avatar{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:${t.forestLight};border:1px solid ${t.gold};color:${t.goldLight};font:600 16px/1 ${FONTS.display};cursor:pointer;padding:0}`
     + `.fm-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);flex-direction:column;align-items:flex-end;gap:8px;min-width:200px;max-width:calc(100vw - 16px);padding:12px;background:${t.forest};border:1px solid ${t.gold};border-radius:8px;box-shadow:0 8px 24px rgba(20,18,16,.35)}`
-    + `.fm-ctx[data-open="true"] .fm-panel,.fm-ctx:focus-within .fm-panel{display:flex}`
+    // data-open drives the menu. :focus-within is the no-script fallback only: once the toggle script (or React) runs it
+    // marks the context data-fm-js, so a button that keeps focus after a click can no longer hold the menu open (1.1.0).
+    + `.fm-ctx[data-open="true"] .fm-panel,.fm-ctx:not([data-fm-js]):focus-within .fm-panel{display:flex}`
     + `.fm-app,.fm-user{max-width:100%}`
     + `}`,
   `.fm-appbar{width:100%;background:${t.surfaceWarm};color:${t.ink};border-bottom:1px solid ${t.neutral};font-family:${FONTS.body}}`,
   `.fm-appbar-in{display:flex;align-items:center;gap:4px;min-height:${APPBAR_HEIGHT}px;padding:0 12px;overflow-x:auto;scrollbar-width:thin}`,
+  // Opt-in (AppBar overflow="visible", 1.1.0): no horizontal scroller, so dropdowns are not clipped; items wrap instead.
+  `.fm-appbar--menus .fm-appbar-in{overflow:visible;flex-wrap:wrap}`,
   `.fm-applink{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:6px;color:${t.ink};font:600 14px ${FONTS.body};text-decoration:none;white-space:nowrap}`,
   `.fm-applink:hover{background:rgba(28,52,36,.08)}`,
   `.fm-applink[aria-current="page"]{color:${t.forest};box-shadow:inset 0 -3px 0 ${t.gold}}`,
   `@media (prefers-reduced-motion:no-preference){.fm-skip{transition:top .12s ease}}`,
 ].join("\n");
 
+/** Event that closes the narrow-screen menu: dispatch `new Event(MASTHEAD_CLOSE_EVENT)` on the page's document; both the static
+ *  script and the React component listen for it (React also hands custom `signIn` render functions a `close` callback). */
+export const MASTHEAD_CLOSE_EVENT = "fm:close";
+
 /** Tiny progressive-enhancement script for the static version: toggles the narrow-screen menu. Optional;
- *  without it the menu still opens by keyboard focus (`:focus-within`). React does this with state instead. */
+ *  without it the menu still opens by keyboard focus (`:focus-within`). React does this with state instead.
+ *  Closes on: the initial button again, Escape (focus back to the button), a click outside, any link or button
+ *  activated inside the panel, focus moving out of the context, and the `fm:close` event (MASTHEAD_CLOSE_EVENT). */
 export const MASTHEAD_SCRIPT =
-  "(function(){var c=document.querySelector('.fm-ctx');if(!c)return;var b=c.querySelector('.fm-avatar');if(!b)return;"
-  + "b.addEventListener('click',function(){var o=c.getAttribute('data-open')==='true';c.setAttribute('data-open',o?'false':'true');b.setAttribute('aria-expanded',o?'false':'true');});"
-  + "document.addEventListener('keydown',function(e){if(e.key==='Escape'&&c.getAttribute('data-open')==='true'){c.setAttribute('data-open','false');b.setAttribute('aria-expanded','false');b.focus();}});"
-  + "document.addEventListener('click',function(e){if(!c.contains(e.target)){c.setAttribute('data-open','false');b.setAttribute('aria-expanded','false');}});})();";
+  "(function(){var c=document.querySelector('.fm-ctx');if(!c)return;var b=c.querySelector('.fm-avatar');if(!b)return;var p=c.querySelector('.fm-panel');"
+  + "c.setAttribute('data-fm-js','');"
+  + "function on(){return c.getAttribute('data-open')==='true';}"
+  + "function set(o){c.setAttribute('data-open',o?'true':'false');b.setAttribute('aria-expanded',o?'true':'false');}"
+  + "b.addEventListener('click',function(){set(!on());});"
+  + "if(p)p.addEventListener('click',function(e){var t=e.target&&e.target.closest?e.target.closest('a,button'):null;if(t&&p.contains(t))set(false);},true);"
+  + "c.addEventListener('focusout',function(e){var to=e.relatedTarget;if(to&&!c.contains(to))set(false);});"
+  + "document.addEventListener('keydown',function(e){if(e.key==='Escape'&&on()){set(false);b.focus();}});"
+  + "document.addEventListener('click',function(e){if(!c.contains(e.target))set(false);});"
+  + "document.addEventListener('" + MASTHEAD_CLOSE_EVENT + "',function(){set(false);});})();";
 
 /** HTML-escape exactly the way React does for text and attributes, so static and React output are byte-identical. */
 export function esc(s: unknown): string {
@@ -151,10 +167,20 @@ export interface AppBarOptions {
   links?: AppBarLink[];
   /** Static only: trusted HTML appended after the links (dropdowns, buttons). */
   extraHtml?: string;
+  /** "scroll" (default): one row that scrolls sideways on narrow screens. "visible" (1.1.0): adds `fm-appbar--menus`,
+   *  which turns the scroller off so absolutely positioned dropdowns are not clipped, and lets items wrap. */
+  overflow?: AppBarOverflow;
+}
+
+export type AppBarOverflow = "scroll" | "visible";
+
+/** The nav's class list for an overflow mode (shared with ui/Masthead.tsx so the two cannot diverge). */
+export function appBarClass(overflow?: AppBarOverflow): string {
+  return overflow === "visible" ? "fm-appbar fm-appbar--menus" : "fm-appbar";
 }
 
 export function appBarOpen(o: AppBarOptions): string {
-  return `<nav class="fm-appbar" aria-label="${esc(o.label)}"><div class="fm-appbar-in">`;
+  return `<nav class="${appBarClass(o.overflow)}" aria-label="${esc(o.label)}"><div class="fm-appbar-in">`;
 }
 
 export function appBarLinkHtml(l: AppBarLink): string {

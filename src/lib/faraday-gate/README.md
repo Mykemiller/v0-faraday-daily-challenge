@@ -12,14 +12,21 @@ re-vendor, and the app's byte-identity test tells you if a copy drifted.
 | `server/request.ts` | server | "Request demo access" / "Join the waitlist" → `estate_access_request`; 5 per IP per hour (in-memory) |
 | `server/handlers.ts` | server | one Web `Request → Response` handler for `POST /api/faraday-gate/{code,verify,request,signout}`; same-origin only |
 | `server/guard.ts` | server | `guardRoute({app, appEmail, cookieHeader}, cfg)` — mode `open` passes through with no identity lookup |
-| `ui/GatePage.tsx` | client | the standard gate page (shared S3 masthead from `faraday-masthead`, story, two buttons, commercial line, Terms/Privacy/version) |
-| `ui/gate.html` | static | fallback for apps without React; its masthead block is generated from `faraday-masthead` (between the markers) |
+| `ui/GatePage.tsx` | client | the standard gate page (shared S3 masthead from `faraday-masthead`, story, two buttons, commercial line, Terms/Privacy/version); optional `homeHref` (default `/`) |
+| `ui/gate.html` | static | fallback for apps without React; its masthead block is generated from `faraday-masthead` (between the markers); fill it with `fillGateHtml` from `core.ts` |
 | `gate-copy/<access_key>.json` | data | per-app story, `status: "draft"` until Myke approves |
 
 ## Masthead (1.1.0, FDY-444)
 Since 1.1.0 the gate renders its masthead from the shared `faraday-masthead` package (no second copy of the markup).
 Vendor **both** side by side: `lib/faraday-gate/` and `lib/faraday-masthead/` (GatePage imports
 `../../faraday-masthead/ui/Masthead.tsx`). Gate behaviour and copy are unchanged.
+
+## homeHref (1.2.0, FDY-460)
+`<GatePage homeHref="/jurisdiction-watch" …/>` sends the masthead's mark and wordmark to the app's own home (default `/`,
+as before). The static `gate.html` has a new `{{HOME}}` placeholder: fill it with `fillGateHtml(template, { app, appName,
+story, version, homeHref })`, which escapes every value and defaults `HOME` to `/`. A server that fills the placeholders
+itself must now also fill `{{HOME}}`. Needs `faraday-masthead` ≥ 1.1.0 beside it; re-vendor both together (see the
+masthead README's Re-vendor section).
 
 ## Config (`GateServerConfig`)
 `{ supabaseUrl, serviceKey, anonKey? }` — read from the app's **existing** env names (no new secret for the check).
@@ -32,5 +39,5 @@ Vendor **both** side by side: `lib/faraday-gate/` and `lib/faraday-masthead/` (G
 - Supabase Auth's email template must include `{{ .Token }}` for code sign-in to work (one-time Myke check).
 
 ## Tests
-`node --experimental-strip-types --test packages/faraday-gate/test/gate.test.ts` (17, no network) and
+`node --experimental-strip-types --test packages/faraday-gate/test/gate.test.ts` (19, no network) and
 `test/render.test.mjs` (renders every view and greps for `$`; needs react + esbuild, skips without them).

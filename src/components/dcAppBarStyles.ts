@@ -11,10 +11,9 @@
 //   dropdown       forest panel: items warm-white 12.3:1, labels sage 5.1:1, hover/current gold-light 5.3:1
 //
 // Layout notes:
-//   • `.fm-appbar-in` (vendored) is a horizontal scroller (overflow-x:auto). A scroller clips its
-//     absolutely-positioned descendants, which would cut the dropdowns off at the bar's bottom edge.
-//     The DC row (six 44px triggers) fits at 320px, so the DC AppBar opts out of the scroller with a
-//     scoped rule on its own wrapper (`.dc-appbar`). The vendored file is untouched.
+//   • Both DC AppBars pass `overflow="visible"` (faraday-masthead 1.1.0, class `fm-appbar--menus`):
+//     the default AppBar row is a horizontal scroller, which would clip the absolutely-positioned
+//     dropdowns at the bar's bottom edge (FDY-460 replaced the local override that did this).
 //   • The wrapper is the sticky element (the masthead scrolls away, the nav stays), z-index 30 so the
 //     masthead's own narrow-screen menu (z-index 40) still opens over it.
 
@@ -28,7 +27,6 @@ export const DC_CARET = "#55524D"; // ink #141210 at 0.7 over surface-warm #EEE6
 
 export const DC_NAV_CSS = `
   .dc-appbar { position:sticky; top:0; z-index:30; }
-  .dc-appbar .fm-appbar-in { overflow:visible; }
   .dc-appbar-row { margin-left:auto; display:flex; align-items:center; gap:2px; }
   .dc-iconrow { display:flex; align-items:center; gap:2px; }
   .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
