@@ -87,6 +87,30 @@ export function containsCountClaim(text: string): boolean {
   return /\b\d+\s+(?:theaters?|sectors?|threads?|domains?|sub-?domains?)\b/i.test(text);
 }
 
+/** Escape a value for the static gate page (same rules as React and faraday-masthead's esc). */
+function escHtml(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;" }[c] as string));
+}
+
+export interface GateHtmlValues {
+  app: string;
+  appName: string;
+  story?: string;
+  version?: string | null;
+  /** Where the masthead's mark + wordmark link: the app's own home. Default "/" (1.2.0). */
+  homeHref?: string;
+}
+
+/** Fill ui/gate.html's placeholders (pass the file's text; this module does no I/O). Every value is HTML-escaped. */
+export function fillGateHtml(template: string, v: GateHtmlValues): string {
+  const vals: Record<string, string> = {
+    APP: v.app, APP_NAME: v.appName, STORY: v.story ?? displayCopy(null, v.appName).story,
+    VERSION: v.version ?? "", HOME: v.homeHref || "/",
+  };
+  return template.replace(/\{\{(APP_NAME|APP|STORY|VERSION|HOME)\}\}/g, (_, k: string) => escHtml(vals[k]));
+}
+
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function normalizeEmail(raw: unknown): string {
   return String(raw ?? "").trim().toLowerCase();

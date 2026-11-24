@@ -66,6 +66,12 @@ test("GatePage renders under React " + React.version + " with no price or $ in a
         assert.ok(html.includes(`<span class="fm-app">Faraday Predicts</span>`), "app name in the masthead context slot");
       }
     }
+    // FDY-460 (faraday-gate 1.2.0): homeHref sends the gate's mark + wordmark to the app's own home; default "/".
+    const homed = server.renderToStaticMarkup(React.createElement(GatePage, { app: "predicts", appName: "Faraday Predicts", homeHref: "/predicts", copy: approved, view: "request" }));
+    assert.ok(homed.includes(`<a class="fm-word" href="/predicts" aria-label="Faraday home">`), "homeHref reaches the masthead wordmark");
+    assert.ok(homed.includes(`<a class="fm-markl" href="/predicts"`), "homeHref reaches the masthead mark");
+    const unhomed = server.renderToStaticMarkup(React.createElement(GatePage, { app: "predicts", appName: "Faraday Predicts", copy: approved, view: "request" }));
+    assert.ok(unhomed.includes(`<a class="fm-word" href="/" aria-label="Faraday home">`), "homeHref defaults to /");
     // The real Predicts copy file is still draft: its story must not render; the neutral text must.
     const draft = JSON.parse(fs.readFileSync(path.join(VENDOR, "gate-copy", "predicts.json"), "utf8"));
     const html = server.renderToStaticMarkup(React.createElement(GatePage, { app: "predicts", appName: "Faraday Predicts", copy: draft, view: "request" }));

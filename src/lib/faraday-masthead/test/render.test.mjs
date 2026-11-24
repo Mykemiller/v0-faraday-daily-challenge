@@ -44,6 +44,19 @@ test("React Masthead and AppBar match the static renderer byte for byte", { skip
   assert.ok(styled.startsWith(`<style data-fm-css="${core.MASTHEAD_VERSION}">`) && styled.includes(core.MASTHEAD_CSS));
   const links = [{ label: "Lobby", href: "/academy", current: true }, { label: "Courses & more", href: "/academy/c" }];
   assert.equal(server.renderToStaticMarkup(React.createElement(mod.AppBar, { label: "Academy", links })), core.renderAppBarHtml({ label: "Academy", links }));
+  // 1.1.0: AppBar overflow="visible" (fm-appbar--menus) renders identically in React and static, and "scroll" is the default.
+  for (const overflow of ["visible", "scroll", undefined]) {
+    const r = server.renderToStaticMarkup(React.createElement(mod.AppBar, { label: "Daily Challenge", links, overflow }, React.createElement("div", { className: "dc-appbar-row" }, "x")));
+    assert.equal(r, core.renderAppBarHtml({ label: "Daily Challenge", links, overflow, extraHtml: `<div class="dc-appbar-row">x</div>` }), String(overflow));
+  }
+  assert.match(server.renderToStaticMarkup(React.createElement(mod.AppBar, { label: "A", overflow: "visible" })), /^<nav class="fm-appbar fm-appbar--menus"/);
+  // 1.1.0: signIn as a render function gets the menu's close callback and renders the same markup as a plain node.
+  let got = null;
+  const fnSignIn = server.renderToStaticMarkup(React.createElement(mod.Masthead, { appName: "Live Agent", includeStyles: false,
+    signIn: (close) => { got = close; return React.createElement("button", { type: "button", className: "fm-signin" }, "Signed in"); } }));
+  assert.equal(typeof got, "function", "signIn render function receives close()");
+  assert.equal(fnSignIn, core.renderMastheadHtml({ appName: "Live Agent", signInHtml: `<button type="button" class="fm-signin">Signed in</button>` }));
+  assert.equal(fnSignIn.includes("data-fm-js"), false, "server markup has no data-fm-js (set after mount)");
   fs.rmSync(out, { force: true });
 });
 
@@ -59,7 +72,11 @@ test("the gate page renders the shared masthead in every view", { skip: !esbuild
       assert.equal((html.match(/<header/g) || []).length, 1);
       assert.match(html, /<main id="fg-main"/);
       assert.ok(email ? html.includes(`class="fm-user" title="${email}"`) : html.includes(`class="fm-signin">Sign in</button>`));
+      assert.equal((html.match(/href="\/"/g) || []).length, 2, "mark + wordmark default to /");
     }
   }
+  // faraday-gate 1.2.0: homeHref passes through to the masthead's mark and wordmark.
+  const homed = server.renderToStaticMarkup(React.createElement(mod.default, { app: "jw", appName: "Jurisdiction Watch", view: "request", homeHref: "/jurisdiction-watch" }));
+  assert.equal((homed.match(/href="\/jurisdiction-watch"/g) || []).length, 2, "homeHref reaches mark + wordmark");
   fs.rmSync(out, { force: true });
 });

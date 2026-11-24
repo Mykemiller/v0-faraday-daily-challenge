@@ -3368,7 +3368,7 @@ function DailyChallengeInner() {
           nothing when signed out (CC-DC-MSG-DOCK-1.0 D7); with no
           initialUnread prop it fetches its own badge total. */}
       <div className="dc-appbar">
-        <AppBar label="Daily Challenge">
+        <AppBar label="Daily Challenge" overflow="visible">
           <div className="dc-appbar-row">
             <MessageDock token={sessionToken} />
             <HeaderIconNav menus={headerMenus} />
