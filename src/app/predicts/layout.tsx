@@ -6,6 +6,7 @@ import GatePage from "@/lib/faraday-gate/ui/GatePage.tsx";
 import { PREDICTS_APP, PREDICTS_APP_NAME, PREDICTS_GATE_COPY, guardPredicts } from "@/lib/faradayGate";
 import { predictsGet, type ApiEnvelope } from "@/lib/predicts-api";
 import { PREDICTS_MANIFEST_PATH, PWA_COPY } from "@/lib/predicts-pwa";
+import { predictsPwaEnabled } from "@/lib/predicts-settings";
 import PredictsShell from "./PredictsShell";
 import PredictsPwa from "./PredictsPwa";
 
@@ -38,9 +39,11 @@ export default async function PredictsLayout({ children }: { children: React.Rea
     return <GatePage app={PREDICTS_APP} appName={PREDICTS_APP_NAME} homeHref="/predicts" copy={PREDICTS_GATE_COPY} view={gate.view} email={gate.email} />;
   }
   const env = await predictsGet<ApiEnvelope>("view=movers");
+  // FDY-297: the PWA kill switch is data (app FP, predicts_pwa_enabled); NEXT_PUBLIC_PREDICTS_PWA is the fallback.
+  const pwaEnabled = await predictsPwaEnabled();
   return (
     <PredictsShell record={env?.record ?? null} releaseTag={env?.release_tag ?? null} showMovers={env?.capabilities?.movers ?? false} email={gate.email}>
-      <PredictsPwa />
+      <PredictsPwa disabled={!pwaEnabled} />
       {children}
     </PredictsShell>
   );
