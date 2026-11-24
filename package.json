@@ -60,6 +60,7 @@
     "predicts:logos": "node scripts/predicts-logo-map.mjs",
     "predicts:gate": "node scripts/predicts-gate-check.mjs",
     "test:academy": "node --test src/lib/academy/academy.test.ts",
+    "test:usage": "node --test src/lib/usage/limits.test.ts",
     "test:academy-contrast": "node --test scripts/academy-contrast.mjs",
     "test:academy-public": "deno test --allow-net supabase/functions/academy-public/shape.test.ts",
     "test:academy-ai": "deno test --allow-net supabase/functions/academy-ai/guards.test.ts",

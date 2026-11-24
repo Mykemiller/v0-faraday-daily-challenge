@@ -1,4 +1,7 @@
-// Faraday Academy — the lesson reader. Fully open: no gate, no locked state.
+// Faraday Academy — the lesson reader. No sign-in, no paywall, no locked state.
+// The one limit is the daily course allowance (FDY-392): CourseStartGate records
+// the course as started today and, past the allowance, shows a friendly notice
+// in place of the lesson. Lessons of a course already started today stay open.
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -6,6 +9,7 @@ import { getCourse } from "@/lib/academy/api";
 import { Offline } from "@/components/academy/states";
 import Outline from "@/components/academy/Outline";
 import ReaderShell from "@/components/academy/ReaderShell";
+import CourseStartGate from "@/components/academy/CourseStartGate";
 import LessonBody from "@/components/academy/LessonBody";
 import { locateLesson, parsePosition } from "@/lib/academy/nav";
 import { canonicalUrl } from "@/lib/academy/origin";
@@ -101,13 +105,15 @@ export default async function LessonPage({ params }: Params) {
       />
       <Outline course={course} currentModule={mp} currentLesson={lp} />
       <main id="academy-main" className="min-w-0 flex-1 pb-24 lg:pb-10">
-        <ReaderShell course={course} location={located} courseHasNarration={courseHasNarration}>
-          <LessonBody
-            paragraphs={located.lesson.paragraphs}
-            glossary={course.glossary}
-            slug={course.slug}
-          />
-        </ReaderShell>
+        <CourseStartGate slug={course.slug}>
+          <ReaderShell course={course} location={located} courseHasNarration={courseHasNarration}>
+            <LessonBody
+              paragraphs={located.lesson.paragraphs}
+              glossary={course.glossary}
+              slug={course.slug}
+            />
+          </ReaderShell>
+        </CourseStartGate>
       </main>
     </div>
   );
