@@ -107,12 +107,12 @@ test("token: ?t= wins, else the device copy; anything malformed is ignored", () 
 });
 
 test("the token never reaches a console call, a URL we build or a log in the new client code", () => {
-  for (const f of ["../app/predicts/hooks/usePredictsToken.ts", "../app/predicts/preferences/PushToggle.tsx", "../app/predicts/following/FollowedForecasts.tsx", "../app/predicts/PredictsPwa.tsx"]) {
+  for (const f of ["../app/predicts/hooks/usePredictsToken.ts", "../app/predicts/(open)/preferences/PushToggle.tsx", "../app/predicts/(gated)/following/FollowedForecasts.tsx", "../app/predicts/PredictsPwa.tsx"]) {
     const src = read(f);
     assert.ok(!/console\./.test(src), `${f} logs`);
     assert.ok(!/href=\{[^}]*token/.test(src), `${f} puts the token in a link`);
   }
-  assert.match(read("../app/predicts/preferences/PushToggle.tsx"), /JSON\.stringify\(\{ token, \.\.\.body \}\)/, "token travels in the POST body");
+  assert.match(read("../app/predicts/(open)/preferences/PushToggle.tsx"), /JSON\.stringify\(\{ token, \.\.\.body \}\)/, "token travels in the POST body");
 });
 
 // ── offline banner ───────────────────────────────────────────────────────────

@@ -10,10 +10,10 @@ import {
   shortDate,
   showCalibration,
 } from "@/lib/predicts-v3";
-import CalibrationChart from "../components/CalibrationChart";
-import CountUp from "../components/CountUp";
-import ReceiptCard from "../components/ReceiptCard";
-import Sparkline from "../components/Sparkline";
+import CalibrationChart from "@/app/predicts/components/CalibrationChart";
+import CountUp from "@/app/predicts/components/CountUp";
+import ReceiptCard from "@/app/predicts/components/ReceiptCard";
+import Sparkline from "@/app/predicts/components/Sparkline";
 
 // Faraday Predicts — the record (UI 3.0, FDY-275). Counts, the Brier score and
 // its caveat, and a reliability chart when the API says there is enough to

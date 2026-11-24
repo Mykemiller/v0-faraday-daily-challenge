@@ -46,7 +46,8 @@ test("a definition default or a wrong-typed value defers to the env", async () =
 
 test("the layout reads the switch on the server and hands it to the client shell as a prop", () => {
   const dir = path.dirname(fileURLToPath(import.meta.url));
-  const layout = fs.readFileSync(path.join(dir, "../app/predicts/layout.tsx"), "utf8");
+  // FDY-433: the shell (and so the switch) lives in PredictsFrame.tsx, shared by the (gated) and (open) groups.
+  const layout = fs.readFileSync(path.join(dir, "../app/predicts/PredictsFrame.tsx"), "utf8");
   const pwa = fs.readFileSync(path.join(dir, "../app/predicts/PredictsPwa.tsx"), "utf8");
   assert.match(layout, /await predictsPwaEnabled\(\)/);
   assert.match(layout, /<PredictsPwa disabled=\{!pwaEnabled\} \/>/);

@@ -1,4 +1,4 @@
-// FDY-414 (ADM-1.7) — the Faraday beta access gate, wired for Faraday Predicts.
+// FDY-414 (ADM-1.7) — the Faraday beta access gate, wired for Faraday Predicts and (FDY-420) Intelligent Alert.
 //
 // The gate itself is the vendored package in ./faraday-gate/ (byte-identical to
 // Mykemiller/faraday-workbench/packages/faraday-gate; never edit it here — see its README and
@@ -17,11 +17,20 @@ import { guardRoute, type GuardResult } from "./faraday-gate/server/guard.ts";
 import type { GateServerConfig } from "./faraday-gate/server/check.ts";
 import type { GateCopy } from "./faraday-gate/core.ts";
 import predictsCopy from "./faraday-gate/gate-copy/predicts.json" with { type: "json" };
+import intelligentAlertCopy from "./faraday-gate/gate-copy/intelligentalert.json" with { type: "json" };
 
 /** estate_entitled access_key for Predicts (app code FP). Daily Challenge is never gated. */
 export const PREDICTS_APP = "predicts";
 export const PREDICTS_APP_NAME = "Faraday Predicts";
 export const PREDICTS_GATE_COPY = predictsCopy as GateCopy;
+
+/** FDY-420 (ADM-1.7d): Intelligent Alert · Daily Signal (app code IA). Its gate actions post to their
+ * own route, /api/faraday-gate/intelligentalert/[action], so the Predicts route stays byte-identical
+ * and the app is never taken from the client. */
+export const INTELLIGENT_ALERT_APP = "intelligentalert";
+export const INTELLIGENT_ALERT_APP_NAME = "Intelligent Alert";
+export const INTELLIGENT_ALERT_GATE_COPY = intelligentAlertCopy as GateCopy;
+export const INTELLIGENT_ALERT_GATE_API = "/api/faraday-gate/intelligentalert";
 
 type Env = Record<string, string | undefined>;
 
@@ -63,12 +72,13 @@ export interface GuardDeps {
 }
 
 /**
- * Guard the Predicts route group. `cookieHeader` is the raw Cookie header (the gate reads its own
- * httpOnly fgate_at cookie from it). `appEmail` stays null in v1: Predicts has no server-visible
- * verified email (its ?t= link token lives in the browser), so identity is the gate's own code.
+ * Guard one gated route group of this repo. `cookieHeader` is the raw Cookie header (the gate reads its
+ * own httpOnly fgate_at cookie from it). `appEmail` stays null in v1: these apps have no server-visible
+ * verified email (Predicts' ?t= link token lives in the browser), so identity is the gate's own code.
  * Never throws: an unexpected exception is treated as a probe error and the same policy applies.
  */
-export async function guardPredicts(
+export async function guardApp(
+  app: string,
   opts: { cookieHeader?: string | null; appEmail?: string | null },
   deps: GuardDeps = {},
 ): Promise<PredictsGuardResult> {
@@ -77,7 +87,7 @@ export async function guardPredicts(
   const guard = deps.guard ?? guardRoute;
   let g: GuardResult;
   try {
-    g = await guard({ app: PREDICTS_APP, appEmail: opts.appEmail ?? null, cookieHeader: opts.cookieHeader ?? null }, cfg);
+    g = await guard({ app, appEmail: opts.appEmail ?? null, cookieHeader: opts.cookieHeader ?? null }, cfg);
   } catch {
     g = {
       pass: false,
@@ -88,4 +98,20 @@ export async function guardPredicts(
     };
   }
   return applyEnforcePolicy(g, enforce);
+}
+
+/** Guard the Predicts route group (FDY-414). Unchanged behaviour: guardApp with app "predicts". */
+export async function guardPredicts(
+  opts: { cookieHeader?: string | null; appEmail?: string | null },
+  deps: GuardDeps = {},
+): Promise<PredictsGuardResult> {
+  return guardApp(PREDICTS_APP, opts, deps);
+}
+
+/** Guard /intelligent-alert (FDY-420). Same policy as Predicts, app "intelligentalert". */
+export async function guardIntelligentAlert(
+  opts: { cookieHeader?: string | null; appEmail?: string | null },
+  deps: GuardDeps = {},
+): Promise<PredictsGuardResult> {
+  return guardApp(INTELLIGENT_ALERT_APP, opts, deps);
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { V3Row } from "@/lib/predicts-v3";
-import ReceiptCard from "../components/ReceiptCard";
+import ReceiptCard from "@/app/predicts/components/ReceiptCard";
 
 // Appends the next page from the API. The link underneath works without JS.
 export default function LoadMore({ apiUrl, query, cursor, fallbackHref }: { apiUrl: string; query: string; cursor: string; fallbackHref: string }) {

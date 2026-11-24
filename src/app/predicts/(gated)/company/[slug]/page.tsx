@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { predictsGet, PREDICTS_VOTE_URL, type CompanyResponse } from "@/lib/predicts-api";
 import { companyCountLine, groupByThread } from "@/lib/predicts-v3";
-import CompactCard from "../../components/CompactCard";
-import CompanyMark from "../../components/CompanyMark";
-import ThreadCard from "../../components/ThreadCard";
+import CompactCard from "@/app/predicts/components/CompactCard";
+import CompanyMark from "@/app/predicts/components/CompanyMark";
+import ThreadCard from "@/app/predicts/components/ThreadCard";
 
 // Faraday Predicts — every call that names one company (UI 3.0, FDY-274).
 // Counts only; never a rate.
