@@ -1,11 +1,13 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/questions", {
   title: "Questions · Faraday Daily Challenge",
-  description: "Frequently asked questions about scoring, Intelligence Readiness, teams, and the daily rotation.",
-};
+  description:
+    "Frequently asked questions about scoring, Intelligence Readiness, teams, and the daily rotation.",
+});
 
 // Help & Feedback → Questions. Static FAQ using native <details> so it works
 // with no client JS. Answers reflect the shipped product (scoring, streaks,
@@ -63,7 +65,7 @@ export default function QuestionsPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-20 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-20 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Questions</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">

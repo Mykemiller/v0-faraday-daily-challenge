@@ -2,6 +2,8 @@
 // no SDKs). All are env-gated and throw a clear error when creds are absent, so the
 // scripts fail loud rather than silently no-op.
 
+import { genMaxTokens } from "../../../src/lib/generation/batching.js";
+
 const need = (name) => { const v = process.env[name]; if (!v) throw new Error(`env ${name} is required`); return v; };
 
 // ── Supabase PostgREST ──────────────────────────────────────────────────────────
@@ -26,8 +28,16 @@ export const sbRpc = (fn, body) => sbFetch(`rpc/${fn}`, { method: "POST", body: 
 
 // ── Anthropic Messages ──────────────────────────────────────────────────────────
 export const GEN_MODEL = process.env.FAR287_GEN_MODEL || "claude-sonnet-4-6";
-export async function anthropicJson({ system, user, maxTokens = 4096, model = GEN_MODEL }) {
+
+/**
+ * CC-DC-GEN-BATCH-HARDENING-1.0 D5 — the CLI needs the same three facts the
+ * worker does: the text, `stop_reason` (the only signal that output was CUT
+ * OFF) and how long the call took. `anthropicJson` keeps returning just the
+ * text for every other caller.
+ */
+export async function anthropicMessage({ system, user, maxTokens = genMaxTokens(), model = GEN_MODEL }) {
   const key = need("ANTHROPIC_API_KEY");
+  const startedAt = Date.now();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -35,7 +45,15 @@ export async function anthropicJson({ system, user, maxTokens = 4096, model = GE
   });
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  return {
+    text: (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join(""),
+    stopReason: typeof data.stop_reason === "string" ? data.stop_reason : null,
+    ms: Date.now() - startedAt,
+  };
+}
+
+export async function anthropicJson(opts) {
+  return (await anthropicMessage(opts)).text;
 }
 
 // ── Airtable (READ-ONLY here; Phase-6 sync is the only writer and is dry-run by default)

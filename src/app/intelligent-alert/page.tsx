@@ -8,6 +8,7 @@ export default function Page() {
       title="Faraday Intelligent Alert"
       tagline="The moves that matter, the moment they matter."
       status="In production"
+      masthead={{ appName: "Intelligent Alert", homeHref: "/intelligent-alert" }}
     >
       <p className="font-serif text-[16px] italic text-forest">
         From the grid and the foundry to the capital stack, Faraday follows every Theater, Sector, and Thread of the

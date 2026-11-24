@@ -2,6 +2,7 @@ import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
 import DcStubPage from "@/components/DcStubPage";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import {
   fetchActiveSeason,
   fetchSeasonRules,
@@ -15,7 +16,9 @@ import {
   type DateWindow,
 } from "@/lib/league-playoffs/phase";
 
-export const metadata = { title: "Free Agency · Faraday Daily Challenge" };
+export const metadata = dcPageMetadata("/free-agency", {
+  title: "Free Agency · Faraday Daily Challenge",
+});
 export const dynamic = "force-dynamic";
 
 // Compete → Free Agency. Season-scoped: teams lock during the season and players
@@ -88,7 +91,7 @@ export default async function FreeAgencyPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-10">
         <span
           className={`inline-block rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] ${
             open ? "bg-forest/15 text-forest" : "bg-gold/20 text-amber-dark"

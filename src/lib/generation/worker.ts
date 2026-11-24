@@ -12,7 +12,15 @@
 //                 unique(season_id, puzzle_type, go_live_date) — CC-LO-CONCURRENT-
 //                 SEASONS-1.0 — so a re-run never duplicates.
 //   HEARTBEAT   — last_heartbeat_at is written with every checkpoint.
-//   BOUNDED     — batch size 8–12, hard time budget per slice.
+//   EXCLUSIVE   — exactly one slice works a run at a time. The slice LEASES the
+//                 run (phase_cursor.slice_active, compare-and-swapped on
+//                 last_heartbeat_at) and releases it in a finally; a run whose
+//                 lease is held is IDLE to everyone else, not an error
+//                 (CC-DC-GEN-LEASE-AUTOADVANCE-1.0).
+//   BOUNDED     — per-type starting batch size (≤8–12), halved on a truncated
+//                 response, and no model call is STARTED unless
+//                 elapsed + the moving-average batch duration still fits the
+//                 slice budget (CC-DC-GEN-BATCH-HARDENING-1.0).
 //   HONEST      — written_count = rows actually in staging for this run;
 //                 a zero-progress sweep with failures ends the run as
 //                 'failed_short' and reports, never silently finishes short.
@@ -23,24 +31,83 @@
 
 import type { Svc } from "@/lib/league-office/service";
 import { seasonDates } from "@/lib/league-office/generation-logic";
+// CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the generator no longer builds its slot list
+// as the `dates × types` product. It asks the one module that knows which game
+// plays on which date, so play_days_of_week, appears_on_days and the per-game
+// window are honoured here, in the League Office checklist and on the serve
+// path alike.
+import { scheduledDates, scheduledSlots, scheduledTypesOn, type ScheduleGame } from "@/lib/seasons/schedule";
 import { buildCorpus, buildSubjectPool, type Corpus, type ThemedDay } from "./corpus";
 import { systemPrompt, userPrompt } from "./prompts";
+import { effectiveTypeMix, planDifficulty, resolveRowDifficulty } from "./difficulty";
+import {
+  parsePostgrestError, restErrorMessage, failureKey, mergeFailures, lastFailureEntry, clampMessage,
+} from "./failure-reasons";
+import { allocateThemeCalendar, type ThemeAllocationError } from "./theme-allocation";
+import {
+  createBudget, genMaxTokens, runBatchWithSplit, startingBatchSize,
+} from "./batching";
+import {
+  claimCursor, heartbeatGuard, isClaimable, leaseNote, releaseCursor, withLease,
+} from "./lease";
+import { isBenignSlotConflict, sliceOutcome } from "./slots";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
+  deriveValidation, readDomainFit,
 } from "./puzzle-schema";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 export const GEN_MODEL = process.env.DC_GEN_MODEL || process.env.FAR287_GEN_MODEL || "claude-sonnet-4-6";
 
 // ── PostgREST (loud failures — the worker records them per batch) ────────────
+
+/**
+ * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D2 — a PostgREST failure that CARRIES its
+ * diagnosis. The old code built `... ${status}: ${body.slice(0, 200)}` and the
+ * per-item handler sliced that string again, so the SQLSTATE and the constraint
+ * name — the only two facts that identify the fault — were routinely cut off
+ * before anyone read them. `message` is now the structured D2 line and the
+ * parsed facts ride along for failureKey(). PostgREST's `details` is never
+ * read: on this table it contains the whole failing row (content + answer key).
+ */
+export class SupabaseRestError extends Error {
+  readonly status: number | null;
+  readonly code: string | null;
+  readonly hint: string | null;
+  readonly constraint: string | null;
+  constructor(message: string, info: { status: number | null; code: string | null; hint: string | null; constraint: string | null }) {
+    super(message);
+    this.name = "SupabaseRestError";
+    this.status = info.status;
+    this.code = info.code;
+    this.hint = info.hint;
+    this.constraint = info.constraint;
+  }
+}
+
+/** An Anthropic failure that carries its HTTP status, for `model:<status>` keys. */
+export class ModelCallError extends Error {
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ModelCallError";
+    this.status = status;
+  }
+}
+
 async function sb(s: Svc, path: string, init: RequestInit = {}): Promise<unknown> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: { ...s.headers, ...(init.headers || {}) },
     cache: "no-store",
   });
-  if (!r.ok) throw new Error(`Supabase ${init.method || "GET"} ${path.split("?")[0]} ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) {
+    const method = (init.method || "GET").toUpperCase();
+    const table = path.split("?")[0];
+    const info = parsePostgrestError(r.status, await r.text());
+    throw new SupabaseRestError(restErrorMessage(method, table, info), info);
+  }
   // `Prefer: return=minimal` answers a POST with 201 + an EMPTY body (and a
   // PATCH/DELETE with 204). Calling r.json() on that empty body throws
   // "Unexpected end of JSON input" — which made every SUCCESSFUL staging insert
@@ -54,22 +121,51 @@ async function sb(s: Svc, path: string, init: RequestInit = {}): Promise<unknown
 const sbGet = <T>(s: Svc, path: string) => sb(s, path) as Promise<T[]>;
 const sbPatch = (s: Svc, path: string, body: unknown) =>
   sb(s, path, { method: "PATCH", body: JSON.stringify(body), headers: { Prefer: "return=minimal" } });
+/**
+ * A PATCH that reports WHICH rows it hit. The lease claim is a conditional
+ * update (CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L2) and "did my filter match" is the
+ * entire answer, so the body must come back. `select=id` keeps it to the id —
+ * the run's phase_cursor never needs to travel for this.
+ */
+const sbPatchReturning = (s: Svc, path: string, body: unknown) =>
+  sb(s, path, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { Prefer: "return=representation" },
+  }) as Promise<{ id: string }[] | null>;
 const sbInsert = (s: Svc, path: string, rows: unknown, prefer = "return=minimal") =>
   sb(s, path, { method: "POST", body: JSON.stringify(rows), headers: { Prefer: prefer } });
 
 // ── Anthropic (same call shape + model as the proven FAR-287 client) ─────────
-async function callModel(system: string, user: string): Promise<string> {
+
+/**
+ * CC-DC-GEN-BATCH-HARDENING-1.0 D1 — the call's result, not just its text.
+ * `stopReason` is the ONLY signal that output was cut off; dropping it (the old
+ * `Promise<string>`) is what made truncation look like a model that answered
+ * fewer items. `ms` feeds the budget guard's moving average.
+ */
+export type ModelResult = { text: string; stopReason: string | null; ms: number };
+
+async function callModel(system: string, user: string): Promise<ModelResult> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is required to generate puzzles");
-  const attempt = async () => {
+  // 4096 could not hold the OLD minimum batch of 8 for The Brief (~5.3k est.
+  // output tokens) — see the sizing table in batching.js.
+  const maxTokens = genMaxTokens();
+  const attempt = async (): Promise<ModelResult> => {
+    const startedAt = Date.now();
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: GEN_MODEL, max_tokens: 4096, system, messages: [{ role: "user", content: user }] }),
+      body: JSON.stringify({ model: GEN_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
     });
-    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-    return (data.content || []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+    if (!res.ok) throw new ModelCallError(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
+    const data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string | null };
+    return {
+      text: (data.content || []).filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
+      stopReason: typeof data.stop_reason === "string" ? data.stop_reason : null,
+      ms: Date.now() - startedAt,
+    };
   };
   try {
     return await attempt();
@@ -100,22 +196,6 @@ function parseArray(raw: string): Record<string, unknown>[] {
   return out;
 }
 
-// difficulty bag from the season's difficulty mix (default 40/40/20), deterministic per slot
-function difficultyFor(mix: { difficulty_band: string; target_pct: number }[], slot: number): string {
-  const bands = mix.length ? mix : [
-    { difficulty_band: "easy", target_pct: 40 },
-    { difficulty_band: "medium", target_pct: 40 },
-    { difficulty_band: "hard", target_pct: 20 },
-  ];
-  const order = ["easy", "medium", "hard"];
-  const sorted = [...bands].sort((a, b) => order.indexOf(a.difficulty_band) - order.indexOf(b.difficulty_band));
-  const total = sorted.reduce((a, b) => a + b.target_pct, 0) || 100;
-  let acc = 0;
-  const thresholds = sorted.map((b) => ({ band: b.difficulty_band, upto: (acc += (b.target_pct / total) * 10) }));
-  const r = slot % 10;
-  return thresholds.find((t) => r < t.upto)?.band ?? sorted[sorted.length - 1].difficulty_band;
-}
-
 // ── run/row types ────────────────────────────────────────────────────────────
 type RunRow = {
   id: string;
@@ -126,7 +206,27 @@ type RunRow = {
   written_count: number;
   failed_count: number;
   phase_cursor: Record<string, unknown>;
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L1/L2 — the two facts the lease needs:
+  // how long the run has been silent, and the exact heartbeat value to
+  // compare-and-swap the claim against.
+  started_at: string | null;
+  last_heartbeat_at: string | null;
 };
+
+/**
+ * The mutable handle the lease and the checkpoints share (L4).
+ *   cursor      — the phase_cursor the slice LAST wrote, so the release flips
+ *                 slice_active without discarding the slice's progress.
+ *   heartbeatAt — the heartbeat the slice last wrote through checkpoint(), or
+ *                 the run's original value if it never got that far. The CLAIM
+ *                 has to bump last_heartbeat_at (that is the compare-and-swap),
+ *                 but a slice that threw before doing any work must not leave
+ *                 behind a fresh heartbeat: the 30-minute stall banner
+ *                 (isStalled) is the only alarm for a run that cannot progress,
+ *                 and a per-cron claim would silence it forever. So the release
+ *                 writes the TRUTHFUL value back.
+ */
+type Lease = { cursor: Record<string, unknown>; heartbeatAt: string | null };
 
 type SeasonRow = {
   id: string; slug: string; starts_on: string; ends_on: string;
@@ -148,26 +248,117 @@ export type SliceReport = {
   note?: string;
 };
 
-/** One bounded slice of work against the oldest in-flight run. */
+/**
+ * One bounded slice of work against the oldest in-flight run — under a LEASE.
+ *
+ * CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D1. The claim is deliberately the FIRST write
+ * this function makes, before the season/config reads, so two slices never both
+ * get as far as computing `occupied`. The release is in withLease()'s finally,
+ * so a slice that throws frees the run for the next cron firing rather than
+ * parking it for STALE_LEASE_MS.
+ */
 export async function runGenerationSlice(
   s: Svc,
   opts: { budgetMs?: number; batchSize?: number } = {}
 ): Promise<SliceReport> {
-  const budgetMs = opts.budgetMs ?? 240_000;
-  const batchSize = Math.max(8, Math.min(12, opts.batchSize ?? 10));
-  const t0 = Date.now();
-  const overBudget = () => Date.now() - t0 > budgetMs;
   const nowIso = () => new Date().toISOString();
 
   const runs = await sbGet<RunRow>(
     s,
-    `dc_puzzle_generation_runs?completed_at=is.null&superseded_at=is.null&season_id=not.is.null&select=id,season_id,run_kind,status,target_count,written_count,failed_count,phase_cursor&order=started_at.asc&limit=1`
+    `dc_puzzle_generation_runs?completed_at=is.null&superseded_at=is.null&season_id=not.is.null&select=id,season_id,run_kind,status,target_count,written_count,failed_count,phase_cursor,started_at,last_heartbeat_at&order=started_at.asc&limit=1`
   );
   const run = runs[0];
   if (!run) return { idle: true };
 
-  const checkpoint = (patch: Record<string, unknown>) =>
-    sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, { last_heartbeat_at: nowIso(), ...patch });
+  // L1 — cheap local check first: a lease held and heartbeating means another
+  // slice is mid-batch, and there is nothing for this one to do.
+  if (!isClaimable(run, { now: Date.now() })) return { idle: true, note: leaseNote(run) };
+
+  const lease: Lease = { cursor: claimCursor(run.phase_cursor), heartbeatAt: run.last_heartbeat_at };
+
+  return withLease<SliceReport>({
+    // L2 — compare-and-swap on the heartbeat we just read. Of two slices that
+    // read the same row, the second one's filter matches nothing.
+    claim: async () => {
+      const rows = await sbPatchReturning(
+        s,
+        `dc_puzzle_generation_runs?id=eq.${run.id}&${heartbeatGuard(run.last_heartbeat_at)}&select=id`,
+        { phase_cursor: lease.cursor, last_heartbeat_at: nowIso() }
+      );
+      return Array.isArray(rows) && rows.length > 0;
+    },
+    work: () => sliceBody(s, opts, run, lease),
+    // L4 — written over the cursor the slice LAST checkpointed, so releasing
+    // the lease cannot roll back this slice's progress — and with the heartbeat
+    // the slice actually earned, so a slice that threw before doing any work
+    // leaves the stall alarm armed rather than reset by its own claim.
+    release: () =>
+      sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, {
+        phase_cursor: releaseCursor(lease.cursor),
+        last_heartbeat_at: lease.heartbeatAt,
+      }),
+    onUnavailable: () => ({ idle: true, note: "lease held" }),
+    onReleaseError: (err) =>
+      console.error(JSON.stringify({ at: "generation-worker", run: run.id, step: "release-lease", error: String(err) })),
+  });
+}
+
+async function sliceBody(
+  s: Svc,
+  opts: { budgetMs?: number; batchSize?: number },
+  run: RunRow,
+  lease: Lease
+): Promise<SliceReport> {
+  const budgetMs = opts.budgetMs ?? 240_000;
+  const batchSize = Math.max(8, Math.min(12, opts.batchSize ?? 10));
+  const t0 = Date.now();
+  // CC-DC-GEN-BATCH-HARDENING-1.0 D4/B3 — the guard is "can one more
+  // average-length batch finish", not "is the clock already past the budget".
+  // The old `Date.now() - t0 > budgetMs` let a batch START at 249s on a 250s
+  // budget and run into Vercel's 300s wall, losing it uncheckpointed.
+  const budget = createBudget({ budgetMs, startedAt: t0 });
+  const nowIso = () => new Date().toISOString();
+
+  // CC-DC-GEN-FAILURE-VISIBILITY-1.0 D3 — WHY a run failed must survive the
+  // slice that saw it. `baseFailures` is what the DB already had when this
+  // slice claimed the run; `sliceFailures` is what THIS slice has seen so far.
+  // Every checkpoint writes mergeFailures(base, slice), so a resumed run
+  // accumulates across slices and a second checkpoint inside one slice is
+  // idempotent rather than double-counting.
+  const cursor = { ...(run.phase_cursor || {}) } as Record<string, unknown>;
+  const baseFailures = cursor.failures;
+  const sliceFailures: Record<string, number> = {};
+  let lastFailure: { key: string; message: string; at: string } | null = null;
+  const countFailure = (key: string, n = 1) => {
+    sliceFailures[key] = (sliceFailures[key] ?? 0) + n;
+  };
+  const noteFailure = (key: string, message: string, n = 1) => {
+    countFailure(key, n);
+    lastFailure = lastFailureEntry(key, message, nowIso());
+  };
+
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 L4 — every checkpoint now ALWAYS writes a
+  // phase_cursor (it used to skip the write when there was nothing new to say)
+  // and always re-stamps `slice_active: true`, because the heartbeat and the
+  // lease flag must stay in agreement: a run that is heartbeating is a run
+  // someone owns. `lease.cursor` tracks what was last written so the release can
+  // flip the flag without discarding this slice's progress.
+  const checkpoint = (patch: Record<string, unknown>) => {
+    const beat = nowIso();
+    const body: Record<string, unknown> = { last_heartbeat_at: beat, ...patch };
+    lease.heartbeatAt = beat;
+    const given = body.phase_cursor;
+    const hasCursor = !!given && typeof given === "object";
+    const next: Record<string, unknown> = {
+      ...(hasCursor ? (given as Record<string, unknown>) : cursor),
+      slice_active: true,
+      failures: mergeFailures(baseFailures, sliceFailures),
+      ...(lastFailure ? { last_failure: lastFailure } : {}),
+    };
+    body.phase_cursor = next;
+    lease.cursor = next;
+    return sbPatch(s, `dc_puzzle_generation_runs?id=eq.${run.id}`, body);
+  };
 
   const seasons = await sbGet<SeasonRow>(s, `seasons?id=eq.${run.season_id}&select=id,slug,starts_on,ends_on,generated_at,locked_at&limit=1`);
   const season = seasons[0];
@@ -178,45 +369,105 @@ export async function runGenerationSlice(
 
   if (run.status === "queued") await checkpoint({ status: "generating" });
 
-  // resolve the focus config's slate + mixes (active first, else latest version)
-  const configs = await sbGet<{ id: string }>(
+  // resolve the focus config's slate + mixes (active first, else latest version).
+  // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — `difficulty_curve` comes down with
+  // it: the shape the commissioner previewed decides WHICH dates carry the
+  // deeper bands, so the generator has to read it.
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — `play_days_of_week` comes down with it:
+  // the season's play days decide how many slots there are at all.
+  type FocusConfig = { id: string; difficulty_curve?: string | null; play_days_of_week?: number[] | null };
+  const configs = await sbGet<FocusConfig>(
     s,
-    `season_config?season_id=eq.${season.id}&select=id,state,version&state=eq.active&limit=1`
+    `season_config?season_id=eq.${season.id}&select=id,state,version,difficulty_curve,play_days_of_week&state=eq.active&limit=1`
   );
-  const cfg = configs[0] ?? (await sbGet<{ id: string }>(s, `season_config?season_id=eq.${season.id}&select=id,version&order=version.desc&limit=1`))[0];
+  const cfg = configs[0] ?? (await sbGet<FocusConfig>(s, `season_config?season_id=eq.${season.id}&select=id,version,difficulty_curve,play_days_of_week&order=version.desc&limit=1`))[0];
   if (!cfg) {
     await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { error: "no season_config" } });
     return { runId: run.id, status: "failed_short", note: "no season_config" };
   }
   const [slate, catalog, themeMixRows, difficultyMixRows] = await Promise.all([
-    sbGet<{ game_id: string; is_enabled: boolean }>(s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled`),
+    // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — the slate's difficulty WINDOW comes
+    // down with it. These two columns were configured and read by nothing, and
+    // the Football season banked 167 rows below their own game's floor as a
+    // direct result (measured 2026-10-06).
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — and the per-game calendar columns:
+    // `appears_on_days` plus the game's own [starts_on, ends_on] window.
+    sbGet<{
+      game_id: string; is_enabled: boolean;
+      difficulty_floor: string | null; difficulty_ceiling: string | null;
+      appears_on_days: number[] | null; starts_on: string | null; ends_on: string | null;
+    }>(
+      s, `season_games?season_config_id=eq.${cfg.id}&select=game_id,is_enabled,difficulty_floor,difficulty_ceiling,appears_on_days,starts_on,ends_on`),
     sbGet<{ id: string; runtime_key: string | null; lifecycle_state: string }>(s, `game_catalog?select=id,runtime_key,lifecycle_state`),
-    sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; is_excluded: boolean }>(
-      s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,is_excluded`),
+    sbGet<{ theater_id: string; sector_code: string | null; thread_code: string | null; target_pct: number; is_excluded: boolean }>(
+      s, `season_theme_mix?season_config_id=eq.${cfg.id}&select=theater_id,sector_code,thread_code,target_pct,is_excluded`),
     sbGet<{ difficulty_band: string; target_pct: number; applies_to_game_id: string | null }>(
       s, `season_difficulty_mix?season_config_id=eq.${cfg.id}&select=difficulty_band,target_pct,applies_to_game_id`),
   ]);
   const byId = new Map(catalog.map((g) => [g.id, g]));
-  const types = slate
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — the catalog row and the SLATE row are
+  // carried together from here on: the runtime key names the type, and the
+  // slate row carries the floor/ceiling that type is generated inside.
+  const enabledGames = slate
     .filter((r) => r.is_enabled)
-    .map((r) => byId.get(r.game_id))
-    .filter((g): g is NonNullable<typeof g> => !!g && g.lifecycle_state === "live" && !!g.runtime_key)
-    .map((g) => g.runtime_key as string);
+    .map((r) => ({ row: r, game: byId.get(r.game_id) }))
+    .filter((x): x is { row: typeof x.row; game: NonNullable<typeof x.game> } =>
+      !!x.game && x.game.lifecycle_state === "live" && !!x.game.runtime_key);
+  const types = enabledGames.map((x) => x.game.runtime_key as string);
   if (types.length === 0) {
     await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { error: "no live games enabled" } });
     return { runId: run.id, status: "failed_short", note: "no live games enabled" };
   }
 
   const dates = seasonDates(season.starts_on, season.ends_on);
-  const cursor = { ...(run.phase_cursor || {}) } as Record<string, unknown>;
   const report: SliceReport = { runId: run.id, written: 0, failed: 0, themesInserted: 0 };
 
-  // ── Phase A — season theme rows, derived from the corpus calendar ──────────
-  // The 500 corpus rows (season_id NULL) are the reusable well (DEC-1/DEC-3).
-  // Each season date gets its own row (season_id set); mix EXCLUSIONS are
-  // honored by substituting the nearest non-excluded corpus row; target
-  // percentages steer validation/warnings, not row-by-row re-derivation (v1 —
-  // documented in PART-D-REPORT.md).
+  // ── the season calendar ───────────────────────────────────────────────────
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — THE slot list, from
+  // src/lib/seasons/schedule.ts. What it replaces: `for (type) for (date)` over
+  // the whole season, which generated a Monday-only game seven days a week and
+  // a Mon–Fri season on Saturdays, because play_days_of_week, appears_on_days
+  // and season_games.starts_on/.ends_on were read by nothing.
+  //
+  // `dates` (every day of the window) is still the THEME calendar: a theme row
+  // is a property of the date, not of a game, and dc_daily_theme is unique on
+  // (season_id, theme_date). A non-play day simply ends up with a theme row no
+  // puzzle uses — harmless, and it keeps the theme quotas the League Office
+  // validates against (dayCount) in agreement with what the worker inserts.
+  const scheduleSeason = { starts_on: season.starts_on, ends_on: season.ends_on };
+  const scheduleConfig = { play_days_of_week: cfg.play_days_of_week ?? null };
+  const scheduleGames: ScheduleGame[] = enabledGames.map(({ row, game }) => ({
+    type: game.runtime_key as string,
+    appears_on_days: row.appears_on_days ?? null,
+    starts_on: row.starts_on ?? null,
+    ends_on: row.ends_on ?? null,
+  }));
+  const datesByType = new Map<string, string[]>(
+    scheduleGames.map((game) => [
+      game.type,
+      scheduledDates({ season: scheduleSeason, config: scheduleConfig, game }),
+    ])
+  );
+
+  // ── Phase A — season theme rows, allocated from the configured mix ────────
+  // CC-DC-GEN-THEME-ALLOCATION-1.0 D8: `target_pct` is AUTHORITATIVE. The 500
+  // corpus rows (season_id NULL) are the reusable well (DEC-1/DEC-3) and each
+  // season date gets its own row (season_id set), but WHICH well row a date
+  // draws is now decided by src/lib/generation/theme-allocation.js from the
+  // commissioner's mix — included Theater (and Sector) target percentages
+  // converted to whole days by largest remainder, exclusions applied on all
+  // three axes, spread interleaved on the season id.
+  //
+  // What this replaces: the old loop matched the corpus row whose theme_date
+  // EQUALLED the season date and substituted the nearest-dated row otherwise,
+  // so the calendar was a function of the corpus window rather than of the
+  // mix — and a season date past the end of that window (2027-12-13) exhausted
+  // the tail rows and threw. Corpus row dates are now read by nothing here.
+  //
+  // The plan is computed over the WHOLE season so the quotas are season-wide,
+  // and only the dates that have no row yet are inserted: a resumed run and a
+  // partially-built season both stay correct, and no existing theme row is
+  // modified or deleted (D8 — Football remediation is a separate issue).
   if (cursor.themes_done !== true) {
     report.phase = "themes";
     const existing = await sbGet<{ theme_date: string }>(s, `dc_daily_theme?season_id=eq.${season.id}&select=theme_date`);
@@ -225,26 +476,38 @@ export async function runGenerationSlice(
     if (missing.length) {
       const corpusRows = await sbGet<ThemeRow & Record<string, unknown>>(
         s,
-        `dc_daily_theme?season_id=is.null&select=*&order=theme_date.asc&limit=600`
+        // `order=id.asc` only so the 600-row window is a stable SET — the
+        // allocator re-orders by its own seed and never reads theme_date.
+        `dc_daily_theme?season_id=is.null&select=*&order=id.asc&limit=600`
       );
-      const exTheater = new Set(themeMixRows.filter((r) => r.is_excluded && !r.sector_code && !r.thread_code).map((r) => r.theater_id));
-      const exSector = new Set(themeMixRows.filter((r) => r.is_excluded && r.sector_code && !r.thread_code).map((r) => r.sector_code as string));
-      const exThread = new Set(themeMixRows.filter((r) => r.is_excluded && r.thread_code).map((r) => r.thread_code as string));
-      const passes = (row: ThemeRow) =>
-        !exTheater.has(row.theater_id) && !exSector.has(row.sector_code) &&
-        !(row.thread_codes || []).some((c) => exThread.has(c));
-      const byDate = new Map(corpusRows.map((r) => [r.theme_date, r]));
-      const usedSources = new Set<string>();
+      let plan: ReturnType<typeof allocateThemeCalendar>;
+      try {
+        plan = allocateThemeCalendar({ dates, corpusRows, mixRows: themeMixRows, seed: season.id });
+      } catch (e) {
+        // D7 — an included Theater/Sector the corpus cannot serve is a
+        // configuration fault. Fail the run and NAME it; never redistribute the
+        // share onto whichever theaters happen to have rows.
+        const err = e as ThemeAllocationError;
+        const keys: string[] = Array.isArray(err?.failureKeys) && err.failureKeys.length
+          ? err.failureKeys
+          : [err?.failureKey || "theme:unfillable:-"];
+        for (const k of keys) countFailure(k);
+        noteFailure(keys[0], err?.message ?? String(e));
+        await checkpoint({
+          status: "failed_short",
+          completed_at: nowIso(),
+          phase_cursor: { ...cursor, error: clampMessage(err?.message ?? String(e)) },
+        });
+        return { ...report, status: "failed_short", note: clampMessage(err?.message ?? String(e)) };
+      }
+      const byId = new Map(corpusRows.map((r) => [String(r.id), r]));
+      const needed = new Set(missing);
       const toInsert: Record<string, unknown>[] = [];
-      for (const date of missing) {
-        let source = byDate.get(date);
-        if (!source || !passes(source) || usedSources.has(source.id)) {
-          source = corpusRows
-            .filter((r) => passes(r) && !usedSources.has(r.id))
-            .sort((a, b) => Math.abs(Date.parse(a.theme_date) - Date.parse(date)) - Math.abs(Date.parse(b.theme_date) - Date.parse(date)))[0];
-        }
-        if (!source) throw new Error(`no corpus theme row available for ${date} under the configured exclusions`);
-        usedSources.add(source.id);
+      for (const slot of plan) {
+        if (!needed.has(slot.date)) continue;
+        const source = byId.get(slot.sourceId);
+        if (!source) continue; // unreachable: the plan only names rows it was given
+        const date = slot.date;
         toInsert.push({
           theme_date: date,
           season_id: season.id,
@@ -286,11 +549,24 @@ export async function runGenerationSlice(
   );
   const occupied = new Set(rangeRows.map((r) => `${r.puzzle_type}|${r.go_live_date}`));
 
-  let slotDates = dates;
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — every (type, date) this season actually
+  // plays, type-major with dates ascending: deliberately the same order the
+  // old `for (type) for (date)` product produced, so nothing downstream
+  // reorders. On a season with no schedule fields set this IS that product.
+  let slots = scheduledSlots({ season: scheduleSeason, config: scheduleConfig, games: scheduleGames });
+
   if (run.run_kind === "pilot") {
     let pilotDate = typeof cursor.pilot_date === "string" ? cursor.pilot_date : null;
     if (!pilotDate) {
-      pilotDate = dates.find((d) => types.every((t) => !occupied.has(`${t}|${d}`))) ?? null;
+      // The first date on which every game SCHEDULED THAT DAY is free. A date
+      // the calendar skips entirely is not a candidate (it would be vacuously
+      // "all free" and produce a pilot of zero puzzles), and a game that does
+      // not play that day no longer disqualifies the date.
+      pilotDate =
+        dates.find((d) => {
+          const playing = scheduledTypesOn({ date: d, season: scheduleSeason, config: scheduleConfig, games: scheduleGames });
+          return playing.length > 0 && playing.every((t) => !occupied.has(`${t}|${d}`));
+        }) ?? null;
       if (!pilotDate) {
         await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { ...cursor, error: "no free date for a pilot" } });
         return { ...report, status: "failed_short", note: "no free date for a pilot — every season date already has bank rows" };
@@ -298,17 +574,15 @@ export async function runGenerationSlice(
       cursor.pilot_date = pilotDate;
       await checkpoint({ phase_cursor: cursor });
     }
-    slotDates = [pilotDate];
+    const on = pilotDate;
+    slots = slots.filter((slot) => slot.date === on);
   }
 
-  const pending: { type: string; date: string }[] = [];
-  for (const type of types)
-    for (const date of slotDates)
-      if (!occupied.has(`${type}|${date}`)) pending.push({ type, date });
-  report.skippedExisting = types.length * slotDates.length - pending.length;
+  const pending = slots.filter((slot) => !occupied.has(`${slot.type}|${slot.date}`));
+  report.skippedExisting = slots.length - pending.length;
 
   if (pending.length === 0) {
-    const done = run.run_kind === "pilot" ? "pilot_complete" : "complete";
+    const done = sliceOutcome({ runKind: run.run_kind, pendingCount: 0 }).status;
     const mine = await sbGet<{ id: string }>(s, `dc_puzzle_bank_staging?generation_batch_id=eq.${run.id}&select=id`);
     await checkpoint({ status: done, completed_at: nowIso(), written_count: mine.length, phase_cursor: cursor });
     if (run.run_kind === "full" && !season.generated_at)
@@ -330,11 +604,75 @@ export async function runGenerationSlice(
   }
   const globalDiffMix = difficultyMixRows.filter((d) => !d.applies_to_game_id);
 
+  // ── the season's difficulty plan ──────────────────────────────────────────
+  // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D4 — computed ONCE per slice, over the
+  // FULL season date list and every enabled type, so the band counts are a
+  // property of the season rather than of whichever slice happens to be
+  // running. Each slot then just looks itself up. What this replaces: the
+  // 10-slot bag in difficulty.js, keyed on `idx * 7 + types.indexOf(type)`,
+  // which could only quantize the mix to tenths — Football asked for
+  // 14.41/29.82/55.77 and banked 120/178/297 instead of 85/180/330 — and which
+  // read difficulty_curve not at all.
+  //
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D2 — and the mix each type is apportioned
+  // against is now the game's OWN: its override rows
+  // (season_difficulty_mix.applies_to_game_id, which this worker used to drop
+  // on the floor) when it has any, else the season mix — clipped to the
+  // game's [difficulty_floor, difficulty_ceiling] and renormalized. Rackl is
+  // configured expert-expert, so Rackl is now 100% expert instead of 20/30/50
+  // of a mix that was never its own.
+  const perTypeMix: Record<string, { difficulty_band: string; target_pct: number }[]> = {};
+  for (const { row, game } of enabledGames) {
+    const eff = effectiveTypeMix({
+      seasonMix: globalDiffMix,
+      perGameRows: difficultyMixRows.filter((d) => d.applies_to_game_id === game.id),
+      floor: row.difficulty_floor,
+      ceiling: row.difficulty_ceiling,
+    });
+    // P4 — a floor deeper than the ceiling leaves no band to generate. The
+    // League Office blocks this as `difficulty_window_empty` before a run is
+    // ever queued; reaching it here means the slate changed under a queued run,
+    // and inventing a band would be worse than stopping.
+    if (!eff) {
+      const note = `difficulty_window_empty: ${game.runtime_key}`;
+      await checkpoint({ status: "failed_short", completed_at: nowIso(), phase_cursor: { ...cursor, error: note } });
+      return { runId: run.id, status: "failed_short", note };
+    }
+    perTypeMix[game.runtime_key as string] = eff;
+  }
+
+  // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — each type's bands are apportioned over the
+  // dates THAT TYPE plays, not over the season. planDifficulty already treats
+  // types independently, so calling it once per type with that type's calendar
+  // is the same arithmetic on a correct denominator; with no schedule fields
+  // set every type's calendar IS the season and the result is byte-identical
+  // to the single call this replaces. The alternative — planning over all 119
+  // dates and reading back only the ~17 Mondays — hands a Monday-only game
+  // whatever seventh of its mix happens to land on a Monday.
+  const diffPlan = new Map<string, string>();
+  for (const type of types) {
+    const typeDates = datesByType.get(type) ?? [];
+    if (!typeDates.length) continue;
+    const plan = planDifficulty({
+      dates: typeDates,
+      types: [type],
+      mix: globalDiffMix,
+      perTypeMix,
+      curve: cfg.difficulty_curve ?? "flat",
+      seed: season.id,
+    });
+    for (const [key, band] of plan) diffPlan.set(key, band);
+  }
+
   const mineAtStart = await sbGet<{ id: string }>(s, `dc_puzzle_bank_staging?generation_batch_id=eq.${run.id}&select=id`);
   const baseWritten = mineAtStart.length;
   const baseFailed = run.failed_count || 0;
   let written = 0;
   let failed = 0;
+  // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D2 — slots this slice found already filled
+  // by someone else MID-SLICE (the pre-computed `occupied` set could not know).
+  // Filled is filled: these are progress, not failures.
+  let duplicateSkips = 0;
   let sweptAll = true;
 
   outer:
@@ -343,9 +681,14 @@ export async function runGenerationSlice(
     if (!typePending.length) continue;
     const fpSet = fpByType.get(type) ?? fpByType.set(type, new Set()).get(type)!;
 
-    for (let i = 0; i < typePending.length; i += batchSize) {
-      if (overBudget()) { sweptAll = false; break outer; }
-      const slice = typePending.slice(i, i + batchSize);
+    // CC-DC-GEN-BATCH-HARDENING-1.0 D3 — the first call's size is a property of
+    // the GAME, not a single number for all seven. `batchSize` stays the upper
+    // bound; a verbose type (The Brief) starts below it.
+    const startSize = startingBatchSize(type, batchSize);
+
+    for (let i = 0; i < typePending.length; i += startSize) {
+      if (!budget.canAfford()) { sweptAll = false; break outer; }
+      const slice = typePending.slice(i, i + startSize);
       const items = slice.map((p, k) => {
         const theme = themeByDate.get(p.date);
         const day: ThemedDay = theme ?? {
@@ -361,10 +704,16 @@ export async function runGenerationSlice(
           theme: {
             theater_name: day.theater_name,
             sector_name: day.sector_name,
+            // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D1 — the sector's one-line scope,
+            // so "stay inside this sector" names a boundary instead of a label.
+            // dc_daily_theme has no sector-definition column; its `theme_blurb`
+            // IS the day's one-line statement of what the sector covers, and
+            // the worker already reads the row with `select=*`.
+            sector_scope: day.theme_blurb ?? null,
             thread_names: day.thread_names,
             tier_name: corpus.tier_names[day.jpas_tier_code] || day.jpas_tier_code,
           },
-          difficulty: difficultyFor(globalDiffMix, idx * 7 + types.indexOf(type)),
+          difficulty: diffPlan.get(`${type}|${p.date}`) ?? "practitioner",
           threadScope: day.thread_names.join("; "),
         };
       });
@@ -374,46 +723,87 @@ export async function runGenerationSlice(
       // its generator does; that must degrade, never fabricate.
       const user = userPrompt(type, items);
       if (!user) {
-        console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "skip", reason: "no prompt spec for this game type" }));
+        const key = failureKey("skip");
+        // Counted for visibility only: a skip is NOT a failure (the slot was
+        // never attempted, and D6 keeps failed_count's meaning intact), and it
+        // must not displace a real failure's last_failure message either.
+        countFailure(key, slice.length);
+        console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "skip", key, reason: "no prompt spec for this game type" }));
         continue;
       }
 
-      let arr: Record<string, unknown>[] = [];
-      try {
-        const raw = await callModel(systemPrompt(type), user);
-        arr = parseArray(raw);
-      } catch (err) {
-        failed += slice.length;
-        console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, step: "model", error: String(err) }));
-        await checkpoint({ failed_count: baseFailed + failed, phase_cursor: { ...cursor, phase: "puzzles", type, at: slice[0]?.date } });
-        continue;
-      }
+      // CC-DC-GEN-BATCH-HARDENING-1.0 D2 — one model call per sub-slice, split
+      // in half whenever `stop_reason` says the output was cut off and fewer
+      // complete objects came back than were asked for. The split logic itself
+      // is pure and lives in batching.js; the closure below is the only part
+      // that touches the network.
+      const batch = await runBatchWithSplit(items, {
+        budget,
+        call: async (sub) => {
+          const subUser = userPrompt(type, sub);
+          if (!subUser) throw new Error(`no prompt spec for ${type}`);
+          const res = await callModel(systemPrompt(type), subUser);
+          return { objects: parseArray(res.text), stopReason: res.stopReason, ms: res.ms };
+        },
+        log: (event) =>
+          console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, ...event })),
+      });
 
-      for (let k = 0; k < items.length; k++) {
-        const it = items[k];
-        const el = arr[k] as { puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string } | undefined;
+      for (const outcome of batch.outcomes) {
+        const it = outcome.item;
+        if (outcome.failure) {
+          // A `truncated` or `model` failure already describes a whole
+          // sub-slice; it arrives here once per ITEM so failed_count keeps its
+          // meaning (slots that did not produce a row).
+          failed++;
+          const err = outcome.failure.error;
+          const key = failureKey(outcome.failure.reason, {
+            status: err instanceof ModelCallError ? err.status : null,
+          });
+          noteFailure(key, outcome.failure.message);
+          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, key, error: outcome.failure.message }));
+          continue;
+        }
+        const el = outcome.object as {
+          puzzle?: Record<string, unknown>; hints?: string[]; answer_explanation?: string; difficulty?: string;
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 — advisory self-report, read through
+          // readDomainFit() because a model sometimes nests it in `puzzle`.
+          domain_fit?: unknown; domain_fit_reason?: unknown;
+        } | undefined;
         const content = el?.puzzle;
         const hints = el?.hints || [];
-        const fail = (msg: string) => {
+        // D4: the structured log line keeps its shape and gains `key`. The
+        // messages below are STRUCTURAL ("Rackl g0: label", "hints: must be
+        // distinct", "count phrase") — puzzle-schema never echoes content
+        // values into them, which is why they are safe to persist and render.
+        const fail = (kind: string, msg: string, info?: { code?: string | null; constraint?: string | null; status?: number | null }) => {
           failed++;
-          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, error: msg }));
+          const key = failureKey(kind, info);
+          noteFailure(key, msg);
+          console.error(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, key, error: msg }));
         };
-        if (!content) { fail("no content parsed"); continue; }
+        if (!content) { fail("no-content", "no content parsed"); continue; }
         const v = validateContent(type, content);
-        if (!v.ok) { fail("schema: " + v.errors.join("; ")); continue; }
+        if (!v.ok) { fail("schema", "schema: " + v.errors.join("; ")); continue; }
         const answerKey = answerKeyFrom(type, content);
         const hv = checkHints(hints[0], hints[1], hints[2], answerKey);
-        if (!hv.ok) { fail("hints: " + hv.errors.join("; ")); continue; }
+        if (!hv.ok) { fail("hints", "hints: " + hv.errors.join("; ")); continue; }
         let copyBad = false;
         for (const text of [content.name, el?.answer_explanation, ...hints]) {
           const cv = copyViolations(text);
-          if (cv.length) { fail("copy: " + cv.join("; ")); copyBad = true; break; }
+          if (cv.length) { fail("copy", "copy: " + cv.join("; ")); copyBad = true; break; }
         }
         if (copyBad) continue;
         const fp = subjectFingerprint(type, content);
-        if (fpSet.has(fp)) { fail("subject repeat within the bank"); continue; }
+        if (fpSet.has(fp)) { fail("subject-repeat", "subject repeat within the bank"); continue; }
 
         const day = it.day;
+        // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — decided BEFORE the insert and by a
+        // pure function, so `fit` (a report field, not a column) can never
+        // reach the row: only the two columns below are spread into it.
+        const fitVerdict = deriveValidation({ ...readDomainFit(el), answerKey });
+        if (fitVerdict.fit === "off")
+          console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, step: "domain-fit-off" }));
         try {
           // DEC-6: Draft/Unpublished, public_id NULL (the trigger is the only minter)
           await sbInsert(s, `dc_puzzle_bank_staging`, [{
@@ -432,18 +822,47 @@ export async function runGenerationSlice(
             sub_domain: (day.thread_codes || [])[0] || null,
             theater_id: day.theater_id || null,
             jpas_tier_code: day.jpas_tier_code || null,
-            difficulty: el?.difficulty || it.difficulty,
+            // CC-DC-GEN-DIFFICULTY-CANON-1.0 D1/D2: the season-assigned band is
+            // authoritative for `difficulty` (the staging CHECK only accepts the
+            // canonical three); the model's self-report is audit-only in difficulty_raw.
+            ...resolveRowDifficulty(it.difficulty, el?.difficulty),
             subject_fingerprint: fp,
             source_refs: { subject: it.subject, thread_codes: day.thread_codes },
             content_hash: contentHash(content, answerKey),
             generation_batch_id: run.id,
             generator_model: GEN_MODEL,
-            validation_status: "passed",
+            // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — `domain` stays the DAY's
+            // sector above: the theme is the editorial contract and the puzzle
+            // is filed under it either way. What an honest "off" changes is
+            // that the row lands as `review` with one STRUCTURAL note, so the
+            // commissioner sees it before Approve. "on"/"adjacent"/unknown are
+            // `passed`, exactly as before.
+            validation_status: fitVerdict.validation_status,
+            validation_errors: fitVerdict.validation_errors,
           }]);
           fpSet.add(fp);
           written++;
         } catch (err) {
-          fail("db: " + String(err).slice(0, 200));
+          // The D2 message already reads
+          //   `Supabase POST dc_puzzle_bank_staging 400 23514 new row ... constraint "..."`
+          // so it is logged WHOLE — the old `String(err).slice(0, 200)` was a
+          // second truncation of an already-truncated body and was exactly what
+          // hid the SQLSTATE and the constraint name.
+          const e = err instanceof SupabaseRestError ? err : null;
+          // CC-DC-GEN-LEASE-AUTOADVANCE-1.0 D2/S1 — 23505 on
+          // dc_staging_season_type_date_uniq means this exact (season, type,
+          // date) slot already has a row. That is the outcome the slice wanted,
+          // so it is a SKIP: it does not touch failed_count, it is not recorded
+          // in phase_cursor.failures, and it counts as progress (S3) so a slice
+          // that only hit duplicates cannot trip the zero-progress rule. S2:
+          // any OTHER 23505 is still a failure.
+          if (e && isBenignSlotConflict({ code: e.code, constraint: e.constraint })) {
+            duplicateSkips++;
+            fpSet.add(fp);
+            console.warn(JSON.stringify({ at: "generation-worker", run: run.id, type, date: it.date, step: "slot-already-filled" }));
+            continue;
+          }
+          fail("db", e ? e.message : String(err), e ? { code: e.code, constraint: e.constraint } : undefined);
         }
       }
 
@@ -452,21 +871,41 @@ export async function runGenerationSlice(
         failed_count: baseFailed + failed,
         phase_cursor: { ...cursor, phase: "puzzles", type, at: slice[slice.length - 1]?.date },
       });
+
+      // B3 — the guard stopped mid-batch. Whatever was written is checkpointed
+      // above; the unattempted slots stay pending and the next invocation (cron
+      // or staff trigger) resumes from the DB. This is NOT a zero-progress
+      // sweep, so `sweptAll` must say so.
+      if (batch.stopped) { sweptAll = false; break outer; }
     }
   }
 
   report.written = written;
   report.failed = failed;
-  const pendingAfter = pending.length - written;
+  // D2/S1 — the duplicates this slice discovered mid-flight join the slots that
+  // were already filled when it started. Both are "skipped, not failed".
+  report.skippedExisting = (report.skippedExisting ?? 0) + duplicateSkips;
+
+  // D2/S3 — the completion and zero-progress rules now live in slots.js, where
+  // the clause that matters ("a duplicate-only slice made progress") is a test
+  // rather than an inline condition. The zero-progress THRESHOLD is unchanged.
+  const outcome = sliceOutcome({
+    runKind: run.run_kind,
+    pendingCount: pending.length,
+    written,
+    duplicateSkips,
+    failed,
+    sweptAll,
+  });
+  const pendingAfter = outcome.pendingAfter;
   report.pendingAfter = pendingAfter;
 
-  if (pendingAfter <= 0) {
-    const done = run.run_kind === "pilot" ? "pilot_complete" : "complete";
-    await checkpoint({ status: done, completed_at: nowIso(), written_count: baseWritten + written, phase_cursor: cursor });
+  if (outcome.done && !outcome.failedShort) {
+    await checkpoint({ status: outcome.status, completed_at: nowIso(), written_count: baseWritten + written, phase_cursor: cursor });
     if (run.run_kind === "full" && !season.generated_at)
       await sbPatch(s, `seasons?id=eq.${season.id}`, { generated_at: nowIso() });
-    report.status = done;
-  } else if (sweptAll && written === 0 && failed > 0) {
+    report.status = outcome.status;
+  } else if (outcome.failedShort) {
     // a full sweep produced nothing — stop and report rather than loop forever
     await checkpoint({
       status: "failed_short",
@@ -476,7 +915,7 @@ export async function runGenerationSlice(
       phase_cursor: { ...cursor, error: `zero-progress sweep: ${pendingAfter} slots unreachable` },
     });
     report.status = "failed_short";
-    report.note = `stopped short: ${pendingAfter} slots kept failing — see run phase_cursor and logs`;
+    report.note = outcome.note;
   } else {
     report.status = "generating";
   }

@@ -7,7 +7,9 @@ import { useState, useEffect, useRef } from "react";
 import { EDGE_FUNCTIONS_BASE } from "@/lib/supabase";
 
 const HANDLE_RE = /^[a-z0-9_]{3,20}$/;
-const MAX_TEAMS = 5;
+// Fallback only. The season's real cap arrives on the /api/teams payload as
+// `teamCap` (CC-DC-TEAM-CAP-FROM-CONFIG-1.0); this is what we show until it does.
+const DEFAULT_MAX_TEAMS = 5;
 
 // Passed in from DailyChallenge so we inherit the same visual language
 export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDismiss }) {
@@ -20,6 +22,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
   const [teams, setTeams] = useState([]); // available teams
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
   const [teamSearch, setTeamSearch] = useState("");
+  const [maxTeams, setMaxTeams] = useState(DEFAULT_MAX_TEAMS); // season's cap
   const [season, setSeason] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +43,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
       const r = await fetch(`/api/teams${q ? `?q=${encodeURIComponent(q)}` : ""}`);
       const d = await r.json();
       setTeams(Array.isArray(d.teams) ? d.teams : []);
+      if (Number.isFinite(d?.teamCap)) setMaxTeams(Number(d.teamCap));
     } catch {}
   }
 
@@ -186,7 +190,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
   function toggleTeam(id) {
     setSelectedTeamIds((prev) => {
       if (prev.includes(id)) return prev.filter((t) => t !== id);
-      if (prev.length >= MAX_TEAMS) return prev; // at max
+      if (prev.length >= maxTeams) return prev; // at max
       return [...prev, id];
     });
   }
@@ -365,7 +369,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
             Pick your teams
           </div>
           <div style={{ fontSize: "11px", color: C.muted, lineHeight: 1.5, ...mono }}>
-            Select up to 5 teams to compete with. This is optional — you can always skip.
+            Select up to {maxTeams} {maxTeams === 1 ? "team" : "teams"} to compete with. This is optional — you can always skip.
           </div>
         </div>
         <div>
@@ -399,7 +403,7 @@ export default function OTPGate({ trigger, C, sans, mono, Btn, onComplete, onDis
         </div>
         {selectedTeamIds.length > 0 && (
           <div style={{ fontSize: "11px", color: C.muted, ...mono }}>
-            {selectedTeamIds.length}/{MAX_TEAMS} selected
+            {selectedTeamIds.length}/{maxTeams} selected
           </div>
         )}
         {error && <div style={{ fontSize: "11px", color: C.red, ...mono }}>{error}</div>}

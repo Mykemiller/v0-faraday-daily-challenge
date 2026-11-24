@@ -1,8 +1,19 @@
+import { redirect } from "next/navigation";
 import StubPage from "@/components/StubPage";
+import { SIGNAL_ROOM_URL, loadSignalRoomHealth, signalRoomTile } from "@/lib/signal-room";
 
 export const metadata = { title: "Signal Room — Faraday" };
 
-export default function Page() {
+// faraday-intelligence.ai/signal-room is the in-brand address the DC masthead,
+// the legal schedule and old links point at. Signal Room itself is a separate
+// app (src/lib/signal-room.ts). When that app reports a populated, launched
+// feed this route forwards to it; until then it keeps rendering the stub, so
+// the in-brand address never lands a reader on an error card. The rule is the
+// same one the Home tile uses for its "Live" tag.
+export default async function Page() {
+  const health = await loadSignalRoomHealth();
+  if (signalRoomTile(health).tag === "Live") redirect(SIGNAL_ROOM_URL);
+
   return (
     <StubPage
       title="Signal Room"

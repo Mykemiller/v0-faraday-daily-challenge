@@ -2,6 +2,7 @@ import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { JwHomeTile } from "@/components/JwHomeTile";
+import { JW_HOME_URL } from "@/lib/jw-url";
 import {
   TOKEN_PACKS,
   formatPackPrice,
@@ -10,6 +11,8 @@ import {
 } from "@/config/token-packs";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
+import { dcCanonicalUrl } from "@/lib/hosts";
+import { SIGNAL_ROOM_URL, loadSignalRoomHealth, signalRoomTile } from "@/lib/signal-room";
 
 // ── Faraday Intelligence homepage (engine-as-site) ───────────────────────────
 // The revenue door. IA: one-idea hero + one primary action → a one-line "how
@@ -23,12 +26,25 @@ import { keyOf } from "@/lib/game-registry";
 
 // Storefronts. Daily Challenge is the free-door cross-link below; Faraday Academy
 // is the full-width panel further down — so neither is repeated in this grid.
-const STOREFRONTS: { name: string; href: string; blurb: string; tag?: string; primary?: boolean; external?: boolean }[] = [
+const STOREFRONTS: { name: string; href: string; blurb: string; lede?: string; tag?: string; stat?: string; primary?: boolean; external?: boolean }[] = [
   { name: "Faraday Intelligent Alert", href: "/intelligent-alert", blurb: "Real-time alerts on the moves that matter, with the weekly Pulse briefing bundled in.", tag: "Includes weekly Pulse" },
+  { name: "Faraday Predicts", href: "/predicts", blurb: "Faraday's dated, probability-weighted calls on the AI data center buildout — browse them by Theater or company, watch the ones you care about, and see every grade.", tag: "Scored" },
   { name: "Briefing Library", href: "/briefing-library", blurb: "On-demand depth: the searchable archive of Faraday briefings and analysis.", tag: "Metered" },
-  { name: "Jurisdiction Watch", href: "/jurisdiction-watch", blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
-  { name: "Signal Room", href: "https://faraday-signal-room.com/signal-room", external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread.", tag: "Live" },
-  { name: "Thought Forge", href: "/thought-forge", blurb: "Turn Faraday intelligence into your own briefs, memos, and models.", tag: "Metered" },
+  { name: "Jurisdiction Watch", href: JW_HOME_URL, external: true, blurb: "Jurisdiction-level posture and permitting risk on a live choropleth.", tag: "Metered" },
+  // Signal Room carries no tag here on purpose: "Live" and the 24-hour count are
+  // filled in per request from the Signal Room's own health endpoint
+  // (src/lib/signal-room.ts), so the tile cannot advertise a feed that is down.
+  { name: "Signal Room", href: SIGNAL_ROOM_URL, external: true, blurb: "The live Signal feed — every Signal Faraday fires across the buildout, filterable by Theater, Sector and Thread." },
+  // ThoughtForge lives on its own domain (same pattern as Signal Room). Copy
+  // approved by Myke 2026-11-05; `lede` is the one-line headline above the blurb.
+  {
+    name: "Thought Forge",
+    href: "https://www.faraday-thoughtforge.com/",
+    external: true,
+    lede: "Ten advisors. One ruling. Every datacenter decision argued in the open.",
+    blurb: "Ask the panel a datacenter question. Each advisor answers from their own domain, disagreement stays on the record, every claim carries a confidence label, and the Chief of Staff closes with a ruling and the evidence that would change it.",
+    tag: "Metered",
+  },
 ];
 
 // Pack prices are NOT written out here. They come from the locked-canon mirror
@@ -42,7 +58,13 @@ export default async function Home() {
   // Locked lobby order from game_catalog. An eighth game appears here with no
   // code change; an unreachable catalog renders the section with no tiles
   // rather than a stale hardcoded seven.
-  const dcGames = await loadLiveGames();
+  // The Signal Room probe runs alongside the catalog read; it never throws and
+  // gives up after 2.5s, so it cannot hold the homepage up.
+  const [dcGames, signalRoomHealth] = await Promise.all([loadLiveGames(), loadSignalRoomHealth()]);
+  const signalRoom = signalRoomTile(signalRoomHealth);
+  const storefronts = STOREFRONTS.map((s) =>
+    s.href === SIGNAL_ROOM_URL ? { ...s, tag: signalRoom.tag, stat: signalRoom.stat } : s,
+  );
 
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
@@ -58,9 +80,11 @@ export default async function Home() {
           <nav className="ml-auto flex items-center gap-4 font-mono text-[11px] text-warm-cream">
             <a href="#storefronts" className="hidden hover:text-gold-light sm:inline">Surfaces</a>
             <a href="#academy" className="hidden hover:text-gold-light sm:inline">Academy</a>
-            <Link href="/leaderboard" className="rounded-md border border-gold/50 px-3 py-1.5 text-gold-light hover:bg-gold/10">
+            {/* CC-DC-CANONICAL-DOMAIN-1.0 (D4): DC pages live on the DC domain, so
+                the brand site links straight there rather than through a 308. */}
+            <a href={dcCanonicalUrl("/leaderboard")} className="rounded-md border border-gold/50 px-3 py-1.5 text-gold-light hover:bg-gold/10">
               Your Leaderboard →
-            </Link>
+            </a>
           </nav>
         </div>
       </header>
@@ -109,7 +133,7 @@ export default async function Home() {
 
         {/* Storefront tiles — Live Agent is the primary path, the rest subordinated */}
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {STOREFRONTS.map((s) => {
+          {storefronts.map((s) => {
             const cardClass = `group flex h-full flex-col rounded-xl border p-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold ${
               s.primary
                 ? "border-gold bg-warm-cream hover:border-gold"
@@ -123,7 +147,13 @@ export default async function Home() {
                     <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark">{s.tag}</span>
                   )}
                 </div>
+                {s.lede && (
+                  <p className="mt-2 font-serif text-[14px] font-semibold italic leading-snug text-forest">{s.lede}</p>
+                )}
                 <p className={`mt-2 font-sans leading-relaxed text-near-black/70 ${s.primary ? "text-[15px] max-w-2xl" : "text-[13px]"}`}>{s.blurb}</p>
+                {s.stat && (
+                  <p className="mt-2 font-mono text-[11px] tracking-[0.04em] text-forest">{s.stat}</p>
+                )}
                 <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">
                   {s.external ? "Enter →" : "Open →"}
                 </span>
@@ -131,11 +161,11 @@ export default async function Home() {
             );
             return (
               <li key={s.href} className={s.primary ? "sm:col-span-2 lg:col-span-3" : undefined}>
-                {s.href === "/jurisdiction-watch" ? (
+                {s.href === JW_HOME_URL ? (
                   <JwHomeTile />
                 ) : s.external ? (
-                  // External storefront (Signal Room lives on its own domain);
-                  // same tab per spec, rel=noopener for safety.
+                  // External storefront (Signal Room, Thought Forge — each on
+                  // its own domain); same tab per spec, rel=noopener for safety.
                   <a href={s.href} rel="noopener noreferrer" className={cardClass}>
                     {inner}
                   </a>
@@ -224,9 +254,9 @@ export default async function Home() {
         <div className="rounded-xl border border-gold/40 bg-forest p-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="font-display text-[22px] font-bold text-warm-white">Sharpen up free, every day</span>
-            <Link href="/daily-challenge" className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
+            <a href={dcCanonicalUrl("/daily-challenge")} className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold-light hover:text-gold">
               Free · all {dcGames.length} games →
-            </Link>
+            </a>
           </div>
           <p className="mt-2 max-w-2xl font-sans text-[13px] leading-relaxed text-warm-cream/80">
             {dcGames.length} two-minute intelligence games for people who work in and around the AI data
@@ -239,14 +269,14 @@ export default async function Home() {
               const label = keyOf(g);
               return (
                 <li key={g.id}>
-                  <Link
-                    href={`/daily-challenge?game=${encodeURIComponent(label)}`}
+                  <a
+                    href={dcCanonicalUrl("/daily-challenge", `?game=${encodeURIComponent(label)}`)}
                     aria-label={`Play ${label}`}
                     className="flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
                   >
                     <GameIcon slug={g.route_slug ?? undefined} size={56} />
                     <span className="font-mono text-[11px] leading-tight text-warm-cream/85">{label}</span>
-                  </Link>
+                  </a>
                 </li>
               );
             })}

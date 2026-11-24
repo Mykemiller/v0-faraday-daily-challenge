@@ -9,6 +9,9 @@ import {
   getConfigBundle, getScopeOptions, loadConfigs, loadThemeTaxonomy,
 } from "@/lib/league-office/seasons";
 import { PageHeading, PendingScreen, EmptyState } from "@/components/league-office/primitives";
+// CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — how much of this season's bank is
+// already committed. Counts only; the projection is the `published` column.
+import { bankCommitment } from "@/lib/league-office/generation-status";
 import ConfigEditor from "@/components/league-office/season/ConfigEditor";
 
 export default async function ConfigEditorPage({
@@ -37,6 +40,14 @@ export default async function ConfigEditorPage({
     loadConfigs(staff.s, id),
   ]);
 
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — the persistent banner's facts. Loaded
+  // ONLY for a season that has generated: an un-generated season has no bank
+  // to be too late for, and should not pay for the read.
+  const generatedAt = bundle.season?.generated_at ?? null;
+  const postGeneration = generatedAt
+    ? { generatedAt, ...(await bankCommitment(staff.s, id)) }
+    : null;
+
   // The incumbent is what the promote dialog diffs against.
   const incumbent =
     siblings.find((c: { state: string; id: string }) => c.state === "active" && c.id !== configId) ??
@@ -48,6 +59,7 @@ export default async function ConfigEditorPage({
       scopeOptions={scopeOptions}
       taxonomy={taxonomy}
       incumbent={incumbent}
+      postGeneration={postGeneration}
     />
   );
 }

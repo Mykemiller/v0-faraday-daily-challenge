@@ -1,32 +1,42 @@
 "use client";
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SiteHeaderNav — icon-dropdown masthead for the standalone Next routes
-// (/account, /leaderboard, …). Visual + behavioural twin of the in-app
-// `HeaderIconNav` in DailyChallenge.jsx, but navigation uses real hrefs instead
-// of in-app screen state, so it can live on any server-rendered page.
+// SiteHeaderNav — the shared Faraday masthead + the Daily Challenge AppBar for
+// the standalone Next routes (/account, /leaderboard, …). Behavioural twin of the
+// in-app `HeaderIconNav` in DailyChallenge.jsx, but navigation uses real hrefs
+// instead of in-app screen state, so it can live on any server-rendered page.
+//
+// FDY-445 (CC-BRAND-MASTHEAD-1.0): the forest bar is the vendored Faraday
+// masthead (src/lib/faraday-masthead — never edit it); the @handle chip sits in
+// its context slot; the message dock + the five icon dropdowns moved into the
+// <AppBar> row underneath. Every menu item and link target is unchanged.
 //
 // EDIT MENU TEXT + LINKS in `buildSiteMenus()` below — the single source of truth
 // for these pages (mirrors the in-app `buildHeaderMenus`). Icons are inline SVG
 // (stroke 1.8, no icon library); styling is the shared `.dc-*` classes injected
 // once per document via `useNavStyles`.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import MessageDock from "@/components/messaging/MessageDock";
 import { useDcToken } from "@/components/messaging/client";
+import { DC_NAV_CSS, DC_GOLD } from "@/components/dcAppBarStyles";
+import { EMAIL_STORAGE_KEY } from "@/lib/supabase";
+import { Masthead, AppBar } from "@/lib/faraday-masthead/ui/Masthead.tsx";
 
-const C = {
-  forest: "#1C3424",
-  gold:   "#C4922A",
-  // FAR-394: standardized on Warm White #F8F5F0 (was Warm Cream #EEE6DA);
-  // `cream` kept as an alias === `white` so the two off-whites don't drift.
-  cream:  "#F8F5F0",
-  white:  "#F8F5F0",
-  sage:   "#8CA68A",
-} as const;
-
-const serif = { fontFamily: "'IBM Plex Serif',serif" } as const;
 const mono  = { fontFamily: "'IBM Plex Mono',monospace" } as const;
+
+// The signed-in email the browser already holds (written at sign-in next to the
+// dc_session token). Shown in the masthead's context slot; only when a session
+// token exists, so a stale email never reads as "signed in". Server snapshot null.
+const noSubscribe = () => () => {};
+function useDcEmail(token: string | null): string | null {
+  const stored = useSyncExternalStore(
+    noSubscribe,
+    () => { try { return localStorage.getItem(EMAIL_STORAGE_KEY); } catch { return null; } },
+    () => null
+  );
+  return token ? stored : null;
+}
 
 type MenuItem =
   | { label: string; href: string; current?: boolean }
@@ -169,39 +179,7 @@ export function buildSiteMenus({
 }
 
 const NAV_STYLE_ID = "dc-sitenav-styles";
-const NAV_CSS = `
-  .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
-  .dc-trigger { position:relative; display:flex; flex-direction:column; align-items:center; gap:5px;
-    background:none; border:none; cursor:pointer; padding:4px 2px; -webkit-tap-highlight-color:transparent; }
-  .dc-badge-dot { position:absolute; top:1px; right:-3px; width:6px; height:6px;
-    border-radius:50%; background:${C.gold}; }
-  .dc-trigger svg { width:19px; height:19px; stroke:rgba(238,230,218,0.62); fill:none; transition:stroke .12s; }
-  .dc-navwrap.open .dc-trigger svg, .dc-trigger:hover svg { stroke:${C.gold}; }
-  .dc-caret { width:6px; height:6px; border-right:1.4px solid rgba(238,230,218,0.35);
-    border-bottom:1.4px solid rgba(238,230,218,0.35); transform:rotate(45deg); margin-top:-1px;
-    transition:transform .15s, border-color .15s; }
-  .dc-navwrap.open .dc-caret { transform:rotate(-135deg); border-color:${C.gold}; }
-  .dc-dd { position:absolute; top:calc(100% + 12px); right:-8px; text-align:left;
-    background:${C.forest}; border:1px solid rgba(196,146,42,0.35); border-radius:8px;
-    min-width:174px; padding:6px; box-shadow:0 12px 28px rgba(20,18,16,0.4);
-    opacity:0; visibility:hidden; transform:translateY(-4px);
-    transition:opacity .15s ease, transform .15s ease; z-index:60; }
-  .dc-navwrap.open .dc-dd { opacity:1; visibility:visible; transform:translateY(0); }
-  .dc-dd-label { font-family:'IBM Plex Mono',monospace; font-size:8.5px; letter-spacing:0.12em;
-    color:rgba(238,230,218,0.4); text-transform:uppercase; padding:6px 10px 4px; }
-  .dc-dd-item { display:block; width:100%; text-align:left; font-family:'IBM Plex Mono',monospace;
-    font-size:11px; color:${C.cream}; text-decoration:none; padding:8px 10px; border-radius:5px;
-    background:none; border:none; cursor:pointer; }
-  .dc-dd-item:hover, .dc-dd-item:focus-visible { background:rgba(196,146,42,0.15); color:${C.gold}; }
-  .dc-dd-item.current { color:${C.gold}; }
-  .dc-dd-item.disabled, .dc-dd-item.disabled:hover { background:none; color:rgba(238,230,218,0.32); cursor:default; }
-  .dc-dd hr { border:none; border-top:1px solid rgba(238,230,218,0.1); margin:4px 6px; }
-  .dc-status:hover { color:${C.white} !important; }
-  @media (max-width:430px){ .dc-status { display:none; } }
-  @media (prefers-reduced-motion: reduce){
-    .dc-dd, .dc-caret, .dc-trigger svg { transition:none; }
-  }
-`;
+const NAV_CSS = DC_NAV_CSS;
 
 function useNavStyles() {
   useEffect(() => {
@@ -236,7 +214,7 @@ function IconNav({ menus }: { menus: Menu[] }) {
   }
 
   return (
-    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow">
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (
@@ -316,37 +294,39 @@ export default function SiteHeaderNav({
   const games = useGameRoster();
   const menus = buildSiteMenus({ authed, current, onSignOut, unreadCount, games });
 
+  const email = useDcEmail(token);
+
   return (
     <>
-      <div style={{ height: "2px", background: C.gold }} />
-      <header style={{ background: C.forest, position: "sticky", top: 0, zIndex: 50 }}>
-        <div className="fdc-header-inner">
-          {/* Wordmark flush left — no bounding box / icon (matches the in-app masthead). */}
-          <a href="/challenge" style={{ lineHeight: 1.25, textDecoration: "none" }} aria-label="Daily Challenge">
-            <b style={{ ...serif, fontWeight: 700, fontSize: "clamp(16px,1.5vw,22px)", color: C.white, letterSpacing: "0.04em" }}>Faraday</b>
-            <span style={{ display: "block", ...mono, fontSize: "clamp(11px,0.85vw,13px)", letterSpacing: "0.18em", color: C.sage }}>DAILY CHALLENGE</span>
-          </a>
-
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "16px", flexWrap: "nowrap" }}>
-            {handle && (
-              <a
-                href="/account"
-                className="dc-status"
-                title="Account"
-                style={{ ...mono, fontSize: "clamp(12px,1vw,14px)", fontWeight: 700, color: C.gold, letterSpacing: "0.04em", textDecoration: "none", whiteSpace: "nowrap" }}
-              >
-                @{handle}
-              </a>
-            )}
-            {/* Chat-bubbles trigger + slide-down dock, between the @handle chip
-                and the grid icon (CC-DC-MSG-DOCK-1.0 D1). Renders nothing when
+      <Masthead
+        appName="Daily Challenge"
+        homeHref="/challenge"
+        email={email}
+        signInHref="/account"
+        context={handle ? (
+          <span className="dc-ctx">
+            <a
+              href="/account"
+              className="dc-status"
+              title="Account"
+              style={{ ...mono, fontSize: "clamp(12px,1vw,14px)", fontWeight: 700, color: DC_GOLD, letterSpacing: "0.04em", textDecoration: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", minHeight: 44 }}
+            >
+              @{handle}
+            </a>
+          </span>
+        ) : undefined}
+      />
+      <div className="dc-appbar">
+        <AppBar label="Daily Challenge">
+          <div className="dc-appbar-row">
+            {/* Chat-bubbles trigger + slide-down dock, first in the row, before
+                the grid icon (CC-DC-MSG-DOCK-1.0 D1). Renders nothing when
                 signed out (D7 — gated on the session token, not `authed`). */}
             <MessageDock token={token} initialUnread={unreadCount} onUnreadChange={onUnreadChange} />
             <IconNav menus={menus} />
           </div>
-        </div>
-      </header>
-      <div style={{ height: "2px", background: C.gold }} />
+        </AppBar>
+      </div>
     </>
   );
 }

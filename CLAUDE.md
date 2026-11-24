@@ -1,5 +1,998 @@
 @AGENTS.md
 
+## Orchestration contract — read first (v1.0, 2026-11-12)
+
+This section governs every Claude Code session in this repo. It **supersedes** the "Myke applies" /
+"WRITTEN, NOT APPLIED" convention in older reports and in the archived CLAUDE.md: those describe the state when
+they were written, not a rule. Copies of this contract live in each Faraday repo; keep them identical.
+
+### Systems of record
+- **Linear (team `FDY`) holds the work.** One issue = one unit of work = one branch = one PR. The
+  Claude Code prompt lives in the issue under a collapsible `+++ Agent notes` section. Label
+  **`Agent Ready`** means the prompt is complete and every decision has a recommendation: pick it up
+  without asking. No label, or open questions in the issue: work the parts that are decided and list
+  the rest in the PR.
+- **Notion holds context and the long-running narrative.** Read any Notion links in the issue before
+  starting. Log every session in the **Faraday Run Log** database
+  (https://app.notion.com/p/42aa6cf894e244438127ac80870c9905, data source
+  `collection://fbfb83d3-5c48-4716-8e7e-820dd701b3ff`): create the row at start (Status `Running`),
+  update it at close. Decisions Myke makes go to the **Faraday Decision Log** database.
+- **The repo holds the durable rules (this file) and the evidence (`docs/`).** Per-issue findings go in
+  `docs/<area>/<TICKET>-*.md`, never as new CLAUDE.md sections. Add to CLAUDE.md only a rule a future
+  session must obey, in at most ~10 lines, inside the section for its area.
+
+### Authority tiers
+- **Tier 1 — just do it:** read anything (repo, Linear, Notion, read-only SQL against prod); write
+  code, migrations, tests, docs; run local harnesses; open PRs; update Linear issues and Notion pages.
+- **Tier 2 — do it after verification passes, then report:** apply migrations to production with the
+  Supabase connector; deploy edge functions; merge your own PR once checks and harnesses are green
+  (squash, into the default branch); set your Linear issue to Done.
+- **Tier 3 — prepare, never execute (Myke's):** revoking `anon`/`authenticated` grants on live tables;
+  lifting an audience gate; anything that emails, texts or charges a real subscriber; setting or
+  rotating secrets/API keys; DNS; deleting production rows outside a migration's documented scope;
+  Stripe live mode; anything the issue marks as a product decision. Put the exact command and its
+  rollback in the PR's "Human actions" field and in a Linear comment.
+
+**When to stop and ask (only these):** a Tier 3 action; a decision with no recommendation that cannot
+be undone; a verification that fails after one rollback-and-retry; a required connector that errors
+twice. Otherwise make the call, state it in the PR, and keep going.
+
+### Production database protocol (Tier 2)
+1. **Claim the lane.** Only one open `FDY` issue may carry the **`DB Lane`** label. If another issue
+   has it, finish everything else and wait; never apply in parallel. Remove the label when done.
+2. **Window:** never apply or deploy 07:00–09:00 UTC (crawl + Predicts lanes).
+3. **Inventory first:** decide applied/not-applied from object existence (`to_regclass`,
+   `to_regprocedure`, `information_schema`) as well as `supabase_migrations.schema_migrations`.
+4. **One file per `apply_migration` call,** each only after its local harness passes; verify before the next.
+5. **Verify** (this replaces "Myke checks the UI"): the file's own gate committed; role probes as
+   `anon`/`authenticated` in a rolled-back transaction match the baseline except intended changes;
+   service-side readers return the same rows; `estate_access_for(<owner>, 'workbench')` is still
+   `usable`; advisor delta is zero or names only intended objects. Save before/after JSON under `docs/`.
+6. **Failure:** roll back that one file with its header's rollback, confirm the rollback held, stop.
+   Never fix forward in production.
+7. Never `DROP FUNCTION` (stalls here; retire by `ALTER … RENAME` + revoke). Patch deployed function
+   bodies from the deployed source with asserted `replace()`, never retyped.
+
+### Parallel-safety rules
+- Branch name: `claude/fdy-<number>-<slug>`. Never commit to another session's branch or edit files
+  another open PR owns; if you must, say so in your PR and in both Linear issues.
+- Migration filenames take the **current UTC timestamp when the file is created**. Before merging,
+  fetch the default branch, check no other migration shares or follows your timestamp in a way that
+  breaks an apply-order dependency, and rebase.
+- **Default branch of this repo:** `main`. Supabase project: `ycadmmngkdhvpcsrcuaq` (shared with the
+  Faraday engine repo, Mykemiller/Faraday).
+
+### Session close-out (definition of done)
+1. PR description = the repo's PR template, fully filled.
+2. Linear: evidence comment, status Done (or In Review with the reason), `DB Lane` removed.
+3. Notion Run Log row: Status, PR, Prod changes (UTC times), Human actions left (target: none).
+4. Final message ends with a one-sentence summary.
+
+## Editing a season whose puzzles already exist (CC-LO-POSTGEN-CONFIG-GUARD-1.0, claude/lo-postgen-guard, 2026-10-06)
+
+Once `seasons.generated_at` is stamped, the season configuration splits in two.
+Most of it is read at PLAY time (scoring, hints, team rules, visibility) and
+keeps applying to the bank that is already there. A short list was read ONCE, by
+the generator, and editing it now changes **nothing already written**. The guard
+says so before the save, requires an acknowledgement, and marks the audit row.
+No DB change, no trigger change, no auto-regeneration.
+
+- **D1 — one list, one place.** `GENERATION_SHAPING_FIELDS` in
+  `src/lib/league-office/season-config-logic.ts`: config
+  `play_days_of_week`/`games_per_day`/`difficulty_curve`; slate
+  `is_enabled`/`difficulty_floor`/`difficulty_ceiling`/`puzzle_count`/
+  `appears_on_days`/`starts_on`/`ends_on`; and **every** `season_theme_mix` and
+  `season_difficulty_mix` row (compared as a set, so PostgREST row order never
+  reads as a change). A test asserts play-time fields (`max_hints_per_game`,
+  `scoring_profile`, `max_teams_per_subscriber`, slate `weight`…) are NOT on it.
+- **`shapingFieldsChanged(before, after)` is pure and is the ONLY definition.**
+  The editor calls it to decide whether to show the checkbox; `saveConfigDraft`
+  calls the same function to decide whether to refuse. Two rules keep it honest:
+  a column the `after` side does not carry **at all** is "not supplied", never
+  "cleared" (the editor's slate working copy has no `puzzle_count`), and
+  `null`/`undefined` and `14`/`"14.00"` compare EQUAL (PostgREST numerics come
+  back as strings and the writer normalizes mixes to 2dp on every save — without
+  this every save after the first would report a phantom mix change).
+- **D2 — persistent banner** on the Config editor whenever `generated_at` is
+  set: generation date + `<n> approved, <m> already served`. Counts come from
+  `bankCommitment()` in `generation-status.ts` — approved = Published+Live+
+  Retired, served = Live+Retired, and the projection is the single column
+  `published`. No puzzle name, clue, answer or date reaches the browser.
+- **D3 — acknowledged and audited.** A shaping diff after generation needs the
+  ReasonDialog's **optional `acknowledge` checkbox** (the mechanism
+  CC-LO-GEN-CONFORMANCE-1.0 D4 already added — do NOT add a second one):
+  "I understand existing puzzles will not change". Unacknowledged ⇒ API 409
+  `{ postGenerationWarning, shapingFields }`. On success the `config.save` audit
+  row carries `after.post_generation_edit = true`, `after.post_generation_fields`
+  and `after.generated_at`. Non-shaping edits save exactly as before, and the
+  season row is read only when the diff is non-empty — a scoring-only save costs
+  no extra query.
+- **D4 — Unlock copy only.** Unlocking a generated season now says config edits
+  will not regenerate puzzles. The action, its API and its audit row are
+  unchanged. `seasons.generated_at` was added to the `Season` type and to
+  `seasonCols` in `data.ts` to carry it.
+- **D5 — no auto-regeneration.** The banner, the dialog and the unlock copy all
+  point at `Regenerate from date` (CC-LO-REGENERATE-FROM-DATE-1.0) as the only
+  thing that replaces puzzles that already exist.
+- Tests: `npm run test:season-config` (60, 11 new). Untouched and still green:
+  `test:generation`, `test:gen-conformance`, `test:config-enforcement`,
+  `test:regenerate`, `test:hint-rules`, `test:team-rules`, `test:season-scoring`,
+  `test:theme-allocation`, `test:generation-difficulty`, `test:schedule`,
+  `test:slate-enforced`, `test:generation-domain`, `test:lobby-model`,
+  `test:season-resolve`.
+
+## How many hints does a season give? (CC-DC-HINTS-FROM-CONFIG-1.0, claude/dc-hints-config, 2026-10-06)
+
+**The hint budget and the hints on/off switch come from the season's effective
+config — never a constant.** `src/lib/seasons/hint-rules.ts` is the one
+server-side answer: `hintRulesFor(headers, seasonId)` reads
+`v_season_effective_config` (the ONLY authority on which config version is in
+force — reading `season_config` directly picks drafts and superseded rows) and
+returns `{ hintsEnabled, maxHints }`. The pure half, `hintRules(row)`, is the
+tested decision.
+
+**`BANK_HINT_SLOTS = 3` is the ceiling, and it lives in
+`src/lib/league-office/season-config-logic.ts`.** The generator writes three
+hint tiers per puzzle, so `maxHints = min(max_hints_per_game, 3)`: a season set
+to 4 has no fourth hint for anyone to reveal. Three enforcers of the same
+constant — `sanitizeConfigPatch` clamps new saves to [0, 3]; `localFindings`
+and `generationFindings` raise the `max_hints_exceeds_bank` ERROR on a stored
+value above it; the serve path mins. Football and HOT SUMMER were both saved at
+4 before the clamp (measured 2026-10-06) and surface the finding until re-saved.
+
+**The wire.** `/api/challenge/today` adds `hintsEnabled` and `maxHints` to the
+EXISTING `rules` object beside `scoring` — additive; a client that reads
+neither behaves as before. `DailyChallenge.jsx` passes them to all 7 games via
+`HintRulesContext`; `/challenge/hints` fetches the same route. Both spend the
+same localStorage budget key, whose SHAPE
+(`faraday_hints_${day}_${gameType}`, FAR-198) this pack does not touch.
+
+**Fail soft.** No key, no season, no effective config, a transport error, an
+older payload — all read as hints ON with a budget of 3, which is exactly what
+every season served before this pack. A rules read that went wrong must never
+silently take hints away.
+
+**Out of scope: `hint_penalty_pct`.** That column is read by
+`scoring/season-scoring.ts` and shipped in `rules.scoring`. This pack never
+touches it.
+
+Tests: `npm run test:hint-rules`, plus the clamp/finding cases in
+`test:season-config`, `test:generation` and `test:config-enforcement`.
+
+## How many teams may a player join? (CC-DC-TEAM-CAP-FROM-CONFIG-1.0, claude/dc-team-cap, 2026-10-06)
+
+**The per-player team cap and the maximum team size come from the season's
+effective config — never a constant.** `src/lib/seasons/team-rules.ts` is the
+one server-side answer: `teamRulesFor(headers, seasonId)` reads
+`v_season_effective_config` (the ONLY authority on which config version is in
+force — reading `season_config` directly picks drafts and superseded rows) and
+returns `{ maxTeamsPerPlayer: max_teams_per_subscriber ?? 5, maxTeamSize:
+max_team_size ?? null }`. The decisions beside it are pure and tested:
+`canJoinAnotherTeam`, `isTeamSetAllowed`, `isTeamFull`, `teamLimitMessage`.
+`npm run test:team-rules` also greps `/api/teams` for a hardcoded 5.
+
+**Fail soft.** No key, no row, a draft-only season, a transport error — all
+return the historical default of 5 and no size limit. A rules read that went
+wrong must never lock players out.
+
+**Grandfathering.** Lowering a cap removes nothing. A player already above it
+keeps every membership and may still save their roster (to leave a team, or to
+re-confirm it unchanged); they simply may not grow — that is
+`isTeamSetAllowed`, which is why the upsert checks the desired count against
+`max(cap, current)` rather than the cap alone. The block is
+`team_limit_reached` + `teamCap` on the wire, copy: *"This season allows N
+teams — leave one to join another."*
+
+**`team_full` (400)** is new: a join into a team already holding `max_team_size`
+members this season. Members are `COUNT(DISTINCT subscriber_id)`, season-scoped,
+`pending = false`, `left_at IS NULL` — `memberCountsPath` + `tallyMemberCounts`,
+never a row count (CC-LO-TEAM-COUNTS-1.0).
+
+**The number travels with the data.** `/api/teams` (both GETs and the upsert)
+and `/api/account` return `teamCap` / `maxTeamSize`; `OTPGate.jsx`,
+`account/page.tsx`, `DailyChallenge.jsx` and the invite landing render it with a
+5 fallback. The unfiltered `/api/teams` listing carries the cap; the `?q=`
+search does not, because that branch is unauthenticated and re-queried per
+keystroke — every caller loads the unfiltered list first.
+
+**`min_team_size` stays `not_enforced`, deliberately.** There is no point in the
+lifecycle at which a team being too SMALL can be refused: blocking the join that
+would leave a team under-sized blocks the first member of every team, and
+dissolving under-sized teams at lock is a product decision nobody has made.
+
+**DEPLOY ORDER: app first, migration after.**
+`supabase/migrations/20261007030000_team_join_cap_from_config.sql` re-creates
+`team_join` from the deployed body (quoted in full in its header) with the cap
+read from the config and the same size check. **It is NOT applied by the PR that
+adds it.** Until someone runs it, `team_join` still allows 5 for RPC callers —
+i.e. the `/team-action` edge function only. Every first-party surface goes
+through `/api/teams`, which already honours the config. The migration carries a
+verification gate (signature, SECURITY INVOKER, `search_path`, volatility,
+return type, all four EXECUTE grants, the freeze/window guards, the
+`'group limit reached'` token the edge function's `DOMAIN_ERR` regex needs) and
+a rollback note. Diff `pg_get_functiondef('public.team_join'::regproc)` against
+the header before applying; if it has drifted, re-derive rather than apply.
+
+## Is this setting a rule yet? (CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0, claude/lo-config-enforcement, 2026-10-06)
+
+**THE RULE: wiring a field up = flipping its `CONFIG_ENFORCEMENT` entry, IN THE
+SAME PR.** `src/lib/league-office/config-enforcement.ts` classifies every column
+the Season Configurator can write — the 31 in `CONFIG_FIELDS` and the 10
+`season_games` columns `normalizeGameRow` writes — as `enforced` / `partial` /
+`not_enforced`, each with the reader that enforces it (`by`) and one sentence
+for the commissioner (`note`). `npm run test:config-enforcement` fails in BOTH
+directions: an unclassified writable column, and an entry for a column the
+editor cannot write. It also re-reads `normalizeGameRow` out of
+`season-write.ts`, so a new slate column cannot ship unclassified. A table that
+lags the code is worse than no table — if you make a field real, flip it here.
+
+Surfaces: a "Not enforced yet" / "Partly enforced" chip next to the field in
+ConfigEditor (`Field` / `Toggle` take `enforcement="<column>"`; the `note` is
+the tooltip; inputs stay editable and values still save), and one line —
+`notEnforcedFields` + `summarizeNotEnforced` — on the season detail page's
+"effective now" panel and in both generate confirms. Fields still on their
+system default are skipped, so the count is decisions someone actually made.
+
+**D7 — season scoring is now real.** `src/lib/scoring/season-scoring.js` is
+plain JS and pure, imported verbatim by `DailyChallenge.jsx` AND
+`/api/score`:
+
+```
+seasonScore = round( clamp(raw,0,150) × pointsMax/150 × (1 − min(hintPenaltyPct × clamp(hints,0,3), 100)/100) )
+  pointsMax      = season_games.points_override ?? 150
+  hintPenaltyPct = season_config.hint_penalty_pct ?? 0
+```
+
+`/api/challenge/today` ships `rules.scoring = { [runtime_key]: { pointsMax,
+hintPenaltyPct }, streakBonus }` for the CALLER's resolved season
+(`resolveSeasonFor`, never a `status=eq.active` pick) so the score card can show
+the right number immediately. **The client is told the rules; it is never
+believed about them.** The POST to `/api/score` carries `score` (the raw 0..150
+roll-up), `hintsUsed` and `scoringVersion: 2` — and no rules. The route resolves
+`points_override` / `hint_penalty_pct` ITSELF via
+`src/lib/scoring/season-rules-server.ts`, from the season
+`fn_season_for_subscriber_row` gives for that subscriber, and writes the
+recomputed score to `dc_completions` (through complete-puzzle),
+`dc_daily_attempts`, `score_events` and `leaderboard_daily`.
+
+**Which config:** `v_season_effective_config`, not `state=eq.active`. That view
+is the repo's one authority on what is in force, and the two already disagree
+in production — config `667c488f…` is `state='active'` with an `effective_to`
+of 2026-09-05, so the raw predicate returns a version whose window closed a
+month ago. The hint penalty is additionally gated on `hints_enabled`: a season
+that gives no hints cannot charge for them.
+
+**EVERY write is scaled — there is no version branch** (Myke, 2026-10-06,
+overriding the original "no `scoringVersion` ⇒ unchanged" decision). A browser
+on a bundle cached from before the deploy still gets its score scaled
+server-side; it will briefly DISPLAY a larger number than was stored, and that
+self-heals on reload. A leaderboard whose rows mean different things depending
+on which bundle each player had cached is worse than a stale display.
+`scoringPathFor` existed to choose between the two paths and has been deleted
+rather than left as a dead abstraction. `scoringVersion` is still accepted and
+echoed (it says the caller is hint-aware) and decides nothing.
+
+`hintsUsed` stays opt-in: absent ⇒ 0 ⇒ no penalty. Never invent a penalty for a
+client that did not report hints.
+
+**The ceiling is the safety property.** `clamp(raw,0,150) × pointsMax/150` is at
+most `pointsMax`, because the raw is clamped BEFORE scaling — a streak
+multiplier already folded in by `calcScore`, or an invented 10⁹, both clamp to
+150 — and the hint factor is in [0,1]. No client, stale or crafted, can write
+above the configured per-game maximum. Tested exhaustively over
+(ceiling × penalty × hints × raw).
+
+**Nothing rescores history.** The route only ever writes the completion in front
+of it; completions written before the deploy keep their stored score. There is
+no backfill and there must not be one — mid-season retroactive rescoring was
+explicitly ruled out.
+
+**`hint_penalty_pct`'s default was a trap.** The column is
+`numeric NOT NULL DEFAULT 25.00` and nothing read it, so seven of ten rows sat
+on an un-chosen 25.00 — three of them `active`. Wiring it up would have started
+charging 25% per hint on three live seasons nobody configured. Myke ruled the
+unconfigured penalty is ZERO:
+`supabase/migrations/20261006230000_season_config_hint_penalty_default_zero.sql`
+moves the default to 0.00 and rewrites the five never-chosen rows BY ID (the two
+`superseded` ones are history and are deliberately left alone). **Apply it
+before the deploy that ships season scoring.** Never write `?? 0` and call it
+"the answer for a season that configures nothing" — a NOT NULL column with a
+default cannot tell you nobody chose.
+
+**`streak_bonus_enabled` is `partial`, not `enforced`, and that is deliberate.**
+`calcScore` folds the readiness multiplier into the raw score before the server
+sees it, so there is no un-bonused number left for `/api/score` to recover: the
+flag is applied by feeding `calcScore` `streak = 0` (`useScoringStreak` /
+`effectiveStreak`) and a stale or hand-rolled client keeps the bonus. Marking it
+`enforced` would have left the one scoring rule the server cannot hold as the
+one field shown with no chip, since `enforcementChip` suppresses the chip for
+enforced fields. Moving it server-side means moving the multiplier out of
+`calcScore`, which touches all seven game components.
+
+**The hint budget is keyed on the CENTRAL day, read at call time**
+(`src/lib/dc-day.js`). It used to be `new Date().toISOString().slice(0,10)` —
+UTC, and frozen at module load. UTC midnight is 7pm CDT, so a session at
+7:01pm CT read the NEXT day's budget (reset, `hintsUsed` 0, penalty evaded) and
+the next morning read that same key back and charged for the previous evening's
+hints. Harmless as analytics; wrong as score math. `/api/score` and
+`/api/challenge/today` both delegate their `centralDate` to the same
+`chicagoDay`, so there is ONE definition. The `faraday_hints_<day>_<gameType>`
+key SHAPE is unchanged. `faraday_daily_*` is still on the frozen UTC slice on
+purpose — it is a local scratch, not score math.
+
+`hintsUsed` is still client-reported — there is no server record of hints spent
+(the budget lives in `localStorage`) — so a client that under-reports pays no
+penalty. That is unchanged from before this pack, where the same field was
+written verbatim to `dc_completions.hints_used`; it is clamped to 0..3 server-
+side. Flipping `hint_penalty_pct` to `enforced` does NOT claim the hint count is
+trustworthy, only that the configured penalty is applied to it.
+
+Still `not_enforced` after this pack, deliberately: `drop_lowest_n_days`,
+`team_score_method`, `team_score_top_n`, `signals_per_correct`,
+`scoring_profile`, `publish_leaderboard`, `leaderboard_visibility`,
+`publish_standings_at`, `hints_enabled`, `max_hints_per_game`,
+`late_submission_grace_hours`, `registration_opens_on`, `min_team_size`,
+`max_team_size`, `target_solve_rate_pct`, `season_games.weight`,
+`season_games.sort_order`. `max_teams_per_subscriber` is `partial`: lowering it
+warns, and the join path in `/api/teams` still enforces a hardcoded 5.
+
+## Replacing an approved season from a date (CC-LO-REGENERATE-FROM-DATE-1.0, claude/lo-regenerate-from, 2026-10-06)
+
+**MIGRATION FIRST, THEN THE APP.** `supabase/migrations/20261006214500_dc_puzzle_bank_superseded.sql`
+creates `dc_puzzle_bank_superseded` and `dc_daily_theme_superseded` — `LIKE` the
+live tables plus `superseded_at / superseded_reason / superseded_by / audit_id`,
+RLS enabled with ZERO policies, `anon` and `authenticated` revoked BY NAME
+(Supabase's default ACL grants them everything on a new public table, and these
+rows carry `answer_key`). It ends in a DO block that refuses to commit unless
+every property holds. Deploying the app first is harmless but useless: the
+archive insert fails and `season.regenerate_from` aborts BEFORE deleting
+anything.
+
+**The feature.** Two Tier 2 actions on `/api/league-office/action`, both DRY RUN
+BY DEFAULT — only a literal `dryRun: false` executes, in the dispatcher
+(`dryRun: input.dryRun !== false`) and again in the action (`if (input.dryRun
+!== false) return <report>`):
+
+- `season.regenerate_from {seasonId, cutoffDate, reason, dryRun}` — archives and
+  removes this season's `Published`/`Unpublished` rows from the cutoff onward
+  plus its OWN theme days for the same range, then queues an ordinary full run.
+- `season.restore_superseded {seasonId, fromDate, reason, dryRun}` — the undo.
+
+**Every rule is pure and lives in `src/lib/league-office/regenerate-logic.ts`**
+(`regenerationPlan`, `restorePlan`, `projectedAllocation`), tested by
+`npm run test:regenerate`. The server action adds mechanics only.
+
+**The four safety properties, and how each is enforced:**
+1. *Cutoff ≥ today+2 CT.* `MIN_CUTOFF_LEAD_DAYS`; today+1 belongs to the
+   midnight rotation. `hoursUntilCutoff` is measured to 00:00 America/Chicago
+   with a two-pass offset so a DST Sunday is not an hour out.
+2. *Nothing Live or Retired is ever touched.* A single `Live`/`Retired` row
+   anywhere in `[cutoff, ends_on]` BLOCKS the whole operation — it is not
+   skipped, because its presence means the range is not what the commissioner
+   thinks it is. And the DELETE is issued by PRIMARY KEY against exactly the ids
+   that are already in the archive, so a row that turns Live mid-operation is
+   not in the list at all.
+3. *Archive before delete, verified by count.* Select full rows → insert into
+   the archive → **read the archive back** filtered on the operation's single
+   `superseded_at` batch key → abort if `archived ≠ selected`. A 200 on the
+   insert is not evidence. Themes are archived before any delete runs, so an
+   abort anywhere leaves a complete archive and an untouched bank. Delete order
+   is puzzles then themes (`dc_staging_theme_fk` points
+   `(season_id, theme_date)` at `dc_daily_theme`); restore order is the reverse.
+4. *Restore never overwrites.* `restorePlan` returns only slots that are EMPTY
+   and dated ≥ `todayCT()` (a `fromDate` in the past is clamped to today), and
+   the insert carries `Prefer: resolution=ignore-duplicates` — ON CONFLICT DO
+   NOTHING. `merge-duplicates` would be an upsert and a test forbids it.
+
+**`dc_daily_theme` is season-scoped on BOTH sides.** The table also holds the
+shared platform corpus (`season_id IS NULL`) that every season's Phase A draws
+from. Measured 2026-10-06 for Football: 114 season-scoped theme rows in
+`[2026-10-10, 2027-01-31]` and 114 platform rows on the same dates. Every query
+in this feature is `season_id=eq.<season>`; deleting the NULL rows would break
+generation for the whole league.
+
+**Why no `generated_at` bypass was needed.** `generationFindings` has no
+`generated_at` gate — the full-run conditions are lock, in-flight run and
+approved pilot, all of which a regenerating season already satisfies. And the
+worker derives its pending slots from the live bank, so the emptied range is
+exactly what it refills; `phase_cursor.regenerate_from` records WHY the run
+exists and changes nothing about how it behaves.
+
+**Restored rows keep their Public ID.** `dc_assign_public_id()` returns early
+when `new.public_id is not null` (verified against the live function
+2026-10-06), so a restored puzzle comes back under the ID already in players'
+share text rather than being minted a new one.
+
+**New rows arrive `Unpublished` and still need Approve Puzzles** — which on this
+stack also shows the CC-LO-GEN-CONFORMANCE-1.0 table, so the replacement is
+approved against the configuration that made it.
+
+**Football dry run, cutoff 2026-10-10 (SELECT-only + the pure planner,
+2026-10-06):** 570 Published / 0 Live / 0 Retired removable, 0 untouchable, 114
+season theme days, 114 days in range (114 x 5 enabled games = 570). Projected
+replacement under config `3bf84bc8-f202-4a2d-9a89-9dcc38f36711`: T-002 35.31%
+(40d) - T-005 29.41% (34d) - T-007 35.28% (40d); The Brief 0/40/74, Rackl
+0/0/114, Dark Fiber 0/0/114, Frequency 16/34/64, The Stack 0/40/74
+(foundational/practitioner/expert). Nothing was executed.
+
+## Configured vs generated, on the panel that approves it (CC-LO-GEN-CONFORMANCE-1.0, claude/lo-gen-conformance, 2026-10-06)
+
+**A season is configured twice over — a theme mix and a difficulty mix, plus a
+slate that bounds each game to its own band window — and until now the only
+way to learn whether the bank that came out resembled the configuration that
+went in was to run the SQL yourself.** `src/lib/league-office/generation-conformance.ts`
+is that comparison, as ONE pure function over plain objects:
+`conformance({themeMix, difficultyMix, slate, themeRows, bankRows, seasonDates})`
+→ `{rows, worst}`. No React, no Next, no Supabase client, no I/O, no top-level
+side effects; its only imports are `theme-allocation.js` and `difficulty.js`,
+which are themselves import-free. A plain node script can call it directly, and
+a test asserts that stays true.
+
+**Six dimensions, one threshold.** `theater` and `sector` (share of days),
+`difficulty` (share of bank rows) are SHARE rows: |Δ| ≤ 5 pts `ok`, ≤ 10
+`warn`, > 10 `fail`, judged on the same one-decimal number that is displayed.
+`difficulty_window` (bank rows outside their game's floor/ceiling),
+`coverage` (enabled game × season date cells with no row) and `exclusion`
+(days using an excluded theater/sector/thread) are COUNT rows: any non-zero
+breach is a `fail`. Targets are not read raw — they go through
+`themeQuotas()`'s normalization, so theater targets are rescaled to 100 and
+sector targets to 100 *within their theater*, which is what the allocator
+actually laid the calendar out against.
+
+**The Football fixture is a real bank, and its failures are real.** Measured
+2026-10-06 against `02701ead-a03e-4489-adb9-24d3c6787eec` / config
+`3bf84bc8-f202-4a2d-9a89-9dcc38f36711`: theaters T-007 `fail` −16.8, T-005
+`fail` +10.9, T-002 `warn` +5.9; difficulty foundational `warn` +5.8, expert
+`warn` −5.9; `difficulty_window` `fail` 167 (Dark Fiber 60 · Rackl 59 · The
+Brief 24 · The Stack 24 — the two expert-only games plus two foundational-below-
+floor sets); `exclusion` and `coverage` `ok`. **Note for a REGENERATED bank:**
+only Frequency's window admits `foundational`, so a correctly-generated bank
+can reach ~2.88% foundational against a configured 14.41% and the `difficulty`
+rows will read `fail`. That is the configuration contradicting itself, not the
+generator misbehaving, and the thresholds must NOT be loosened to hide it.
+
+**Read-only, and the approval is never blocked (D5).** `getGenerationStatus()`
+returns `conformance` only once a run has written a row (before that every
+dimension would read 100% short), from two extra reads whose projections are
+four and three columns — `theme_date, theater_id, sector_code, thread_codes`
+and `puzzle_type, go_live_date, difficulty`. No `puzzle_content`, no hints, no
+`answer_key`, no `answer_explanation`: nothing here needs an answer to say
+whether a bank matches its configuration. Both reads are PAGED (`qPaged`), because
+a silently truncated PostgREST page would read as a coverage FAILURE for rows
+that are sitting right there.
+
+**The panel shows it; the Approve dialog makes you say it.** `GenerationPanel`
+renders a collapsible "Configured vs generated" table (dimension · target ·
+generated · Δ · status chip · note), collapsed when all `ok` and expanded when
+anything is not. When `worst === 'fail'`, Approve Puzzles lists the failing
+rows in the confirm dialog and `ReasonDialog`'s new optional `acknowledge` prop
+requires "I understand the bank does not match the configuration" before the
+button enables. Approval itself still proceeds; what changes is the record —
+`approveSeasonPuzzles` RE-DERIVES conformance server-side and writes
+`conformance_ack: true` plus `conformance_failures` (the `dimension:key` list)
+into the existing audit row's `after` payload. A checkbox in a browser is
+presentation, never enforcement.
+
+Tests: `npm run test:gen-conformance` (19). Unchanged: `test:generation`,
+`test:generation-readonly`, `test:season-config`, `test:theme-allocation`,
+`test:generation-difficulty`, `test:schedule`, `test:slate-enforced`,
+`test:generation-domain`.
+
+## A puzzle's domain describes what it is about (CC-DC-GEN-DOMAIN-FIDELITY-1.0, claude/dc-domain-fidelity, 2026-10-06)
+
+**The day's theme sector is the editorial contract for what the puzzle is
+ABOUT, and a puzzle that drifts off it is flagged for the commissioner before
+approval — never silently refiled and never silently shipped.** `domain` was,
+and remains, `dc_daily_theme.sector_code`: measured 2026-10-06 against the live
+Football season (`02701ead-a03e-4489-adb9-24d3c6787eec`), 0 of 595 bank rows
+carried a `domain` differing from their day's sector, because nothing ever
+chose it per puzzle. The gap was never the column — it was that nothing checked
+whether the puzzle the model wrote actually belonged under it.
+
+**The prompt states the boundary and asks for a self-report.** Both copies of
+`prompts.js` (`src/lib/generation/` and `scripts/far287/lib/`, twins) now carry
+the sector's NAME and its one-line scope per ITEM — `dc_daily_theme` has no
+sector-definition column, so `theme_blurb`, the row's own statement of what the
+day covers, is that line — and require the puzzle's PRIMARY subject to sit
+inside it. Each array element gains two keys beside `difficulty`:
+`domain_fit` (`"on"|"adjacent"|"off"`) and `domain_fit_reason` (≤ 120 chars,
+never answer content).
+
+**The self-report is ADVISORY and can never cost a slot.** `puzzle-schema`'s
+`normalizeDomainFit()` reads a missing, misspelled, junk or nested value as
+`"unknown"`; `validateContent()` is untouched and still ignores extra keys. A
+model that forgets to self-report loses nothing — the slot is the expensive
+thing, the self-report is the cheap one.
+
+**`deriveValidation()` is the one writer of the verdict**, called by both the
+worker and the FAR-287 CLI. `on` / `adjacent` / `unknown` ⇒ `validation_status
+= 'passed'` and no note, exactly as before. `off` ⇒ `'review'` plus ONE entry,
+`{ key: "domain_fit_off", reason }`. The reason is clamped to 120 characters
+and WITHHELD outright if it repeats the answer key or any distinctive token of
+it — `validation_errors` carries structural notes and never puzzle content,
+which is the same property CC-DC-GEN-FAILURE-VISIBILITY-1.0 relies on.
+`validation_status` has no CHECK (verified 2026-10-06), so `'review'` is a
+legal new value; existing rows are NOT backfilled and serving is unchanged.
+
+**The commissioner is told, not blocked.** `getGenerationStatus()` returns
+`offDomain: {date, game, reason}[]` from `offDomainFlags()`, derived from the
+SAME draft query that already produced the approve count — projected to exactly
+four columns (`go_live_date, puzzle_type, validation_status,
+validation_errors`), so there is no puzzle content in the payload to leak. The
+panel renders an amber "N puzzles flagged off-domain" banner with the list, and
+the Approve dialog repeats the count. Approve stays enabled: a season may ship
+off-domain puzzles knowingly, it may not ship them unknowingly.
+
+**Batch sizing is unmoved.** The two keys add a fixed ≈40 output tokens per
+puzzle. Against CC-DC-GEN-BATCH-HARDENING-1.0's worst case (The Brief, ~662
+tokens/puzzle, started at 5) that is 3,310 → 3,510 of a 16,000 cap — 20.7% →
+21.9%. No `TYPE_BATCH_SIZE` entry changed.
+
+**Editorial follow-up, out of scope here:** D22 *Industry Media & Analyst
+Coverage* is the joint most-used Football sector (14 of 119 days, 11.8%, tied
+with D1 *Chips & Density*, measured 2026-10-06). Whether a sector that is
+coverage ABOUT the buildout should be a playable puzzle sector at all is a
+commissioner's call, not a generator fix.
+
+Tests: `npm run test:generation-domain` (new, 26) — prompt twin equality,
+tolerance of a missing/junk/nested self-report, the reason clamp, the
+answer-leak withholding, `deriveValidation` across on/adjacent/off/unknown, the
+panel's read side, and source guards that neither insert path hardcodes
+`validation_status: "passed"` and that the draft projection names no content
+column. `test:generation` and the rest of the generation suite are unchanged
+and still green.
+
+## One calendar decides which games play on which dates (CC-DC-GEN-SCHEDULE-FIELDS-1.0, claude/dc-schedule-fields, 2026-10-06)
+
+**`src/lib/seasons/schedule.ts` is THE definition of "which games play on which
+dates", and validation, generation and serving all read it.** Four columns
+described the season calendar and were read by nothing:
+`season_config.play_days_of_week`, `season_config.games_per_day`,
+`season_games.appears_on_days` and `season_games.starts_on/.ends_on`. Targets
+were `dayCount × enabled games`, the worker built its slot list as the full
+`dates × types` product, and `/api/challenge/today` applied only the slate — so
+a Mon–Fri season generated and served Saturdays and a Monday-only game ran
+seven days a week. A commissioner could set all four fields and change nothing.
+
+**The rule.** A game plays on a date iff the date is inside both
+`[season.starts_on, season.ends_on]` and `[game.starts_on ?? -∞, game.ends_on ??
++∞]`, its ISO weekday (1=Mon…7=Sun, computed from the plain `YYYY-MM-DD` at UTC
+noon — these are already CT serve days) is in
+`normalizeDayMask(config.play_days_of_week)`, and — when the game names any
+`appears_on_days` — in that mask too. `appears_on_days` null/empty means every
+play day; `play_days_of_week: []` means NEVER (an empty mask is an instruction,
+a null one is an unset field). `appears_on_days` can only NARROW the season's
+play days, never re-open one.
+
+**`games_per_day` is a VALIDATION rule, never a selector.** More games
+scheduled on a day than the cap allows is the blocking finding
+`games_per_day_below_scheduled`, naming the first dates. Nothing anywhere picks
+a game to drop: a season silently serving four of five configured games would
+be invisible from every surface. A new `game_never_scheduled` WARNING names an
+enabled game the calendar never reaches.
+
+**Serving.** `/api/challenge/today` applies `narrowToScheduled()` to the result
+of `filterToSlate()`, keeping every D4 fail-safe — with one deliberate
+exception: a narrowing to **zero** games is HONOURED, because "a Saturday in a
+Mon–Fri season" is a correct answer of no puzzles. The lobby renders it as
+`no_puzzles` (CC-DC-LOBBY-EMPTY-STATE-1.0), never as mocks. A non-empty
+schedule that matches nothing live still falls back, as the slate filter does.
+`resolveSeasonSchedule()` returns null — no narrowing — when there is no active
+config, when the date is outside the season window (that is
+CC-DC-SEASON-GOLIVE-1.0's business), or when nothing WOULD be narrowed, which
+is every production season but one.
+
+**`season_games.weight` stays unenforced.** It has no defined meaning anywhere
+— every live row is 1.000 — and inventing one (a sampling probability? a
+scoring multiplier?) would be a product decision, not a schedule fix.
+
+**Themes still cover every season date.** `dc_daily_theme` is keyed by date,
+not by game; a non-play day gets a theme row no puzzle uses, which keeps the
+worker's inserts in agreement with the theme quotas the checklist validates
+against (`dayCount`).
+
+Tests: `npm run test:schedule` (new, 27), plus `test:slate-enforced` (24) and
+`test:generation` (48) extended additively — nothing deleted. The zero-game day
+is asserted end to end: `narrowToScheduled()` → `lobbyModel()` → `no_puzzles`,
+with a full fixture map supplied and `isProd` true.
+
+## Each game is generated inside its own difficulty window (CC-DC-GEN-DIFFICULTY-PERGAME-1.0, claude/gen-difficulty-pergame, 2026-10-06)
+
+**`season_games.difficulty_floor` / `.difficulty_ceiling` and the per-game rows
+of `season_difficulty_mix` are AUTHORITATIVE for that game's mix, and the
+commissioner sees what they do to the season before generating.** Both were
+configured and read by nothing. The Football slate (config
+`3bf84bc8-f202-4a2d-9a89-9dcc38f36711`) pins Rackl and Dark Fiber
+expert–expert and The Brief and The Stack practitioner–expert, and the season
+banked **167 rows below their own game's floor** anyway — Dark Fiber 60, Rackl
+59, The Brief 24, The Stack 24 (measured 2026-10-06 15:38 CT). The worker
+SELECTed `season_games` as `game_id,is_enabled` only, and filtered every
+`applies_to_game_id` mix row out before allocating.
+
+`effectiveTypeMix({ seasonMix, perGameRows, floor, ceiling })` in
+**`src/lib/generation/difficulty.js`** (CLI twin
+`scripts/far287/lib/difficulty.mjs`) is the one place that resolves this. Pure.
+It starts from the game's OWN mix rows when any of them names a band we know,
+else the season mix; **drops** every band outside `[floor, ceiling]` (canonical
+order `foundational < practitioner < expert`; a null, absent or unrecognised
+bound is OPEN on that side, so a stale enum cannot stop a season); and
+renormalizes what is left with `normalizeTo100`'s exact semantics — scale,
+round to 2dp, residual onto the largest share. Clipping never clamps onto the
+nearest in-window band, which would invent a mix nobody configured. A floor
+DEEPER than the ceiling returns **null**: there is nothing to generate and
+guessing would be worse than stopping.
+
+The worker now loads `difficulty_floor,difficulty_ceiling` with the slate,
+keyes the per-game override rows by `runtime_key` through `game_catalog`, and
+passes the result to `planDifficulty` through the `perTypeMix` seam
+CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D5 reserved — so the largest-remainder
+totals and the curve placement are untouched. Rackl is now 100% expert over
+119 days; The Brief is 0 / 34.84 / 65.16 → 0 / 42 / 78 puzzles. A null window
+fails the run short with `difficulty_window_empty: <type>`.
+
+League Office (`generation-logic.ts`): a null window is the blocking error
+**`difficulty_window_empty`**, named per game. `realizedDifficultyMix(input)`
+weights each enabled game's effective mix by its scheduled days and, when any
+band moves more than **`DIFFICULTY_SHIFT_WARN_PTS` = 5 points**, warns
+**`difficulty_mix_shifted_by_game_rules`** — on Football, *"Per-game floors
+shift the season mix from 14/30/56 to 3/20/77"* (realized 2.88 / 19.90 /
+77.22; expert is 21.4 points off its configured 55.77). `generation-status.ts`
+SELECTs the two columns so the checklist can say it. ConfigEditor's slate table
+gains a read-only **Effective mix** cell per game (`— / 35 / 65`; a dropped
+band is an em dash, not a 0), computed client-side with the same helper via the
+`season-config-logic.ts` re-export, so the preview cannot drift from the run.
+No new inputs.
+
+Tests: `npm run test:generation-difficulty` (60) pins the helper, the twin and
+the perTypeMix integration; `npm run test:generation` (35) pins the Football
+shift and the empty window. CC-DC-GEN-DIFFICULTY-CANON-1.0 and
+CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 are untouched. **Existing staging rows were
+not modified** — the 167 floor violations are remediated by the separate
+regenerate-from-date issue, not here.
+
+## Generated difficulty matches the mix and follows the curve (CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0, claude/gen-difficulty-allocation, 2026-10-06)
+
+**The season difficulty mix is apportioned in WHOLE PUZZLES per game, and
+`difficulty_curve` decides which dates carry the deeper bands.** The worker used
+to draw each slot's band from a ten-slot bag (`difficultyFor(mix, idx * 7 +
+types.indexOf(type))`), which could only quantize a mix to tenths and read
+`difficulty_curve` not at all. Football asks for 14.41 / 29.82 / 55.77 over 119
+days × 5 games; the bag gave it 10/30/60 per ten slots and the bank landed
+**120 foundational / 178 practitioner / 297 expert** where the mix wanted
+**85 / 180 / 330** (measured 2026-10-06), and its configured `ramp` produced a
+flat period-10 sawtooth.
+
+`planDifficulty({ dates, types, mix, curve, seed, perTypeMix })` in
+**`src/lib/generation/difficulty.js`** is the only thing that decides this now.
+It is pure, seeded on the season id, and returns `Map<"type|date", band>`. Per
+TYPE the normalized mix becomes whole counts over that type's date count by
+**largest remainder**, so every game lands within ±1 puzzle of the mix and the
+counts sum exactly to the date count — Football is now 17 / 36 / 66 per game,
+85 / 180 / 330 for the season. **The curve moves dates, never totals:** `flat`
+is a seeded even interleave (phase-shifted per type so two games do not stack
+their expert days; no run of more than 3 identical bands on the Football
+fixture), `ramp` and `wave` rank-match the bands in ascending depth to
+`curvePoints(curve, dates.length)`, and `custom` places as flat because no
+custom shape is stored anywhere — the League Office warns
+`difficulty_curve_custom_unsupported` rather than letting the sparkline imply
+otherwise.
+
+`curvePoints` and `DIFFICULTY_CURVES` **moved out of `season-config-logic.ts`**
+into `difficulty.js` and are re-exported from their old home, so the editor's
+sparkline and the generator read one function; `curvePoints` now returns exactly
+`n` points (the preview-era 2..200 clamp would have truncated a long season).
+The worker computes the plan **once per slice over the FULL season date list and
+every enabled type** and each slot looks itself up, so band counts are a property
+of the season rather than of whichever slice ran. `difficultyFor` stays exported
+for `scripts/far287/generate-puzzles.mjs`; the CLI twin
+`scripts/far287/lib/difficulty.mjs` mirrors the allocator and
+`npm run test:generation-difficulty` pins the two copies to identical output.
+**Out of scope (follow-up):** per-game mix rows (`applies_to_game_id`) and
+per-game `difficulty_floor`/`difficulty_ceiling` — `perTypeMix` is the seam they
+plug into. CC-DC-GEN-DIFFICULTY-CANON-1.0 is untouched: canonical bands only,
+model self-report still audit-only in `difficulty_raw`. Existing staging rows
+were not modified.
+
+## The theme calendar obeys the mix, not the corpus dates (CC-DC-GEN-THEME-ALLOCATION-1.0, claude/gen-theme-allocation, 2026-10-06)
+
+**`target_pct` is AUTHORITATIVE for which theme each season day carries, and
+`src/lib/generation/theme-allocation.js` is the only module that decides it.**
+Phase A of the worker used to build the calendar out of the CORPUS's own dates:
+it matched the corpus row whose `theme_date` equalled the season date,
+substituted the nearest-dated non-excluded row otherwise, and never read
+`target_pct` at all — it did not even SELECT the column. So Football's configured
+mix (T-002 35.31 / T-005 29.41 / T-007 35.28, T-001/003/004/006 excluded) was
+decorative, and because only 45 of the 500 corpus rows are T-007, a 35% emphasis
+could not have been met by date-matching however the exclusions fell. The same
+fallback made the calendar a function of the corpus WINDOW: a season date past
+2027-12-13 drew the tail rows repeatedly and then threw `no corpus theme row
+available for <date>`.
+
+`allocateThemeCalendar({ dates, corpusRows, mixRows, seed })` is pure — no I/O,
+no clock, seeded on the season id — and returns one `{date, sourceId}` per season
+date. Included Theater-level rows (sector and thread null, not excluded) are
+normalized to 100 and converted to whole days by **largest remainder** over
+`dates.length`; a Theater that also carries included Sector-level rows splits its
+own quota the same way, otherwise its sectors are free. Exclusions apply on all
+three axes exactly as the old `passes` did. **Corpus row date is read by
+nothing**: inside a quota, sectors rotate least-used-first, unused rows are
+preferred, and an exhausted pool reuses least-recently-used — which is what
+removes the corpus-window gap and the 2027-12-13 failure. Spread is a
+deterministic interleave: no Theater runs more than 2 consecutive days and no
+sector repeats back to back whenever the quotas admit it (a Theater holding more
+than two thirds of the season cannot be spread that way by any arrangement, and
+the allocator takes the unavoidable run rather than failing).
+
+**An included Theater or Sector with zero eligible corpus rows is an ERROR, never
+a silent redistribution onto its neighbours.** The League Office checklist blocks
+it as `theme_quota_unfillable` (condition 7, fed by `corpusThemeCounts` — a
+`theater_id, sector_code, count(*)` projection assembled in
+`generation-status.ts`; that pre-flight cannot see thread exclusions, so it is
+conservative and the worker is the authority), and the worker fails the run with
+`theme:unfillable:<theater>`. Phase A computes the plan over the WHOLE season so
+the quotas are season-wide but inserts only dates that have no row yet: the
+`dc_daily_theme` row shape is unchanged, resume stays correct, and no existing
+theme row is ever modified or deleted. `normalizeTo100` is mirrored from
+`season-config-logic.ts` and `npm run test:theme-allocation` pins the mirror
+alongside the Football fixture (119 days ⇒ T-002 42 · T-005 35 · T-007 42).
+
+## An empty lobby says it is empty (CC-DC-LOBBY-EMPTY-STATE-1.0, claude/lobby-empty-state, 2026-10-05)
+
+**In production the Daily Challenge lobby NEVER substitutes `MOCK_PUZZLES` for a
+missing puzzle — not on a failed fetch, not on a missing season, not for one
+absent game.** Football Season sat at `upcoming` with 595 `Published` and 0
+`Live` rows, so `/api/challenge/today` returned
+`{"puzzles":{},…,"season":null}` while the lobby rendered a full, playable
+seven-game suite of FIXTURES on top of it — a day-long outage that was invisible
+precisely because the fake lobby looked healthy (FDY-43/46 B4). The whole
+decision is now one pure function, `lobbyModel()` in **`src/lib/lobby-model.ts`**
+(`loading | error | no_season | no_puzzles | live`), pinned by
+`npm run test:lobby-model`; `DailyChallenge.jsx` computes it once and branches on
+`mode`, header menus and the in-game switcher take its `servedKeys` so neither
+can route into a game with no puzzle, and the "n/N puzzles today" denominator is
+its `servedCount`, never a hardcoded 7. Outside production the fixture fallback
+survives for developer convenience, labelled `MOCK` on every tile;
+`/api/challenge/today` also ships `nextSeason: {name, starts_on} | null`
+(`src/lib/seasons/next-season.ts` — earliest platform-scoped `upcoming` season
+after `todayCT()`) so the empty card can say when the next one starts.
+
+## A season that starts today serves today (CC-DC-SEASON-GOLIVE-1.0, claude/season-golive, 2026-10-05)
+
+**One module owns "make today correct": `src/lib/seasons/golive.ts`.** Before it,
+`upcoming → active` was written only by the nightly `fn_leaderboard_rollover()`
+and `Published → Live` only by `/api/cron/rotate` behind a CT-midnight guard, so
+the Football Season created at 12:43 UTC on its own start date served nothing all
+day and the 595 rows approved at 21:43 for that date never went Live.
+`goLiveToday()` now runs activate → rotate (through the `@/lib/puzzle-bank`
+facade, never `fn_dc_rotate_live_set` directly) → re-sync `dc_daily_page_content`
+on demand, and is called from `createSeason`, `updateSeason` (window moved, no
+explicit status, not a close), `approveSeasonPuzzles` (dates include today), and
+the hourly backstop `/api/cron/season-golive` at `:15`.
+
+**It is promote-only and never throws.** `activateDueSeasons` filters
+`status=eq.upcoming` within the window and writes only `status: active` —
+closing stays with `fn_leaderboard_rollover()`, which also archives the
+leaderboard. Every failure comes back in `GoLiveResult.skipped` under the
+`[season-golive]` log prefix, because each caller is a side effect of some other
+write that already succeeded; it is idempotent, so a second run activates
+nothing, promotes nothing and leaves today's day-content row alone. Put any new
+"is this season serving today?" rule in that module, not at a call site, and
+keep the 05:00/06:00 UTC rotate + sync crons as they are.
+
+## One slice per run; a taken slot is a skip (CC-DC-GEN-LEASE-AUTOADVANCE-1.0, claude/gen-lease-autoadvance, 2026-10-05)
+
+**The generator was competing with itself.** Every entry point —
+`/api/cron/generation-worker` (every 10 min), the League Office "Advance now"
+button, and the kick fired on run creation — claimed "the oldest in-flight run"
+with nothing but `completed_at is null and superseded_at is null`. Two slices
+could therefore be inside the SAME run at once, each with its own `occupied`
+snapshot taken once at slice start, both generating the same
+`(season_id, puzzle_type, go_live_date)` slot. The loser's insert died on
+`unique dc_staging_season_type_date_uniq` (SQLSTATE **23505**) and the worker
+scored it as a FAILURE. That was **84% of the failures in the 2026-10 full run**,
+plus the Anthropic spend for every duplicate.
+
+- **D1 — a slice LEASES the run; no schema change.** The flag lives in the
+  existing `phase_cursor` jsonb as **`slice_active`**, set by the claim and
+  cleared by the release. A run is claimable when `slice_active` is not exactly
+  `true`, **or** its heartbeat is older than **`STALE_LEASE_MS = 180_000`** (the
+  worker heartbeats after every batch, so a silent lease is a dead slice — a
+  function killed at Vercel's 300s wall is reclaimed on the next cron firing).
+  Rules live in **`src/lib/generation/lease.js`**; `withLease()` takes its claim,
+  work and release as injected effects, which is why "released on a normal exit
+  AND on a thrown exit" is a unit test rather than a code review.
+- **The claim is a compare-and-swap on `last_heartbeat_at`.** The claiming PATCH
+  is filtered on the EXACT heartbeat value the claimer read (`eq.<value>`, or
+  `is.null` for a never-heartbeated run), so of two slices that read the same row
+  only one can write; the loser gets 0 rows back. **Plain PostgREST filters
+  only** — deliberately no jsonb-path predicate, whose syntax could 400 a live
+  production slice. The residual read→write gap is absorbed by D2.
+- **A held lease is `{ idle: true, note: "lease held" }`, never an error.** The
+  cron must treat "someone else is working" as the normal case.
+- **Release is in a `finally`**, so a thrown slice frees the run for the next
+  firing instead of parking it for 180s. A release that itself fails is logged
+  and **never masks the slice's own result or exception**. Every `checkpoint()`
+  re-stamps `slice_active: true` and records what it wrote, so the release flips
+  the flag without rolling back the slice's progress.
+- **D2 — 23505 on `dc_staging_season_type_date_uniq` is a BENIGN SKIP.** The slot
+  is filled, which is the outcome the slice wanted: it increments
+  `skippedExisting`, does **not** touch `failed_count`, and is **not** recorded
+  in `phase_cursor.failures`. **Any other 23505** (a different unique index) is
+  still a failure.
+- **A duplicate counts as PROGRESS.** `pendingAfter` subtracts it and the
+  zero-progress clause requires `duplicateSkips === 0`, so **a slice whose every
+  slot was already filled finishes the run `complete` instead of `failed_short`**
+  — the bug that let a finished bank be reported as dead. The zero-progress
+  THRESHOLD itself is unchanged (one full sweep, 0 written, ≥1 failure). Rules in
+  **`src/lib/generation/slots.js`** (`isBenignSlotConflict`, `sliceOutcome`).
+- **D3 — "Continue until done" replaces "Advance now."** The panel drives worker
+  slices **sequentially** (each POST awaited in full, then the run re-read; never
+  two slices in flight) and stops on the first of: the run's status leaves
+  `generating`/`queued`; **3** consecutive slices with no increase in
+  `written_count`; **60** slices; Stop pressed; a POST failed. Stop is honoured
+  BETWEEN slices so the one in flight still checkpoints. A slice that reports
+  `idle` (the cron holds the lease) backs off 4s and is not an error. Loop rules
+  in **`src/lib/generation/advance.js`** (`advanceUntilDone`, `advanceDecision`,
+  `trackProgress`) — the panel only supplies the effects.
+- **The loop is a convenience, never the mechanism.** Closing the tab reverts the
+  run to the ten-minute cron; nothing needs the browser back. "Advance one slice"
+  keeps the old single-shot behaviour reachable.
+- **No migration, no new column, no run restart.** Shipping this under a run that
+  is mid-flight is safe: slices are stateless and resume from the DB, and a run
+  whose `phase_cursor` has no `slice_active` is simply claimable.
+- Tests: `npm run test:generation-lease`
+  (`src/lib/generation/lease-autoadvance.test.mjs`, 39 tests — no network, no DB,
+  no clock).
+
+## Generation writes CANONICAL difficulty bands (CC-DC-GEN-DIFFICULTY-CANON-1.0, claude/gen-difficulty-canon, 2026-10-05)
+
+**`dc_puzzle_bank_staging.difficulty` accepts exactly three values.** The column carries
+
+```
+CHECK dc_puzzle_bank_staging_difficulty_canon
+  (difficulty IS NULL OR difficulty IN ('foundational','practitioner','expert'))
+```
+
+and the generator used to write the legacy strings `easy`/`medium`/`hard`. Every
+insert was therefore rejected by Postgres, so a League Office run finished with
+**0 rows written** and no obvious cause in the UI — pilot run
+`0118d976-ca9a-4f8f-b3c3-f1c9f1ae347a` failed 5/5 with
+`violates check constraint "dc_puzzle_bank_staging_difficulty_canon"`.
+
+- **The canonical list lives in ONE place: `src/lib/generation/difficulty.js`** —
+  `CANONICAL_BANDS`, `LEGACY_ALIASES` (mirrors `puzzle_difficulty_alias`),
+  `canonicalDifficulty()`, `difficultyFor()` and `resolveRowDifficulty()`. The CLI
+  resolves modules only inside `scripts/far287`, so it carries the twin
+  `scripts/far287/lib/difficulty.mjs` — exactly as `prompts` and `puzzle-schema`
+  are already twinned. `src/lib/generation/difficulty.test.mjs` fails the suite if
+  the two copies ever disagree on output.
+- **D1 — the season-assigned band wins.** `difficulty` is derived from
+  `season_difficulty_mix` via `difficultyFor(mix, slot)`, which always returns a
+  canonical band: mix rows are canonicalized, unrecognisable rows are dropped, and
+  an empty/all-junk mix falls back to foundational 40 / practitioner 40 / expert 20.
+  **The model's self-reported difficulty is never written to `difficulty`.**
+- **D2 — the model's self-report is audit-only**, stored verbatim in
+  `difficulty_raw` (text, nullable). Nothing reported → `NULL`, never `''`.
+- **The prompts ask for the canonical vocabulary** (`"difficulty":
+  "foundational|practitioner|expert"`) and define the three bands from
+  `puzzle_difficulty_band`: foundational = entry-level, general data-center
+  literacy; practitioner = working-professional, day-to-day domain familiarity;
+  expert = specialist, deep subject-matter depth. A standing test asserts the
+  substring `easy|medium|hard` appears in neither prompt file.
+- **No trigger, no relaxed CHECK.** The strict constraint is what caught this;
+  softening it would have turned a loud failure into silently mislabelled puzzles.
+- **If you add a band**, change `puzzle_difficulty_band`, the CHECK, and
+  `CANONICAL_BANDS` together — nowhere else hard-codes the list.
+
+## A failed run must say WHY (CC-DC-GEN-FAILURE-VISIBILITY-1.0, claude/gen-failure-visibility, 2026-10-05)
+
+**A generation run that writes 0 rows has to be diagnosable from the panel and
+from the logs — without ever storing or showing answer content.** The difficulty
+CHECK bug above took far too long to find because the evidence was destroyed on
+the way out: `sb()` truncated the PostgREST body at 200 chars and the per-item
+handler sliced that string *again*, so the SQLSTATE (`23514`) and the constraint
+name were cut off; the run row carried an `error` string only on `failed_short`;
+and League Office rendered written/failed counts and nothing else.
+
+- **Reason naming lives in ONE place: `src/lib/generation/failure-reasons.js`** —
+  `parsePostgrestError()`, `failureKey()`, `mergeFailures()`,
+  `restErrorMessage()`, `lastFailureEntry()`, `topFailure()`, `clampMessage()`,
+  `failuresFrom()`, `lastFailureFrom()`. Pure, no I/O, shared by the worker, the
+  server-side status assembler and the client panel.
+  Tests: `npm run test:generation-failures`.
+- **Keys are short and stable** so counts sum across worker slices and compare
+  between runs: `db:<sqlstate>:<constraint|->`, `model:<httpStatus|error>`,
+  `schema`, `hints`, `copy`, `subject-repeat`, `no-content`, `skip:no-spec`.
+  A 23514 on this table reads `db:23514:dc_puzzle_bank_staging_difficulty_canon`
+  — the key alone names the bug.
+- **`sb()` throws `SupabaseRestError`**, whose `message` is
+  `Supabase <METHOD> <table> <status> <code> <message>` (≤500 chars) and which
+  carries `status`/`code`/`hint`/`constraint` for keying. Nothing truncates it a
+  second time.
+- **Every checkpoint writes the reasons.** `phase_cursor.failures` is
+  `mergeFailures(what the DB had when this slice claimed the run, what this
+  slice has seen)` — so a resumed run accumulates and a repeated checkpoint is
+  idempotent — plus `phase_cursor.last_failure = { key, message (≤300), at }`.
+- **PostgREST's `details` is never read, stored or rendered.** On a constraint
+  violation Postgres puts the whole offending row in `details` ("Failing row
+  contains (…)"), which for `dc_puzzle_bank_staging` means the puzzle content,
+  the hints and the answer key. `code` + `message` + the constraint NAME
+  diagnose the fault; `details` adds nothing but an answer leak.
+  `clampMessage()` scrubs it (including from a truncated body) on every path,
+  and the test asserts a planted answer string appears in no returned value.
+- **`generation-status.ts` drops `phase_cursor`** and exposes three whitelisted
+  projections per run (`failures`, `lastFailure`, `error`) as `GenRunView`. A
+  jsonb blob passed through wholesale is how a future field gets rendered by
+  accident.
+- **The panel shows one line** under a run with failures:
+  `Top failure: <key> ×<n> — <message> · +N other reasons`, plus the existing
+  `failed_short` summary. Counters, run-status semantics, batch logic and
+  prompts are untouched.
+- **If you add a failure path**, give it a key in `failureKey()` and route it
+  through `fail()`/`noteFailure()` — do not `console.error` a bare string, and
+  never put model output or row data in the message. The per-item messages the
+  worker persists are structural (`"Rackl g0: label"`, `"hints: must be
+  distinct"`, `"count phrase"`); `puzzle-schema.js` never echoes content values
+  into them, which is what makes them safe to render.
+
+## FULL runs survive truncation and the function limit (CC-DC-GEN-BATCH-HARDENING-1.0, claude/gen-batch-hardening, 2026-10-05)
+
+**The worker asked for 8–12 puzzles in a call capped at `max_tokens: 4096` and
+then ignored `stop_reason`.** When the answer hit the cap the JSON ended
+mid-object, `parseArray()` salvaged what it could, and every slot past that point
+was recorded as `no-content` — a structural, perfectly repeatable failure that
+looked like the model declining to answer. The offline sizing (chars/4 off the
+`prompts.js` exemplars, ×1.6 for hints + explanation + the JSON wrapper) says
+**The Brief costs ~662 output tokens/puzzle, so the OLD minimum batch of 8 could
+not fit 4096 no matter what the model did**; Circuit at 8 (~3.1k) was one verbose
+explanation from the same cliff.
+
+- **Sizing, splitting and the budget guard live in ONE pure module:
+  `src/lib/generation/batching.js`** — `TYPE_BATCH_SIZE`, `startingBatchSize()`,
+  `genMaxTokens()`, `createBudget()`, `runBatchWithSplit()`. No I/O, no imports,
+  no clock of its own; the model call is injected. Unlike `difficulty` and
+  `puzzle-schema` it is **shared, not twinned** — `scripts/far287` imports it
+  directly, because it imports nothing itself.
+  Tests: `npm run test:generation-batching`.
+- **`max_tokens` is 16000** (`DC_GEN_MAX_TOKENS` overrides; a value < 1024 is
+  ignored as a typo). `callModel()` returns `{ text, stopReason, ms }` — the old
+  `Promise<string>` is what threw away the only truncation signal there is.
+- **Per-type STARTING batch size:** The Brief 5, Circuit/Frequency/Rackl 8,
+  Signal Drop/The Stack/Dark Fiber 10, default 8 for a new catalog game. The
+  worker's `batchSize` (8–12) is an **upper bound only** — it clamps 10 down to
+  8, it never lifts The Brief's 5 up. Every one of these sits under 70% of the
+  16k cap on the estimate (worst: The Brief at ~21%).
+- **A truncated result is never partially trusted.** On
+  `stop_reason === "max_tokens"` the result is kept only when the count of
+  complete parsed objects **equals** the count asked for. Anything less is
+  discarded whole and the slice is **split in half and retried immediately**,
+  recursively, down to size 1. A size-1 call that still truncates is a real
+  failure with reason key `truncated`. A salvaged prefix would silently write an
+  unknown subset — that is the trap, not the fix.
+- **Fewer objects WITHOUT truncation is not a split.** `stop_reason end_turn`
+  with 6 of 8 elements is the model answering short; it stays on the existing
+  `no-content` path. A thrown call is a whole-sub-slice `model:<status>` failure
+  and does not split — a transport error says nothing about output length.
+- **No model call is STARTED that cannot finish.** The guard requires
+  `elapsed + EMA(batch duration) <= budgetMs` (alpha 0.5, seeded pessimistically
+  at 60s) **before every call, including each split retry**. The old code
+  checked `elapsed > budgetMs` once per batch, so a batch begun at 249s on a
+  250s budget ran into Vercel's 300s wall and lost its work uncheckpointed.
+  Slots refused by the guard are **unattempted, not failed** — they stay pending
+  and the next invocation resumes them, and `sweptAll` is false so the
+  zero-progress rule does not misfire.
+- **Both worker routes spend 230s of their 300s `maxDuration`** (down from
+  250s): `/api/cron/generation-worker`, `/api/lo/generation/worker`.
+- **Every split and every refusal emits one structured line** on the existing
+  `{ at: "generation-worker", run, type, … }` shape: `step: "split"` (with
+  `size`, `parsed`, `halves`, `depth`), `step: "truncated"`,
+  `step: "truncated-complete"`, `step: "budget-stop"` (with `elapsedMs`,
+  `emaMs`, `budgetMs`).
+- **Prompts, difficulty logic, run-status semantics and the zero-progress rule
+  are untouched.** If you add a game type, give it a `TYPE_BATCH_SIZE` entry
+  sized off the same chars/4 × 1.6 estimate; the default 8 is a guess, not a
+  measurement.
+
 ## Adding a new game (CC-DC-GAME-REGISTRY-1.0, 2026-08-21)
 
 **`game_catalog` is the source of truth for the game roster.** Adding a game is a
@@ -45,6 +1038,93 @@ Two things that look like duplicates and are not:
 - `description` (League Office copy) is **not** `lobby_description` (tile copy).
 - `public_id_prefix` (RACK-style, mints Public IDs) is **not** `short_code`.
   Two live systems; never derive one from the other.
+
+## ⚠️ The Daily Challenge lives on ONE host (CC-DC-CANONICAL-DOMAIN-1.0, claude/dc-canonical-domain-v2, 2026-10-03)
+
+**DC pages render on `www.faradaydailychallenge.com` and nowhere else.** Every other
+host that can reach a DC page **308s** to the canonical one, query string intact.
+This makes structural what PR #112 only made true of the *links* — before this, every
+DC page also answered **200 on `www.faraday-intelligence.ai`** (verified live
+2026-10-02: `/challenge`, `/challenge/{hints,answers,about,signals}`, `/leaderboard`,
+`/free-agency`, `/auth`, `/account`, `/messages`, `/share`, `/help/*` — all of them).
+
+### The host map — `src/lib/hosts.ts`
+
+**One pure function owns the whole decision:** `resolveHostRoute(host, pathname, search)`
+→ `{kind:"rewrite"|"redirect"|"next"}`. `src/proxy.ts` is only edge wiring (Next 16
+renamed `middleware` → `proxy`). The decision is pure so it can be unit-tested —
+`npm run test:hosts`, 81 cases — instead of discovered in production.
+
+| Host | Behaviour |
+|---|---|
+| `www.faradaydailychallenge.com` | `/` rewrites to `/challenge` (lobby at the bare root, **200, never a redirect**); every other path serves itself |
+| `faradaydailychallenge.com` | Vercel 308s to www at the edge. Treated as a DC host in code **so it can never redirect to itself** |
+| `www.faraday-intelligence.ai` + apex | DC page path → **308** to the canonical origin. Storefront pages, `/terms*`, `/privacy`, `/academy`, `/internal/*` stay put |
+| `www.faraday-player.com` + apex | DC page path → **308**. Everything else falls through to the Academy (see below) |
+| `*.vercel.app`, `localhost` | **Never redirected** — preview QA must work, including the Academy branch's |
+
+### Three rules that are load-bearing
+
+1. **Only `src/lib/hosts.ts` may build a URL on the DC domain.** Everything else
+   imports `DC_CANONICAL_ORIGIN` / `DC_CANONICAL_HOST` — including
+   `src/lib/share/manifest.js`, whose `CANONICAL_ORIGIN` (PR #112) is now a
+   re-export. **Never** derive a DC URL from `VERCEL_PROJECT_PRODUCTION_URL`,
+   `VERCEL_URL` or `NEXT_PUBLIC_SITE_ORIGIN`: the first follows Vercel's
+   "primary domain" setting (and Vercel reports the DC domain as *this* project's
+   production URL, so it looks right until someone changes it), and the last
+   belongs to the Academy's player domain. Enforced by the D14 guard in
+   `src/lib/hosts.test.ts`.
+2. **`/api/*`, `/_next/*`, `/manifest.webmanifest` and anything with a file
+   extension are NEVER redirected cross-host.** A 308 on a POST re-sends the body
+   to another origin; a 308 on `/api/cron/rotate` or `/api/cron/sync-day-content`
+   breaks the cron, which fires against the project's production URL. The
+   extension rule is not belt-and-braces: `/public/share/icons/*.png` and
+   `/public/share/fonts/*` are real assets sitting **underneath** the `/share` DC
+   page prefix, so without it, consolidating `/share` would 404 every share-card icon.
+3. **The lobby must answer 200 at the bare DC root.** `next.config.ts` keeps its
+   host-conditioned `/` → `/challenge` rewrite as deliberate defence in depth; it
+   agrees with `resolveHostRoute` by construction. Do not "clean up" one of them.
+
+### What is NOT a DC page (deliberately)
+
+`/terms`, `/terms/*` and `/privacy` are **shared** — the master Terms is the canonical
+legal body for every Faraday storefront and `/privacy` covers both surfaces by name,
+so they answer on whichever host the reader arrived on. `/about`, `/who-is-faraday`,
+`/merch`, `/library`, `/briefing-library`, `/signal-room`, `/jurisdiction-watch`,
+`/intelligent-alert`, `/live-agent`, `/thought-forge`, `/legal` are brand pages — the
+DC masthead (`SiteHeaderNav`) links to them under "More Faraday" by design, so they
+still render on the DC host. Closing *that* direction would be a product change.
+
+### Canonical tags
+
+Every DC page declares `alternates.canonical` on the DC origin via
+`dcPageMetadata()` (`src/lib/dc-metadata.ts`). `metadataBase` is **pinned to
+`DC_CANONICAL_ORIGIN`, never derived from the Host header** — one deployment answers
+for three brands, and reading `headers()` in `generateMetadata` would both opt the
+route out of static rendering and make the canonical depend on who answered. Most DC
+pages are client components and cannot export metadata, so they carry a three-line
+segment `layout.tsx`. Token-bearing URLs (`/auth`, `/leaderboard/join/[token]`) get
+`robots: noindex` and **no** canonical instead — the token is the payload.
+
+### ⚠️ Instruction to `cc-academy-player`
+
+**Rebase onto main and plug into `resolveHostRoute` — do not add a second host
+router.** This branch landed first (main was at the production SHA with zero
+unshipped commits, so there was nothing to race). Your `src/proxy.ts` is superseded
+by the one here; chain `routeForPlayerHost` **after** `resolveHostRoute` in the
+existing `proxy()`, so a DC page path on `faraday-player.com` 308s home and
+everything else keeps your behaviour byte-for-byte. Note this **intentionally
+overrides** your catch-all rewrite-into-`/academy` for DC paths only: a stale DC link
+on the player domain should go home, not hit an Academy 404.
+
+### One-time consequence
+
+The DC session is a `dc_session` token in **localStorage, which is per-origin**, and
+DC auth is entirely custom (`register-with-magic-link` / `send-otp` / `verify-otp` +
+`dc_magic_links`) — **Supabase Auth/GoTrue is not used anywhere**, so its Site URL and
+redirect allow-list are irrelevant to sign-in. Players who signed in on
+`faraday-intelligence.ai` arrive at the canonical domain **signed out** and re-auth by
+magic link. Same one-time cost PR #112 noted for the first cutover.
 
 ## Seasons are independent and MAY overlap (CC-LO-SEASONS-OVERLAP-1.0, claude/lo-seasons-overlap, 2026-09-10)
 
@@ -1425,8 +2505,10 @@ The **storefront / brand site + the other 7 products stay on `faraday-intelligen
   2. **Supabase:** redeploy `register-with-magic-link` so the new `MAGIC_LINK_BASE`
      takes effect (merging the code alone does nothing — edge fns deploy separately).
      One-time: subscribers who authed on the old origin will re-auth on the new one.
-- `vercel.json` rewrite (`/` on `(www.)?faradaydailychallenge.com` → `/daily-challenge`)
-  is retained — the branded apex opens the lobby.
+- The branded root opens the lobby. As of **CC-DC-CANONICAL-DOMAIN-1.0** that is
+  `resolveHostRoute` (`src/lib/hosts.ts`) plus the host-conditioned `/` → `/challenge`
+  rewrite in `next.config.ts`. The stale `vercel.json` rewrite pointing at
+  `/daily-challenge` is not what serves it — see that section before touching either.
 
 ## ⚠️ League Office auth kill-switch (owner-requested, 2026-07-28)
 
@@ -1522,6 +2604,14 @@ Faraday Academy Polo · Faraday Academy Quarter-Zip.
   the global 2px gold `a:focus-visible`.
 
 ## Daily Challenge header — icon-dropdown nav (feature/header-icon-nav)
+
+> **FDY-445 (CC-BRAND-MASTHEAD-1.0) supersedes the wordmark/status layout below.** The forest bar is the
+> vendored shared masthead `src/lib/faraday-masthead/` (+ `faraday-gate` 1.1.0 beside it) — **never edit
+> either vendored copy**; re-vendor from the Workbench package (`npm test` runs `check-drift.mjs`). DC passes
+> `appName="Daily Challenge"`, `homeHref="/challenge"`, the @handle + score chips as `context`. The dock + five
+> dropdowns live in `<AppBar>`; their CSS is ONE copy in `src/components/dcAppBarStyles.ts` (AppBar colours are
+> asserted in `scripts/contrast-check.mjs`). Menu items/links are still edited in `buildHeaderMenus` /
+> `buildSiteMenus`. Predicts + `/intelligent-alert` wear the same masthead. Evidence: `docs/brand/FDY-445-masthead.md`.
 
 The masthead in `src/components/DailyChallenge.jsx` uses an **icon-dropdown** nav:
 wordmark ("Faraday" / "DAILY CHALLENGE") flush left (no BrandMark tile; clickable
@@ -1722,9 +2812,11 @@ Routes:
 
 Invariants:
 - **No `basePath`** (the domain root is served here). Don't re-add it.
-- `faradaydailychallenge.com` (+ `www`) **301** → `faraday-intelligence.ai/daily-challenge`
-  via the host-conditioned edge redirect in `vercel.json` (a real 301 — Next
-  `redirects()` only emit 307/308).
+- ~~`faradaydailychallenge.com` (+ `www`) **301** → `faraday-intelligence.ai/daily-challenge`~~
+  **SUPERSEDED** — first by PR #112 (DC links moved to the DC domain) and now
+  structurally by **CC-DC-CANONICAL-DOMAIN-1.0**: the redirect runs the other way.
+  DC pages are canonical on `www.faradaydailychallenge.com` and 308 off every other
+  host. The host decision lives in `src/lib/hosts.ts`, not `vercel.json`.
 - Production deployment URL must stay public (Deployment Protection = *Only Preview
   Deployments*) so the custom domains serve.
 - Env required: `ANTHROPIC_API_KEY`, `BEEHIIV_API_KEY`, `BEEHIIV_PUB_ID`, `AIRTABLE_API_KEY`.

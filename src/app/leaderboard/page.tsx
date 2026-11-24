@@ -352,7 +352,7 @@ export default function LeaderboardPage() {
         onUnreadChange={setUnread}
       />
 
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <h1 className="font-serif text-3xl font-bold text-forest">Leaderboard</h1>
         {season && (
           <p className="mb-5 mt-1 text-sm text-near-black/60">{season.name}</p>

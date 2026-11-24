@@ -222,7 +222,7 @@ export default function TeamPage() {
         onUnreadChange={setUnread}
       />
 
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-6">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-6">
         {/* Back navigation — returns to the Leaderboard with the Teams tab selected. */}
         <Link
           href="/leaderboard?view=teams"

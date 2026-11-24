@@ -1,12 +1,14 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import FeedbackForm from "@/components/FeedbackForm";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/report-a-bug", {
   title: "Report a Bug · Faraday Daily Challenge",
-  description: "Found something broken in the Daily Challenge? Tell us what happened.",
-};
+  description:
+    "Found something broken in the Daily Challenge? Tell us what happened.",
+});
 
 // Help & Feedback (gear menu) → Report a Bug. Form → /api/feedback (Resend).
 
@@ -14,7 +16,7 @@ export default function ReportABugPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-20 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-20 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Report a bug</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">

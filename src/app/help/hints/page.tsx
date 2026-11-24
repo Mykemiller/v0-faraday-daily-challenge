@@ -1,13 +1,15 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/hints", {
   title: "Hints · Faraday Daily Challenge",
-  description: "How hints work across the daily games — and how to use them without giving the answer away.",
-};
+  description:
+    "How hints work across the daily games — and how to use them without giving the answer away.",
+});
 
 // Help & Feedback → Hints (evergreen how-to). Distinct from /challenge/hints,
 // which is the day-scoped list of today's actual hints (FAR-287).
@@ -33,7 +35,7 @@ export default async function HintsHelpPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-20 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-20 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">How hints work</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">

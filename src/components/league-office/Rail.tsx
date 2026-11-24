@@ -12,7 +12,6 @@ type Item = { icon: string; label: string; href?: string; badge?: number };
 
 const PRIMARY: Item[] = [
   { icon: "◈", label: "Dashboard", href: "/league-office" },
-  { icon: "☰", label: "Subscribers", href: "/league-office/subscribers" },
   { icon: "⛨", label: "Teams", href: "/league-office/teams" },
   { icon: "▦", label: "Leagues & Conferences", href: "/league-office/leagues" },
   { icon: "◷", label: "Seasons", href: "/league-office/seasons" },

@@ -16,6 +16,11 @@
 //   • an optimistic-concurrency fingerprint must match or the save 409s.
 
 import { type Svc } from "./service";
+// CC-DC-SEASON-GOLIVE-1.0: the ONE module that decides whether a season
+// whose window contains today is serving today. createSeason keeps inserting
+// "upcoming" and lets activateDueSeasons (inside goLiveToday) do the flip, so
+// there is exactly one writer of that rule.
+import { goLiveToday, statusForWindow, todayCT, type GoLiveResult } from "@/lib/seasons/golive";
 import { seasonDayCount } from "./generation-logic";
 import {
   bundleFingerprint, getConfigBundle, getScopeSummary, loadGameCatalog, loadSeasonMemberships,
@@ -28,6 +33,9 @@ import {
   defaultThemeMix, editability, normalizeDayMask, normalizeDifficultyMix,
   normalizeThemeMix, round2,
   sanitizeConfigPatch, slugify, validateTradingWindows,
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D1/D3 — the one list of settings that shape
+  // generation, and the pure diff over it.
+  shapingFieldsChanged, summarizeShapingFields,
   type TradingWindows, type WizardScope,
 } from "./season-config-logic";
 
@@ -135,6 +143,18 @@ async function writeAudit(
 ): Promise<string | null> {
   const out = await insert(s, "lo_audit_log", { domain: "seasons", ...row });
   return (out?.[0] as { id?: string } | undefined)?.id ?? null;
+}
+
+/** One short sentence for the commissioner describing what going live did, or
+ *  "" when it did nothing worth saying. Failures ARE worth saying: goLiveToday
+ *  never throws, so without this the only trace would be the server log. */
+function goLiveNote(g: GoLiveResult): string {
+  const failures = g.skipped.filter((r) => r.includes("-failed:"));
+  const parts: string[] = [];
+  if (g.activated.length) parts.push("it is active now");
+  if (g.promoted > 0) parts.push(`${g.promoted} puzzle${g.promoted === 1 ? "" : "s"} went live for today`);
+  if (failures.length) parts.push(`but going live today did not finish (${failures.join("; ")})`);
+  return parts.length ? ` ${parts.join(", ")}.` : "";
 }
 
 // ── result type ──────────────────────────────────────────────────────────────
@@ -302,11 +322,22 @@ export async function createSeason(
     reversible: false,
   });
 
+  // CC-DC-SEASON-GOLIVE-1.0 (D4/B1): a season whose window already contains
+  // today has to serve TODAY, not after the next nightly rollover. Not a bare
+  // status PATCH: a copied or imported season can already hold Published rows
+  // dated today, so the full go-live (activate → rotate → re-sync the day) runs.
+  // Deliberately LAST — after the scope-failure rollback and the season.create
+  // audit row, so nothing activates a season that is about to be deleted.
+  let note = "";
+  if (statusForWindow(input.starts_on, input.ends_on, todayCT()) === "active") {
+    note = goLiveNote(await goLiveToday(s, { reason: "season.create", actor: staffEmail }));
+  }
+
   return {
     ok: true,
     message: configId
-      ? `“${name}” created with a v1 draft config.`
-      : `“${name}” created — but its starting config could not be built. Open the season and clone a version.`,
+      ? `“${name}” created with a v1 draft config.${note}`
+      : `“${name}” created — but its starting config could not be built. Open the season and clone a version.${note}`,
     data: { seasonId, configId },
   };
 }
@@ -556,6 +587,10 @@ export type ConfigSavePayload = {
   reason: string;
   /** Set once the commissioner has seen and accepted the over-cap warning. */
   acknowledgeCapWarning?: boolean;
+  /** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — set once the commissioner has ticked
+   *  "I understand existing puzzles will not change". Only consulted when the
+   *  season has generated AND the diff touches GENERATION_SHAPING_FIELDS. */
+  acknowledgePostGeneration?: boolean;
 };
 
 export async function saveConfigDraft(
@@ -590,6 +625,43 @@ export async function saveConfigDraft(
         409,
         `${over} subscriber${over === 1 ? "" : "s"} already hold more than ${nextCap} team${nextCap === 1 ? "" : "s"} this season (highest: ${worst}). No memberships will be removed — confirm to save this cap anyway.`,
         { capWarning: true, over, worst, cap: nextCap }
+      );
+  }
+
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — a season whose puzzles already exist.
+  // Editing a generation-shaping setting is ALLOWED (the next run honours it,
+  // and season.regenerate_from is the path that actually replaces puzzles) but
+  // it changes nothing already written, so it must be acknowledged and it must
+  // be legible in the audit log afterwards. Nothing else about the save moves.
+  //
+  // The diff is computed first and the season row is read only if it is
+  // non-empty: a scoring-only save costs no extra query.
+  const shapingChanged = shapingFieldsChanged(
+    {
+      config: bundle.config as unknown as Record<string, unknown>,
+      games: bundle.games as unknown as Record<string, unknown>[],
+      themeMix: bundle.themeMix as unknown as Record<string, unknown>[],
+      difficultyMix: bundle.difficultyMix as unknown as Record<string, unknown>[],
+    },
+    {
+      config: payload.config ?? (bundle.config as unknown as Record<string, unknown>),
+      games: payload.games ?? (bundle.games as unknown as Record<string, unknown>[]),
+      themeMix: payload.themeMix ?? (bundle.themeMix as unknown as Record<string, unknown>[]),
+      difficultyMix:
+        payload.difficultyMix ?? (bundle.difficultyMix as unknown as Record<string, unknown>[]),
+    }
+  );
+  let generatedAt: string | null = null;
+  if (shapingChanged.length) {
+    const gen = await getOne<{ generated_at: string | null }>(
+      s, `seasons?id=eq.${bundle.config.season_id}&select=generated_at`
+    );
+    generatedAt = gen?.generated_at ?? null;
+    if (generatedAt && payload.acknowledgePostGeneration !== true)
+      return err(
+        409,
+        `This season's puzzles were generated on ${generatedAt.slice(0, 10)}. Changing ${summarizeShapingFields(shapingChanged)} shapes the NEXT generation run — it does not change a puzzle that already exists. Confirm to save anyway.`,
+        { postGenerationWarning: true, generatedAt, shapingFields: shapingChanged }
       );
   }
 
@@ -655,13 +727,27 @@ export async function saveConfigDraft(
     target_type: "season_config",
     target_id: configId,
     before,
-    after: after ? snapshot(after) : null,
+    // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — a post-generation shaping edit is
+    // flagged IN the audit row, with the fields it touched, so a later reader
+    // can tell "the mix changed but the bank did not" without re-deriving it.
+    after: after
+      ? generatedAt
+        ? {
+            ...snapshot(after),
+            post_generation_edit: true,
+            post_generation_fields: shapingChanged,
+            generated_at: generatedAt,
+          }
+        : snapshot(after)
+      : null,
     reversible: false,
   });
 
   return {
     ok: true,
-    message: "Draft saved — logged to Audit Log.",
+    message: generatedAt
+      ? "Draft saved — logged to Audit Log. Puzzles already generated for this season are unchanged."
+      : "Draft saved — logged to Audit Log.",
     data: {
       fingerprint: after?.fingerprint ?? null,
       findings: after?.findings ?? [],
@@ -699,6 +785,13 @@ function snapshot(b: {
   };
 }
 
+/** `intOrNull`, but a value below 1 is null rather than 0. See the
+ *  points_override note in normalizeGameRow. */
+function positiveIntOrNull(v: unknown): number | null {
+  const n = intOrNull(v);
+  return n !== null && n >= 1 ? n : null;
+}
+
 function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<string, unknown> | null {
   const gameId = String(g.game_id ?? "");
   if (!gameId) return null;
@@ -707,7 +800,11 @@ function normalizeGameRow(configId: string, g: Record<string, unknown>): Record<
     game_id: gameId,
     is_enabled: g.is_enabled === true || g.is_enabled === "true",
     weight: clampNum(g.weight, 1, 0, 999.999),
-    points_override: intOrNull(g.points_override),
+    // CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0: `points_override` is a score
+    // ceiling now, so a non-positive one is not a cap — it is every completion
+    // for this game scoring zero. Below 1 reads as "no override" (null = the
+    // platform default), matching the editor's min of 1. Never persisted as 0.
+    points_override: positiveIntOrNull(g.points_override),
     difficulty_floor: strOrNull(g.difficulty_floor),
     difficulty_ceiling: strOrNull(g.difficulty_ceiling),
     appears_on_days: g.appears_on_days == null ? null : normalizeDayMask(g.appears_on_days),
@@ -1048,12 +1145,24 @@ export async function updateSeason(
     reversible: true,
   });
 
+  // CC-DC-SEASON-GOLIVE-1.0 (D4/B1): moving a season's window can move it onto
+  // today, which must take effect immediately. An explicit `status` in the
+  // patch always wins (the commissioner said what they wanted), and `close` is
+  // never second-guessed — closing stays with fn_leaderboard_rollover's rule
+  // set, and this module is promote-only.
+  const windowMoved = "starts_on" in body || "ends_on" in body;
+  const statusExplicit = "status" in body;
+  let note = "";
+  if (windowMoved && !statusExplicit && input.op !== "close") {
+    note = goLiveNote(await goLiveToday(s, { reason: action, actor: staffEmail }));
+  }
+
   const msg =
     input.op === "lock" ? "Season locked — configuration is now frozen."
     : input.op === "unlock" ? "Season unlocked — configuration can be edited again."
     : input.op === "close" ? "Season closed."
     : "Season updated.";
-  return { ok: true, message: `${msg} Logged to Audit Log.` };
+  return { ok: true, message: `${msg} Logged to Audit Log.${note}` };
 }
 
 // ── scope-only update (Section B / wizard step 3 re-edit) ────────────────────

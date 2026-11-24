@@ -36,7 +36,7 @@ export default function LegalDocument({
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-3xl px-5 pb-16 pt-10">
+      <main id="main" className="mx-auto max-w-3xl px-5 pb-16 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Legal</div>
         <h1 className="mt-3 font-serif text-[clamp(28px,5vw,38px)] font-bold leading-tight text-forest">
           {title}

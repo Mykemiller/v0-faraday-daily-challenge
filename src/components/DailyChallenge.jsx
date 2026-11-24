@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useContext, createContext } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } from "react";
 import BrandMark from "@/components/BrandMark";
 import GameIcon from "@/components/GameIcon";
 import { GameRegistryProvider, useGameRegistry } from "@/components/GameRegistryContext";
 import { accentOf, heroGame, hidesPuzzleName, keyOf } from "@/lib/game-registry";
+// CC-DC-LOBBY-EMPTY-STATE-1.0 (B4): the fixture set is still imported, but it
+// is now handed to `lobbyModel`, which is the ONE place allowed to decide
+// whether it may be used — and in production the answer is always no.
 import { MOCK_PUZZLES } from "@/lib/mock-puzzles";
+import { LOBBY_COPY, lobbyModel, servedKeys } from "@/lib/lobby-model";
 import ShareButton from "@/components/ShareButton";
 
 import {
@@ -20,8 +24,20 @@ import OTPGate from "@/components/OTPGate";
 import BroadcastBanner from "@/components/BroadcastBanner";
 import PlayoffBanner from "@/components/PlayoffBanner";
 import MessageDock from "@/components/messaging/MessageDock";
+// FDY-445 (CC-BRAND-MASTHEAD-1.0): the shared Faraday masthead + AppBar (vendored — never edit
+// src/lib/faraday-masthead) and the one copy of the `.dc-*` nav CSS both mastheads share.
+import { Masthead, AppBar } from "@/lib/faraday-masthead/ui/Masthead.tsx";
+import { DC_NAV_CSS } from "@/components/dcAppBarStyles";
 import FaradaysTake from "@/components/FaradaysTake";
 import TodaysSignalCard from "@/components/TodaysSignalCard";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D7) — the season's scoring. The SAME
+// pure module /api/score recomputes with, so the number on the score card and
+// the number written to dc_completions are one function of one input, not two
+// implementations that happen to agree.
+import { seasonScore, gameScoringRules, effectiveStreak } from "@/lib/scoring/season-scoring.js";
+// FIX B2 — the hint budget's day key. CENTRAL, and read at call time, so it is
+// the same day the server stamps the completion with. See src/lib/dc-day.js.
+import { hintBudgetKey, readHintBudget } from "@/lib/dc-day.js";
 import { deriveTakeFallback } from "@/lib/faradays-take";
 import { evaluateGuess, normalizeWord, SIGNAL_MAX_GUESSES } from "@/lib/signal-drop";
 import { resolveDomainName } from "@/lib/idf-labels";
@@ -231,12 +247,26 @@ function hintsForQuestion(q) {
   return out.filter(Boolean).slice(0, HINT_MAX);
 }
 
+// CC-DC-HINTS-FROM-CONFIG-1.0 D3 — the season's hint rules from
+// /api/challenge/today (`rules.hintsEnabled` / `rules.maxHints`). Context for
+// the same reason SeasonScoringContext is: HintControl is rendered from all 7
+// game components, so a prop would mean editing every call site to pass one
+// object. The default is the pre-pack behaviour (hints on, HINT_MAX of them),
+// which is also what a control rendered before the fetch lands shows.
+const HintRulesContext = createContext({ hintsEnabled: true, maxHints: HINT_MAX });
+
 // Shared Hint control. Reveals `hints` one at a time, spending from a per-game
-// daily budget of HINT_MAX shared across every press (persisted). Renders nothing
-// when there are no hints to give.
+// daily budget shared across every press (persisted). The budget is the
+// SEASON's `max_hints_per_game`, already min'd against the bank's three tiers
+// by the server. Renders nothing when there are no hints to give, and a single
+// line of copy instead of a button when the season has hints switched off.
 function HintControl({ gameType, hints }) {
   const list = Array.isArray(hints) ? hints.filter(Boolean) : [];
-  const storageKey = `faraday_hints_${TODAY}_${gameType}`;
+  const { hintsEnabled, maxHints } = useContext(HintRulesContext);
+  const budget = Math.max(0, Math.min(HINT_MAX, Number(maxHints) || 0));
+  // CT serve day, read at call time (CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 FIX
+  // B2) — same key SHAPE as before, so the budget is still the same budget.
+  const storageKey = hintBudgetKey(gameType);
   const [usedTotal, setUsedTotal] = useState(0);   // budget spent across the game today
   const [localShown, setLocalShown] = useState(0); // revealed within this instance
 
@@ -249,7 +279,16 @@ function HintControl({ gameType, hints }) {
 
   if (list.length === 0) return null;
 
-  const remaining = Math.max(0, HINT_MAX - usedTotal);
+  // Hints off for the season: no button, no budget, one line saying why — so
+  // the absence reads as a rule rather than as a bug.
+  if (!hintsEnabled)
+    return (
+      <div style={{ fontSize:"12px", color:C.muted, ...mono, textAlign:"center" }}>
+        Hints are off this season.
+      </div>
+    );
+
+  const remaining = Math.max(0, budget - usedTotal);
   const canReveal = remaining > 0 && localShown < list.length;
 
   function reveal() {
@@ -288,18 +327,6 @@ function HintControl({ gameType, hints }) {
 }
 
 // Uniform nav pill used in the header for all four nav items + sign-in button.
-// Track viewport width so labels can be hidden on mobile (≤430px) without a
-// layout shift. SSR-safe: starts desktop-first (1024) and syncs on mount.
-function useWindowWidth() {
-  const [w, setW] = useState(1024);
-  useEffect(() => {
-    const onResize = () => setW(window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return w;
-}
 
 // Icon-first nav button (FAR-207). Renders a processed emblem image (40×40 in
 // the header, 80×80 expanded) on the #0D1810 canvas plus an optional chrome
@@ -468,6 +495,29 @@ const SolveBandsContext = createContext(null);
 // today) reads exactly as it always has.
 const PlayoffPhaseContext = createContext(false);
 
+// D7: `rules.scoring` from /api/challenge/today —
+// `{ [gameType]: { pointsMax, hintPenaltyPct }, streakBonus }`. null until the
+// today fetch resolves, and null is the identity transform, so a score card
+// rendered before it lands shows the platform default rather than a wrong
+// season number. Context for the same reason SolveBandsContext is: ScoreCard
+// is the consumer and it is nested inside all 7 game components.
+const SeasonScoringContext = createContext(null);
+
+/** The FAR-198 hint budget spent on `gameType` today, 0..3. The same key
+ *  HintControl writes and the same clamp /api/score applies — read here so the
+ *  score card can show the penalty at the moment it is incurred. CENTRAL day,
+ *  evaluated per call (FIX B2). */
+function hintsSpentToday(gameType) {
+  return readHintBudget(gameType, HINT_MAX);
+}
+
+/** The streak calcScore should use. `streak_bonus_enabled = false` can only be
+ *  applied HERE: by the time calcScore returns, the readiness multiplier is
+ *  already inside the raw score and no server can take it back out. */
+function useScoringStreak(streak) {
+  return effectiveStreak(streak, useContext(SeasonScoringContext));
+}
+
 // FAR-385: games whose ScoreCard renders the Faraday Signal card. The matcher
 // computes matched_signal_id for every game at sync time; which ones RENDER it
 // is `game_catalog.signal_enabled` (CC-DC-GAME-REGISTRY-1.0) — enabling another
@@ -477,7 +527,24 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
   const scoreCardRegistry = useGameRegistry();
   const scoreCardGame = scoreCardRegistry.byKey[puzzleType] || null;
   const signalEnabled = !!scoreCardGame?.signal_enabled;
+  // D7: `score` is the RAW 0..150 roll-up calcScore produces. What the season
+  // awards for it is the raw score scaled to this game's points_override and
+  // reduced by hint_penalty_pct — rendered immediately, so the card never
+  // shows a number the database will not hold. /api/score recomputes the same
+  // value from the same module and is the authority on what is written.
+  const scoringRules = useContext(SeasonScoringContext);
+  const seasonPoints = seasonScore({
+    rawScore: score,
+    rules: gameScoringRules(scoringRules, puzzleType),
+    hintsUsed: hintsSpentToday(puzzleType),
+  });
+  // The grade bands read against the raw score, which is the thing they were
+  // calibrated on — a 500-point ceiling must not make every game a ◆.
   const mark = score >= 130 ? "◆" : score >= 100 ? "◇" : score >= 75 ? "✦" : "◎";
+  // `dailyTotal` arrives as (today's prior total + this game's raw score), so
+  // swapping this game's contribution keeps the two halves of "x / y" in the
+  // same currency.
+  const seasonDailyTotal = (dailyTotal || 0) - score + seasonPoints;
   // FAR-388: reframe raw solve time as a Market Reaction Speed band (primary),
   // keeping the seconds as secondary supporting text (D8). null → render nothing.
   // Prefers per-game-type percentile bands when available; else seed par times.
@@ -501,7 +568,7 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
     surface: "scorecard",
     puzzleType,
     publicId,
-    score,
+    score: seasonPoints,
     elapsedSec,
     bandLabel: reaction?.label ?? null,
     outcome,
@@ -520,9 +587,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
       <div style={{ fontSize:"48px", color:C.gold }}>{mark}</div>
       <div>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:"2px" }}>
-          <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{score}</div>
+          <div style={{ fontSize:"48px", fontWeight:800, color:C.gold, letterSpacing:"-0.04em", ...sans }}>{seasonPoints}</div>
           <div style={{ fontSize:"22px", fontWeight:500, color:C.sage, letterSpacing:"-0.02em", ...sans }}>
-            /{dailyTotal}
+            /{seasonDailyTotal}
           </div>
         </div>
         <div style={{ fontSize:"11px", color:C.muted, marginTop:"4px", ...mono }}>
@@ -560,7 +627,9 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
         <Btn onClick={onNext}>Play Another →</Btn>
       </div>
       <div style={{ fontSize:"11px", color:C.muted, ...mono }}>
-        Score includes {getStreakMultiplier(streak).mult}× Readiness multiplier
+        {scoringRules && scoringRules.streakBonus === false
+          ? "Readiness multiplier is off for this season"
+          : `Score includes ${getStreakMultiplier(streak).mult}× Readiness multiplier`}
       </div>
     </div>
   );
@@ -574,6 +643,10 @@ function ScoreCard({ score, dailyTotal, puzzleType, puzzleName, publicId, domain
 const RACKL_MAX_MISTAKES = 4;
 
 function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const allItems = puzzle.groups.flatMap((g, gi) => g.items.map((item, i) => ({ item, groupIdx:gi, id:`${gi}-${i}` })));
   const [tiles,    setTiles]    = useState(() => [...allItems].sort(() => Math.random()-0.5));
   const [selected, setSelected] = useState([]);
@@ -603,7 +676,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
       if (newSolved.length === 16) {
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
-        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak });
+        const s = calcScore({ basePoints:16, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect, streak: scoreStreak });
         setScoreVal(s);
         setDone(true);
       }
@@ -615,7 +688,7 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
         // Out of guesses — end the round and score partial credit for any groups
         // already solved (no perfect bonus on a loss).
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
-        const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak });
+        const s = calcScore({ basePoints:solved.length, maxPoints:16, timeElapsed:elapsed, timeLimit:180, perfect:false, streak: scoreStreak });
         setFeedback(null);
         setScoreVal(s);
         setLost(true);
@@ -719,6 +792,10 @@ function GameRackl({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: SIGNAL DROP — Wordle-style
 // ══════════════════════════════════════════════════════════════════════════════
 function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   // Live puzzles arrive WITHOUT the answer (`word` is stripped server-side and
   // guesses are validated at /api/challenge/guess). Mock/legacy puzzles still
   // carry `word` and are validated locally. `localWord` decides which path we
@@ -756,7 +833,7 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = newGuesses.length === 1;
       const baseP   = Math.max(0, maxGuesses - newGuesses.length + 1);
-      setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak }));
+      setScoreVal(calcScore({ basePoints:baseP, maxPoints:maxGuesses, timeElapsed:elapsed, timeLimit:300, perfect, streak: scoreStreak }));
     } else if (newGuesses.length >= maxGuesses) {
       setLost(true);
       setElapsedSec((Date.now() - startTime.current) / 1000);
@@ -907,6 +984,10 @@ function GameSignalDrop({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: THE STACK — Drag-to-rank
 // ══════════════════════════════════════════════════════════════════════════════
 function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [order,    setOrder]    = useState(() => [...puzzle.items.map((_,i)=>i)].sort(()=>Math.random()-0.5));
   const [dragging, setDragging] = useState(null);
   const [submitted,setSubmitted]= useState(false);
@@ -957,7 +1038,7 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
     const correct = order.filter((item, idx) => puzzle.correctOrder.indexOf(item) === idx).length;
     const perfect = correct === order.length;
     const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
-    const s = calcScore({ basePoints:correct, maxPoints:order.length, timeElapsed:elapsed, timeLimit:120, perfect, streak });
+    const s = calcScore({ basePoints:correct, maxPoints:order.length, timeElapsed:elapsed, timeLimit:120, perfect, streak: scoreStreak });
     setScoreVal(s);
     setSubmitted(true);
   }
@@ -1037,6 +1118,10 @@ function GameStack({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: CIRCUIT — True/False sprint with timer
 // ══════════════════════════════════════════════════════════════════════════════
 function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [timeLeft,setTimeLeft]= useState(puzzle.timeLimit);
@@ -1074,7 +1159,7 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
     const correct = finalAnswers.filter(a => a.ok).length;
     const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
     const perfect = correct === puzzle.questions.length;
-    const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:puzzle.timeLimit, perfect, streak });
+    const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:puzzle.timeLimit, perfect, streak: scoreStreak });
     setScoreVal(s);
   }
 
@@ -1142,6 +1227,10 @@ function GameCircuit({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: THE BRIEF — Read + comprehension
 // ══════════════════════════════════════════════════════════════════════════════
 function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [phase,   setPhase]   = useState("read"); // read | quiz | done
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
@@ -1170,7 +1259,7 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
       const correct = newAnswers.filter(a => a.ok).length;
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
-      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:300, perfect, streak });
+      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:300, perfect, streak: scoreStreak });
       setScoreVal(s);
       setPhase("done");
     } else {
@@ -1249,6 +1338,10 @@ function GameBrief({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: DARK FIBER — Term ↔ Definition matching
 // ══════════════════════════════════════════════════════════════════════════════
 function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [selectedDef,  setSelectedDef]  = useState(null);
   const [matched,      setMatched]      = useState([]);
@@ -1270,7 +1363,7 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
       if (newMatched.length === puzzle.pairs.length) {
         const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
         const perfect = mistakes === 0;
-        const s = calcScore({ basePoints:puzzle.pairs.length, maxPoints:puzzle.pairs.length, timeElapsed:elapsed, timeLimit:180, perfect, streak });
+        const s = calcScore({ basePoints:puzzle.pairs.length, maxPoints:puzzle.pairs.length, timeElapsed:elapsed, timeLimit:180, perfect, streak: scoreStreak });
         setScoreVal(s);
         setDone(true);
       }
@@ -1349,6 +1442,10 @@ function GameDarkFiber({ puzzle, streak, onComplete, dailyTotal }) {
 // GAME: FREQUENCY — Multiple choice quiz
 // ══════════════════════════════════════════════════════════════════════════════
 function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
+  // D7 — `streak_bonus_enabled = false` zeroes the streak BEFORE calcScore
+  // folds the readiness multiplier in. The `streak` prop itself is untouched:
+  // the score card still shows the real day count and its readiness tier.
+  const scoreStreak = useScoringStreak(streak);
   const [qIdx,    setQIdx]    = useState(0);
   const [answers, setAnswers] = useState([]);
   const [selected,setSelected]= useState(null);
@@ -1374,7 +1471,7 @@ function GameFrequency({ puzzle, streak, onComplete, dailyTotal }) {
       const correct = newAnswers.filter(a=>a.ok).length;
       const elapsed = (Date.now() - startTime.current) / 1000; setElapsedSec(elapsed);
       const perfect = correct === puzzle.questions.length;
-      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:240, perfect, streak });
+      const s = calcScore({ basePoints:correct, maxPoints:puzzle.questions.length, timeElapsed:elapsed, timeLimit:240, perfect, streak: scoreStreak });
       setScoreVal(s);
       setDone(true);
     } else {
@@ -1641,12 +1738,22 @@ function GameReplay({ gameType, snapshot, puzzle, onBack }) {
 }
 
 // ── Daily results persistence ────────────────────────────────────────────────
+// Deliberately still the UTC slice, and deliberately still frozen at load: the
+// only two things left keyed on it are `faraday_daily_*` (a local scratch of
+// this session's results — the server's todayCompletions is authoritative) and
+// a display date. The HINT BUDGET moved off it to the Central serve day in
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 FIX B2, because that one feeds score
+// math and has to agree with the server; these two do not and changing them
+// would reset a player's local scratch for no gain. See src/lib/dc-day.js.
 const TODAY = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-const MAX_ACCOUNT_TEAMS = 5;
+// Fallback only. The season's real cap arrives on the /api/teams payload as
+// `teamCap` (CC-DC-TEAM-CAP-FROM-CONFIG-1.0); /api/teams re-checks it on every
+// write, so this constant is never the enforcement point.
+const DEFAULT_ACCOUNT_TEAMS = 5;
 
 function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonScore, dailyResults, onBack, onSignOut, onHandleChange, onSignIn }) {
   const [editHandle, setEditHandle] = useState(handle || "");
@@ -1655,6 +1762,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   const [handleError, setHandleError] = useState("");
 
   const [myTeams, setMyTeams] = useState([]); // { team_id, team_name, pending }
+  const [maxAccountTeams, setMaxAccountTeams] = useState(DEFAULT_ACCOUNT_TEAMS); // season's cap
   const [myTeamsLoaded, setMyTeamsLoaded] = useState(false);
   const [availableTeams, setAvailableTeams] = useState([]);
   const [teamSearch, setTeamSearch] = useState("");
@@ -1676,12 +1784,12 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
   // /api/season/active, never recomputed here (a client in another zone would
   // otherwise disagree about the boundary day).
   const isRosterFrozen = season?.roster_frozen === true;
-  // Players manage teams (join up to MAX_ACCOUNT_TEAMS, leave) any time unless the
+  // Players manage teams (join up to `maxAccountTeams`, leave) any time unless the
   // season is hard-locked or rosters are frozen for the playoffs. Joins are
   // immediate — the Free Agency deferral is retired. Hiding the picker is never
   // the enforcement point: /api/teams re-checks both server-side on every write.
   const canEditTeams = sessionToken && !isLocked && !isRosterFrozen;
-  const atMaxTeams = myTeams.length >= MAX_ACCOUNT_TEAMS;
+  const atMaxTeams = myTeams.length >= maxAccountTeams;
 
   useEffect(() => {
     (async () => {
@@ -1701,6 +1809,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
         const r = await fetch(`/api/teams?scope=my&token=${encodeURIComponent(sessionToken)}`);
         const d = await r.json();
         setMyTeams(Array.isArray(d.teams) ? d.teams : []);
+        if (Number.isFinite(d?.teamCap)) setMaxAccountTeams(Number(d.teamCap));
       } catch {} finally {
         setTeamsLoading(false);
         setMyTeamsLoaded(true);
@@ -1748,7 +1857,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
     if (alreadyIn) {
       next = myTeams.filter(t => t.team_id !== teamId);
     } else {
-      if (myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+      if (myTeams.length >= maxAccountTeams) return;
       next = [...myTeams, { team_id: teamId, team_name: teamName }]; // immediate join
     }
     setMyTeams(next);
@@ -1771,7 +1880,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
 
   async function createTeam() {
     const name = newTeamName.trim();
-    if (!name || !canEditTeams || myTeams.length >= MAX_ACCOUNT_TEAMS) return;
+    if (!name || !canEditTeams || myTeams.length >= maxAccountTeams) return;
     setCreateTeamSaving(true); setCreateTeamError("");
     try {
       const r = await fetch("/api/teams", {
@@ -1782,7 +1891,8 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
       const d = await r.json();
       if (!r.ok) {
         if (d.error === "team_name_taken") setCreateTeamError("A team with that name already exists — search to join it.");
-        else if (d.error === "team_limit_reached") setCreateTeamError("You're already in 5 teams.");
+        else if (d.error === "team_limit_reached") setCreateTeamError(d.message || `This season allows ${maxAccountTeams} teams — leave one to join another.`);
+        else if (d.error === "team_full") setCreateTeamError(d.message || "That team is full.");
         else setCreateTeamError(d.error || "Could not create team");
         return;
       }
@@ -1920,7 +2030,7 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
           <div style={{ ...labelStyle, marginBottom:0 }}>Teams</div>
           <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
             <span style={{ ...mono, fontSize:"10px", color:"rgba(28,52,36,0.5)" }}>
-              {myTeams.length}/{MAX_ACCOUNT_TEAMS}
+              {myTeams.length}/{maxAccountTeams}
             </span>
             {teamsSaved && <span style={{ ...mono, fontSize:"11px", color:C.sage }}>Saved ✓</span>}
           </div>
@@ -1993,13 +2103,13 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
                 return joinable.map((t, i) => (
                   <button key={t.id} type="button"
                     onClick={() => toggleTeam(t.id, t.name)}
-                    disabled={myTeams.length >= MAX_ACCOUNT_TEAMS || teamSaving}
+                    disabled={myTeams.length >= maxAccountTeams || teamSaving}
                     style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
                       width:"100%", padding:"11px 16px", background:"none", border:"none",
                       borderBottom: i < joinable.length - 1 ? "1px solid rgba(28,52,36,0.06)" : "none",
                       textAlign:"left",
-                      cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
-                      opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                      cursor: myTeams.length >= maxAccountTeams ? "not-allowed" : "pointer",
+                      opacity: myTeams.length >= maxAccountTeams ? 0.45 : 1 }}>
                     <span style={{ ...mono, fontSize:"13px", color:C.forest }}>{t.name}</span>
                     <span style={{ ...mono, fontSize:"18px", color:C.forest, opacity:0.4, lineHeight:1 }}>+</span>
                   </button>
@@ -2009,18 +2119,18 @@ function AccountPage({ email, handle, sessionToken, streak, todayScore, seasonSc
 
             {atMaxTeams && (
               <div style={{ ...mono, fontSize:"11px", fontWeight:600, color:C.gold, marginBottom:"12px" }}>
-                Max teams reached, leave a team to join a new team.
+                This season allows {maxAccountTeams} {maxAccountTeams === 1 ? "team" : "teams"} — leave one to join another.
               </div>
             )}
 
             {/* Create a new team */}
             {!showCreateTeam ? (
               <button type="button" onClick={() => setShowCreateTeam(true)}
-                disabled={myTeams.length >= MAX_ACCOUNT_TEAMS}
+                disabled={myTeams.length >= maxAccountTeams}
                 style={{ ...mono, fontSize:"12px", color:C.forest, background:"none",
                   border:`1px solid rgba(28,52,36,0.2)`, borderRadius:"6px",
-                  padding:"8px 14px", cursor: myTeams.length >= MAX_ACCOUNT_TEAMS ? "not-allowed" : "pointer",
-                  opacity: myTeams.length >= MAX_ACCOUNT_TEAMS ? 0.45 : 1 }}>
+                  padding:"8px 14px", cursor: myTeams.length >= maxAccountTeams ? "not-allowed" : "pointer",
+                  opacity: myTeams.length >= maxAccountTeams ? 0.45 : 1 }}>
                 + Create a new team
               </button>
             ) : (
@@ -2150,36 +2260,81 @@ function tileConfig(game) {
 }
 
 
-// Which of the 7 games the active season actually serves. A null/empty slate
-// means no season config gates serving, so every game shows — that is the
-// pre-D4-retirement behaviour and the fail-safe the whole feature rests on.
-// Membership is by `type`, which IS game_catalog.runtime_key (D3).
-function seasonGames(slate, allKeys) {
-  const all = Array.isArray(allKeys) ? allKeys : [];
-  if (!Array.isArray(slate) || slate.length === 0) return new Set(all);
-  const allow = new Set(slate);
-  const known = all.filter(k => allow.has(k));
-  // A slate matching none of the known games is a misconfiguration, not an
-  // instruction to show an empty lobby.
-  return known.length > 0 ? new Set(known) : new Set(all);
+// NOTE: `seasonGames` used to live here. The slate narrowing (and its two
+// fail-safes) moved into `slateGames` in lib/lobby-model.ts, which is where the
+// whole lobby decision now lives and is tested — three call sites each deriving
+// the served set independently is how a disabled game kept its tile
+// (CC-DC-LOBBY-EMPTY-STATE-1.0). Everything downstream takes `servedKeys`.
+
+// CC-DC-LOBBY-EMPTY-STATE-1.0 (D9) — the lobby with nothing to play.
+//
+// ONE card for all four non-live modes (loading / error / no_season /
+// no_puzzles): same white-on-cream card, border and radius as a game tile, so
+// an empty lobby reads as the same product rather than as a broken page. The
+// copy and the Retry affordance are decided by lobbyModel, never here.
+function LobbyNotice({ model, onRetry }) {
+  return (
+    <div style={{ padding:"28px 0 8px" }}>
+      <div role="status" style={{
+        background:C.white, border:`1px solid ${C.gray}`, borderRadius:"12px",
+        padding:"44px 28px", textAlign:"center", maxWidth:"520px", margin:"0 auto",
+      }}>
+        <p style={{ ...serif, fontWeight:700, fontSize:"22px", lineHeight:1.35,
+          color:C.black, margin:0 }}>
+          {model.headline}
+        </p>
+        {model.body && (
+          <p style={{ ...mono, fontSize:"13px", lineHeight:1.7,
+            color:"rgba(20,18,16,0.62)", margin:"14px 0 0" }}>
+            {model.body}
+          </p>
+        )}
+        {model.retry && (
+          <button onClick={onRetry} style={{ ...sans, fontWeight:700, fontSize:"14px",
+            color:C.cream, background:C.forest, border:"none", borderRadius:"9px",
+            padding:"11px 24px", marginTop:"22px", cursor:"pointer",
+            letterSpacing:"0.01em" }}>
+            {LOBBY_COPY.retry}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // White card on cream, forest icon tile with the game's neon pictogram, hover
 // glow in the game's locked neon. When `played` is true (today's attempt consumed)
 // the tile turns forest green with a gold border and a "✓ Played" badge.
-function GameTile({ config, onPlay, played, priorScore }) {
+//
+// `available === false` → this season serves the game but today has no puzzle
+// for it, so the tile is dimmed, not clickable, and says so. It is NOT hidden:
+// the game is part of the season. `mock === true` → the puzzle is fixture
+// content, which only ever happens outside production, and the badge says that
+// too (CC-DC-LOBBY-EMPTY-STATE-1.0).
+function GameTile({ config, onPlay, played, priorScore, available = true, mock = false }) {
   const glow = config.glow || "rgba(196,146,42,.3)";
   return (
-    <button type="button" onClick={onPlay} className={played ? undefined : "fdc-game"} style={{
+    <button type="button" onClick={available ? onPlay : undefined} disabled={!available}
+      aria-disabled={!available ? "true" : undefined}
+      className={(played || !available) ? undefined : "fdc-game"} style={{
       "--glow": glow,
       position: "relative",
       background: played ? C.forest : C.white,
       border: played ? `1px solid rgba(196,146,42,0.5)` : `1px solid ${C.gray}`,
       borderRadius:"12px",
-      padding:"16px", cursor:"pointer", textAlign:"left",
+      padding:"16px", cursor: available ? "pointer" : "default", textAlign:"left",
+      opacity: available ? 1 : 0.55,
       display:"flex", gap:"16px", alignItems:"center",
       transition:"transform .12s, border-color .12s",
     }}>
+      {mock && !played && (
+        <span style={{
+          position:"absolute", top:"8px", right:"10px",
+          fontSize:"10px", letterSpacing:"0.08em", color:C.deepAmber,
+          background:"rgba(196,146,42,0.12)", border:`1px solid rgba(196,146,42,0.4)`,
+          borderRadius:"20px", padding:"2px 8px", ...mono,
+        }}>{LOBBY_COPY.mockBadge}</span>
+      )}
       {played && (
         <span style={{
           position:"absolute", top:"8px", right:"10px",
@@ -2197,7 +2352,7 @@ function GameTile({ config, onPlay, played, priorScore }) {
             {priorScore} pts
           </span>
         ) : (
-          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color:"#4F6B4D", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{config.format}</span>
+          <span style={{ display:"inline-block", marginTop:"9px", fontSize:"11px", letterSpacing:"0.1em", color: available ? "#4F6B4D" : "rgba(20,18,16,0.55)", textTransform:"uppercase", border:`1px solid ${C.gray}`, borderRadius:"4px", padding:"1px 7px", ...mono }}>{available ? config.format : LOBBY_COPY.unavailable}</span>
         )}
       </span>
       <span style={{ fontSize:"11px", color: played ? "rgba(238,230,218,0.5)" : "rgba(20,18,16,0.62)", alignSelf:"flex-start", whiteSpace:"nowrap", ...mono }}>{config.time}</span>
@@ -2210,11 +2365,13 @@ function GameTile({ config, onPlay, played, priorScore }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Renders the other six games as their homepage neon icons (GameIcon).
 // Tapping requests a switch; the parent confirms before discarding in-progress play.
-function GameSwitcher({ current, onSwitch, slate }) {
-  // Only the games this season serves (D4 retired). null slate → all of them.
+function GameSwitcher({ current, onSwitch, servedKeys: served }) {
+  // Only the games actually PLAYABLE today, from the lobby model — so the
+  // switcher can never route a player into a game with no puzzle today
+  // (CC-DC-LOBBY-EMPTY-STATE-1.0 D9).
   const reg = useGameRegistry();
-  const inSeason = seasonGames(slate, reg.keys);
-  const others = reg.games.map(tileConfig).filter(c => c.type !== current && inSeason.has(c.type));
+  const allowed = new Set(Array.isArray(served) ? served : []);
+  const others = reg.games.map(tileConfig).filter(c => c.type !== current && allowed.has(c.type));
   return (
     <div role="group" aria-label="Switch to another game"
       style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap",
@@ -2462,13 +2619,13 @@ function NavGlyph({ name }) {
 //   { heading:"…" }      → a small uppercase group label (like the menu title)
 // The Account menu is auth-conditional (see the `email` branch).
 // Mirrors buildSiteMenus in SiteHeaderNav.tsx — keep the two in sync.
-function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, slate, gameKeys }) {
-  const inSeason = seasonGames(slate, gameKeys);
+function buildHeaderMenus({ email, activeGame, onGame, onSignIn, onAccount, onSettings, onSignOut, servedKeys: served }) {
   return [
-    // The season's games, in locked lobby order (game_catalog orders them; the
-    // slate decides membership — D4 retired, the slate now gates serving).
+    // The games actually PLAYABLE today, in locked lobby order — the lobby
+    // model already applied the slate and today's set, so "All Games" cannot
+    // offer a game that has no puzzle (CC-DC-LOBBY-EMPTY-STATE-1.0 D9).
     { id: "games", icon: "grid", label: "All Games", items:
-      (gameKeys || []).filter(k => inSeason.has(k)).map(k => ({ label: k, onClick: () => onGame(k), current: k === activeGame })),
+      (served || []).map(k => ({ label: k, onClick: () => onGame(k), current: k === activeGame })),
     },
     { id: "help", icon: "help", label: "Help & Feedback", items: [
       // Evergreen "Hints" (general how-to-play help) stays as-is — the
@@ -2541,7 +2698,7 @@ function HeaderIconNav({ menus }) {
   }
 
   return (
-    <div ref={wrapRef} className="dc-iconrow" style={{ display: "flex", alignItems: "center", gap: "19px" }}>
+    <div ref={wrapRef} className="dc-iconrow">
       {menus.map((m) => {
         const isOpen = open === m.id;
         return (
@@ -2596,7 +2753,6 @@ function HeaderIconNav({ menus }) {
 // in the same render.
 function DailyChallengeInner() {
   const registry = useGameRegistry();
-  const navIconsLabelHidden = useWindowWidth() <= 430;  // FAR-207: icon-only on mobile
   const [screen,     setScreen]     = useState("lobby");  // lobby | game | gate | account
   const [activeGame, setActiveGame] = useState(null);
   const [email,      setEmail]      = useState(null);     // registered email
@@ -2685,9 +2841,36 @@ function DailyChallengeInner() {
   // FAR-388: per-game-type solve-time percentile bands, served alongside today's
   // puzzles. null until resolved → Market Reaction band uses seed par times.
   const [solveBands,   setSolveBands]   = useState(null);
+  // D7: `rules.scoring` from /api/challenge/today. null until it lands, which
+  // reads as the platform default (150 / no penalty / streak on).
+  const [scoringRules, setScoringRules] = useState(null);
+  // CC-DC-HINTS-FROM-CONFIG-1.0 D3: `rules.hintsEnabled` / `rules.maxHints`
+  // from /api/challenge/today. Seeded with the pre-pack behaviour so a control
+  // rendered before the fetch lands offers exactly what it always did.
+  const [hintRules,    setHintRules]    = useState({ hintsEnabled: true, maxHints: HINT_MAX });
   // The season's enabled games (game_catalog.runtime_key list), from
   // /api/challenge/today. null = no slate configured → show them all.
   const [slate,        setSlate]        = useState(null);
+
+  // ── CC-DC-LOBBY-EMPTY-STATE-1.0 (B4) ──────────────────────────────────────
+  // The lobby renders the SERVER's answer, including "there isn't one". Before
+  // this, an empty response was quietly papered over with MOCK_PUZZLES and a
+  // day-long outage looked like a healthy seven-game lobby.
+  //   todayStatus: null = the fetch is in flight, false = it failed, true = a
+  //   200 body is in hand (which may legitimately be empty).
+  const [todayStatus,  setTodayStatus]  = useState(null);
+  const [todaySeason,  setTodaySeason]  = useState(null);  // {id,name} | null
+  const [nextSeason,   setNextSeason]   = useState(null);  // {name,starts_on} | null
+  const [todayReload,  setTodayReload]  = useState(0);     // the Retry button bumps this
+  // `?mock=1` is the ONLY way fixture content reaches a production browser, and
+  // it is read in an effect rather than during render so SSR and the first
+  // paint default to the safe answer (no mocks).
+  const [mockOverride, setMockOverride] = useState(false);
+  useEffect(() => {
+    try {
+      setMockOverride(new URLSearchParams(window.location.search).get("mock") === "1");
+    } catch { /* no window / malformed query — stay safe */ }
+  }, []);
 
   // Show the welcome splash once per browser. Runs on mount only, so it is
   // SSR-safe (localStorage is never touched during render).
@@ -2707,24 +2890,56 @@ function DailyChallengeInner() {
   // The first (anonymous) fetch still paints the lobby before hydration.
   useEffect(() => {
     let cancelled = false;
+    setTodayStatus(null);
     const todayUrl = sessionToken
       ? `/api/challenge/today?token=${encodeURIComponent(sessionToken)}`
       : "/api/challenge/today";
     fetch(todayUrl)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(data => {
-        if (cancelled || !data) return;
-        if (data.puzzles && typeof data.puzzles === "object") setLivePuzzles(data.puzzles);
+        if (cancelled) return;
+        if (!data) { setTodayStatus(false); return; }
+        // ASSIGNED, not merged: signing in/out re-fetches against a different
+        // season, so a stale puzzle set or slate surviving the swap would make
+        // the model describe the previous caller's lobby.
+        setLivePuzzles(data.puzzles && typeof data.puzzles === "object" ? data.puzzles : {});
         if (data.tip) setTipOfTheDay(data.tip);
         if (data.solveBands && typeof data.solveBands === "object") setSolveBands(data.solveBands);
+        if (data.rules && data.rules.scoring && typeof data.rules.scoring === "object")
+          setScoringRules(data.rules.scoring);
+        // ASSIGNED, not merged, and only from a payload that carries the
+        // fields: an older response (no `hintsEnabled`) must keep the default
+        // rather than switch hints off for everyone.
+        if (data.rules && typeof data.rules.maxHints === "number")
+          setHintRules({
+            hintsEnabled: data.rules.hintsEnabled !== false,
+            maxHints: data.rules.maxHints,
+          });
         // Season slate (D4 retired): the list of games THIS season serves.
         // null/absent → show every game, which is the pre-enforcement behaviour
         // and what an older payload produces.
-        if (Array.isArray(data.slate)) setSlate(data.slate);
+        setSlate(Array.isArray(data.slate) ? data.slate : null);
+        setTodaySeason(data.season ?? null);
+        setNextSeason(data.nextSeason ?? null);
+        setTodayStatus(true);
       })
-      .catch(() => { /* keep mock fallback */ });
+      .catch(() => { if (!cancelled) setTodayStatus(false); });
     return () => { cancelled = true; };
-  }, [sessionToken]);
+  }, [sessionToken, todayReload]);
+
+  // THE lobby decision, computed once per render and branched on by `mode`.
+  // Every rule lives in lib/lobby-model.ts and is pinned by
+  // `npm run test:lobby-model` — including "production never serves a mock".
+  const isProdLobby = process.env.NODE_ENV === "production" && !mockOverride;
+  const lobby = useMemo(() => lobbyModel({
+    apiOk: todayStatus,
+    data: { puzzles: livePuzzles, slate, season: todaySeason, nextSeason },
+    isProd: isProdLobby,
+    order: registry.keys,
+    mockPuzzles: MOCK_PUZZLES,
+  }), [todayStatus, livePuzzles, slate, todaySeason, nextSeason, isProdLobby, registry.keys]);
+  // What the header menus and the in-game switcher may navigate to.
+  const lobbyServedKeys = useMemo(() => servedKeys(lobby), [lobby]);
 
   // Hydrate the subscriber's real state (play streak, today's
   // completions) from Supabase when a verified session exists in storage.
@@ -2861,37 +3076,9 @@ function DailyChallengeInner() {
       /* Game tile hover — lift + neon glow in the game's locked color */
       .fdc-game:hover { transform:translateY(-2px); border-color:#1C3424 !important; }
       .fdc-game:hover .icon-tile { box-shadow:0 0 18px var(--glow); }
-      /* Mobile nav collapse (FAR-207): label visibility is controlled in JS via
-         useWindowWidth (≤430px → icon only), so no CSS override is needed here. */
 
-      /* ── Header icon-dropdown nav (feature/header-icon-nav) ─────────────── */
-      .dc-navwrap { position:relative; display:flex; flex-direction:column; align-items:center; }
-      .dc-trigger { display:flex; flex-direction:column; align-items:center; gap:5px;
-        background:none; border:none; cursor:pointer; padding:4px 2px; -webkit-tap-highlight-color:transparent; }
-      .dc-trigger svg { width:19px; height:19px; stroke:rgba(238,230,218,0.62); fill:none; transition:stroke .12s; }
-      .dc-navwrap.open .dc-trigger svg, .dc-trigger:hover svg { stroke:${C.gold}; }
-      .dc-caret { width:6px; height:6px; border-right:1.4px solid rgba(238,230,218,0.35);
-        border-bottom:1.4px solid rgba(238,230,218,0.35); transform:rotate(45deg); margin-top:-1px;
-        transition:transform .15s, border-color .15s; }
-      .dc-navwrap.open .dc-caret { transform:rotate(-135deg); border-color:${C.gold}; }
-      .dc-dd { position:absolute; top:calc(100% + 12px); right:-8px; text-align:left;
-        background:${C.forest}; border:1px solid rgba(196,146,42,0.35); border-radius:8px;
-        min-width:174px; padding:6px; box-shadow:0 12px 28px rgba(20,18,16,0.4);
-        opacity:0; visibility:hidden; transform:translateY(-4px);
-        transition:opacity .15s ease, transform .15s ease; z-index:60; }
-      .dc-navwrap.open .dc-dd { opacity:1; visibility:visible; transform:translateY(0); }
-      .dc-dd-label { font-family:'IBM Plex Mono',monospace; font-size:8.5px; letter-spacing:0.12em;
-        color:rgba(238,230,218,0.4); text-transform:uppercase; padding:6px 10px 4px; }
-      .dc-dd-item { display:block; width:100%; text-align:left; font-family:'IBM Plex Mono',monospace;
-        font-size:11px; color:${C.cream}; text-decoration:none; padding:8px 10px; border-radius:5px;
-        background:none; border:none; cursor:pointer; }
-      .dc-dd-item:hover, .dc-dd-item:focus-visible { background:rgba(196,146,42,0.15); color:${C.gold}; }
-      .dc-dd-item.current { color:${C.gold}; }
-      .dc-dd-item.disabled, .dc-dd-item.disabled:hover { background:none; color:rgba(238,230,218,0.32); cursor:default; }
-      .dc-dd hr { border:none; border-top:1px solid rgba(238,230,218,0.1); margin:4px 6px; }
-      @media (prefers-reduced-motion: reduce){
-        .dc-dd, .dc-caret, .dc-trigger svg { transition:none; }
-      }
+      /* ── Header icon-dropdown nav: lives in the shared AppBar (FDY-445) ──── */
+      ${DC_NAV_CSS}
     `;
     document.head.appendChild(style);
   }, []);
@@ -2989,11 +3176,10 @@ function DailyChallengeInner() {
       // Analytics-only: highest hint tier revealed today for this game, from the
       // shared FAR-198 budget key (in-game HintControl + the /challenge/hints
       // page both spend it). Free — never an input to score math.
-      let hintsUsed = 0;
-      try {
-        const v = parseInt(localStorage.getItem(`faraday_hints_${TODAY}_${playedGame}`) || "0", 10);
-        if (!Number.isNaN(v)) hintsUsed = Math.max(0, Math.min(3, v));
-      } catch { /* storage disabled */ }
+      // D7: no longer analytics-only — under scoringVersion 2 this is the hint
+      // penalty's input. Read through the same helper the score card uses, so
+      // the number shown and the number sent cannot drift.
+      const hintsUsed = hintsSpentToday(playedGame);
       // FAR-388: elapsed solve time (seconds), analytics-only. Persisted additively
       // by complete-puzzle; feeds the Market Reaction Speed band's percentile
       // recompute. Only forwarded when it's a usable positive number.
@@ -3008,15 +3194,30 @@ function DailyChallengeInner() {
         body: JSON.stringify({
           token: sessionToken,
           gameType: playedGame,
+          // Still the RAW 0..150 roll-up. The server scales it by the
+          // season's points_override and hint_penalty_pct itself — this body
+          // carries no rules, and the server would not read them if it did.
           score,
           result: "win",
           hintsUsed,
+          // D7: opt in to server-side season scoring. A client cached from
+          // before this deploy omits it and keeps the old behaviour exactly.
+          scoringVersion: 2,
           ...(solveSecondsOut !== null ? { solveSeconds: solveSecondsOut } : {}),
         }),
       })
         .then(r => r.json())
         .then(data => {
           if (data?.alreadyPlayed) return; // idempotent — already counted
+          // D7: what the server actually wrote. Reconciles the optimistic
+          // per-game record with the season's number, so a reload and the
+          // score card agree.
+          if (typeof data?.finalScore === "number" && data.finalScore !== score) {
+            setTodayCompletions(prev => ({
+              ...prev,
+              [playedGame]: { ...(prev[playedGame] || {}), score: data.finalScore },
+            }));
+          }
           if (typeof data?.playStreak === "number") setStreak(data.playStreak);
           if (typeof data?.runningDailyTotal === "number") {
             setLastDailyTotal(data.runningDailyTotal);
@@ -3081,8 +3282,7 @@ function DailyChallengeInner() {
   // switcher: picking another game mid-puzzle asks first instead of losing progress.
   const headerMenus = buildHeaderMenus({
     email,
-    slate,
-    gameKeys: registry.keys,
+    servedKeys: lobbyServedKeys,
     activeGame: screen === "game" ? activeGame : null,
     onGame: (type) => {
       const inLiveGame = screen === "game" && activeGame && !dailyResults[activeGame] && !todayCompletions[activeGame];
@@ -3119,70 +3319,62 @@ function DailyChallengeInner() {
         </div>
       )}
 
-      {/* ── MASTHEAD — gold rule · forest banner · gold rule ── */}
-      <div style={{ height:"2px", background:C.gold }} />
-      <header style={{ background:C.forest, position:"sticky", top:0, zIndex:50 }}>
-        <div className="fdc-header-inner">
-          {/* Wordmark flush left — no bounding box / icon (per header overhaul).
-              Clickable → lobby: the old grid menu's "Today's Puzzle" item was the
-              way home; the wordmark now carries that (mirrors SiteHeaderNav). */}
-          <button
-            type="button"
-            onClick={() => setScreen("lobby")}
-            aria-label="Daily Challenge lobby"
-            style={{ lineHeight:1.25, background:"none", border:"none", padding:0, cursor:"pointer", textAlign:"left", WebkitTapHighlightColor:"transparent" }}
-          >
-            <b style={{ ...serif, fontWeight:700, fontSize:"clamp(16px,1.5vw,22px)", color:C.white, letterSpacing:"0.04em" }}>Faraday</b>
-            <span style={{ display:"block", ...mono, fontSize:"clamp(11px,0.85vw,13px)", letterSpacing:"0.18em", color:C.sage }}>DAILY CHALLENGE</span>
-          </button>
-
-          {/* Right cluster: ambient status (handle + Today/Season) then the five
-              icon-dropdown triggers. Status is hidden on the narrowest phones
-              (≤430px) where the icon row fills the strip — the totals still show on
-              the Account page and in the Account dropdown's Streak & Stats. */}
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:"16px", flexWrap:"nowrap" }}>
-            {displayHandle && !navIconsLabelHidden && (
-              <div style={{ display:"flex", alignItems:"center", gap:"14px", minWidth:0 }}>
-                <button
-                  type="button"
-                  onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
-                  title="Account"
-                  style={{
-                    ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
-                    color:C.gold, letterSpacing:"0.04em",
-                    background:"transparent", border:"none", cursor:"pointer",
-                    padding:"4px 6px", whiteSpace:"nowrap",
-                    WebkitTapHighlightColor:"transparent",
-                  }}
-                >
-                  @{displayHandle}
-                </button>
-                <div style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
-                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</div>
-                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</div>
-                  </div>
-                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                    <div style={{ ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</div>
-                    <div style={{ ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* Chat-bubbles trigger + slide-down message dock, between the
-                @handle chip and the grid icon (CC-DC-MSG-DOCK-1.0 D1). A pure
-                sibling overlay inside the masthead — it never wraps or
-                re-parents the game tree, so opening/closing it can't unmount a
-                puzzle or trip the game-switcher discard confirm. Renders
-                nothing when signed out (D7). No initialUnread prop → the dock
-                fetches its own badge total (closes the old lobby-mirror
-                follow-up). */}
+      {/* ── MASTHEAD — the shared Faraday masthead (FDY-445, CC-BRAND-MASTHEAD-1.0) ──
+          Mark + "Faraday" wordmark link to the DC home (/challenge — the lobby).
+          The @handle + Today's/Season score chips sit in its context slot
+          (under 640px they fold into the masthead's own menu, so they are no
+          longer hidden on the narrowest phones). Sign in opens the in-app gate. */}
+      <Masthead
+        appName="Daily Challenge"
+        homeHref="/challenge"
+        email={email || null}
+        onSignIn={() => { setGateReason("default"); setScreen("gate"); }}
+        context={displayHandle ? (
+          <span className="dc-ctx">
+            <button
+              type="button"
+              onClick={() => { if (!email) { setGateReason("default"); setScreen("gate"); } else { openAccount(); } }}
+              title="Account"
+              className="dc-status"
+              style={{
+                ...mono, fontSize:"clamp(12px,1vw,14px)", fontWeight:700,
+                color:C.gold, letterSpacing:"0.04em",
+                background:"transparent", border:"none", cursor:"pointer",
+                padding:"4px 6px", minHeight:"44px", whiteSpace:"nowrap",
+                WebkitTapHighlightColor:"transparent",
+              }}
+            >
+              @{displayHandle}
+            </button>
+            <span style={{ display:"flex", gap:"16px", alignItems:"flex-start" }}>
+              <span style={{ display:"block", textAlign:"center", lineHeight:1.1 }}>
+                <span style={{ display:"block", ...sans, fontSize:"15px", fontWeight:800, color:C.gold }}>{(todayTotal || 0).toLocaleString()}</span>
+                <span style={{ display:"block", ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Today&rsquo;s Total Score</span>
+              </span>
+              <span style={{ display:"block", textAlign:"center", lineHeight:1.1 }}>
+                <span style={{ display:"block", ...sans, fontSize:"15px", fontWeight:800, color:C.white }}>{(seasonTotal || 0).toLocaleString()}</span>
+                <span style={{ display:"block", ...mono, fontSize:"8px", letterSpacing:"0.08em", textTransform:"uppercase", color:C.sage, marginTop:"2px" }}>Season Total Score</span>
+              </span>
+            </span>
+          </span>
+        ) : undefined}
+      />
+      {/* ── APP BAR — the message dock + the five icon dropdowns (All Games ·
+          Help & Feedback · Compete · Account · More Faraday), unchanged items
+          and targets, in the shared AppBar row. Sticky (the masthead scrolls
+          away, the nav stays). The dock is a pure sibling overlay — it never
+          wraps or re-parents the game tree, so opening/closing it can't
+          unmount a puzzle or trip the game-switcher discard confirm. Renders
+          nothing when signed out (CC-DC-MSG-DOCK-1.0 D7); with no
+          initialUnread prop it fetches its own badge total. */}
+      <div className="dc-appbar">
+        <AppBar label="Daily Challenge">
+          <div className="dc-appbar-row">
             <MessageDock token={sessionToken} />
             <HeaderIconNav menus={headerMenus} />
           </div>
-        </div>
-      </header>
-      <div style={{ height:"2px", background:C.gold }} />
+        </AppBar>
+      </div>
 
       {/* League Office announcement — the single most recent live broadcast this
           player hasn't dismissed. Renders nothing when signed out. In-flow (not
@@ -3198,7 +3390,7 @@ function DailyChallengeInner() {
       </div>
 
       {/* ── BODY ── */}
-      <main style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
+      <main id="main" style={{ maxWidth:"820px", margin:"0 auto", padding:"0 20px" }}>
 
         {/* LOBBY */}
         {screen === "lobby" && (
@@ -3215,29 +3407,55 @@ function DailyChallengeInner() {
                 the AI data center economy. Pick any 2-minute challenge, or complete the daily suite in
                 10&ndash;15 minutes.
               </p>
-              <button
-                onClick={() => { const h = heroGame(registry.games); if (h) startGame(keyOf(h)); }}
-                style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
-                  background:C.forest, border:"none", borderRadius:"9px",
-                  padding:"13px 28px", marginTop:"22px", cursor:"pointer",
-                  letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
-                Start now &rarr;
-              </button>
+              {/* No tiles, no Start now: the button is only honest when there
+                  is something to start (CC-DC-LOBBY-EMPTY-STATE-1.0 D9). It
+                  also routes to a SERVED game — the hero when it is playable
+                  today, otherwise the first game that is. */}
+              {lobby.mode === "live" && (
+                <button
+                  onClick={() => {
+                    const h = heroGame(registry.games);
+                    const heroKey = h ? keyOf(h) : null;
+                    const key = heroKey && lobbyServedKeys.includes(heroKey) ? heroKey : lobbyServedKeys[0];
+                    if (key) startGame(key);
+                  }}
+                  style={{ ...sans, fontWeight:700, fontSize:"15px", color:C.cream,
+                    background:C.forest, border:"none", borderRadius:"9px",
+                    padding:"13px 28px", marginTop:"22px", cursor:"pointer",
+                    letterSpacing:"0.01em", boxShadow:"0 3px 12px rgba(20,18,16,0.14)" }}>
+                  Start now &rarr;
+                </button>
+              )}
             </div>
 
-            {/* Game tiles — neon pictograms on forest tiles, white card on cream */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
-              gap:"14px", padding:"28px 0 8px" }}>
-              {registry.games.map(tileConfig).filter(c => seasonGames(slate, registry.keys).has(c.type)).map(config => {
-                const attempt = todayCompletions[config.type] || dailyResults[config.type];
-                return (
-                  <GameTile key={config.type} config={config}
-                    played={!!attempt}
-                    priorScore={attempt?.score || 0}
-                    onPlay={() => startGame(config.type)} />
-                );
-              })}
-            </div>
+            {/* Loading / failed / no season / no puzzles — one centered card. */}
+            {lobby.mode !== "live" && (
+              <LobbyNotice model={lobby} onRetry={() => setTodayReload(n => n + 1)} />
+            )}
+
+            {/* Game tiles — neon pictograms on forest tiles, white card on cream.
+                The SET comes from the lobby model (slate ∩ what is actually
+                served today), never from the registry directly: a game this
+                season serves but today does not is a DISABLED tile, and a game
+                with no season is no tile at all. */}
+            {lobby.mode === "live" && (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",
+                gap:"14px", padding:"28px 0 8px" }}>
+                {lobby.games.map(g => {
+                  const row = registry.byKey[g.key];
+                  if (!row) return null;
+                  const attempt = todayCompletions[g.key] || dailyResults[g.key];
+                  return (
+                    <GameTile key={g.key} config={tileConfig(row)}
+                      played={!!attempt}
+                      priorScore={attempt?.score || 0}
+                      available={g.available}
+                      mock={g.mock}
+                      onPlay={() => startGame(g.key)} />
+                  );
+                })}
+              </div>
+            )}
 
             {/* Subscriber stat line — real Supabase results only (no mock
                 engagement stats): play streak and today's completion count
@@ -3246,7 +3464,7 @@ function DailyChallengeInner() {
               <div style={{ marginTop:"18px", ...mono, fontSize:"12px", color:C.forest }}>
                 {displayHandle ? <><b>@{displayHandle}</b> · </> : null}
                 {optedOut ? "Left the game — " : ""}Signed in as {email} · {streak}-day Readiness · Score: {lastDailyTotal}
-                · {Object.keys(todayCompletions).length}/7 puzzles today{" · "}
+                · {Object.keys(todayCompletions).length}/{lobby.servedCount} puzzles today{" · "}
                 <a href="/account" style={{ color:C.deepAmber, textDecoration:"underline" }}>Account &amp; settings</a>
               </div>
             )}
@@ -3289,8 +3507,14 @@ function DailyChallengeInner() {
         {/* GAME */}
         {screen === "game" && activeGame && (() => {
           const GameComponent = GAME_COMPONENTS[activeGame];
-          // Prefer the live puzzle from Airtable; fall back to mock per-game.
-          const puzzle = livePuzzles[activeGame] || MOCK_PUZZLES[activeGame];
+          // THE puzzle comes from the lobby model, which is the only thing
+          // allowed to decide whether a fixture may stand in for it — and in
+          // production it never may (CC-DC-LOBBY-EMPTY-STATE-1.0 B4). The
+          // `livePuzzles` fallback covers a model momentarily rebuilt mid-game
+          // (signing in re-fetches against a different season); it is SERVER
+          // content, so it cannot reintroduce a mock.
+          const servedEntry = lobby.games.find(g => g.key === activeGame);
+          const puzzle = (servedEntry ? servedEntry.puzzle : null) || livePuzzles[activeGame] || null;
           const activeRow = registry.byKey[activeGame];
           const config = activeRow ? tileConfig(activeRow) : null;
           if (!GameComponent || !puzzle) return <div style={{ color:C.red }}>Puzzle not found</div>;
@@ -3337,7 +3561,7 @@ function DailyChallengeInner() {
                 </div>
 
                 {/* Game switcher — only show in live game, not replay */}
-                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} slate={slate} />}
+                {!priorResult && <GameSwitcher current={activeGame} onSwitch={requestSwitch} servedKeys={lobbyServedKeys} />}
               </div>
 
               {/* In-progress switch confirm */}
@@ -3371,9 +3595,13 @@ function DailyChallengeInner() {
                 // leaving stale tiles while the title/hints/scoring use the live
                 // puzzle. Falls back to a per-game key when there is no publicId.
                 <SolveBandsContext.Provider value={solveBands}>
-                  <PlayoffPhaseContext.Provider value={playoffsLive}>
-                    <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
-                  </PlayoffPhaseContext.Provider>
+                  <SeasonScoringContext.Provider value={scoringRules}>
+                    <HintRulesContext.Provider value={hintRules}>
+                      <PlayoffPhaseContext.Provider value={playoffsLive}>
+                        <GameComponent key={puzzle.__publicId || `mock-${activeGame}`} puzzle={puzzle} streak={streak} onComplete={onGameComplete} dailyTotal={lastDailyTotal} />
+                      </PlayoffPhaseContext.Provider>
+                    </HintRulesContext.Provider>
+                  </SeasonScoringContext.Provider>
                 </SolveBandsContext.Provider>
               )}
             </div>

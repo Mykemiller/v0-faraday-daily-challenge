@@ -52,6 +52,9 @@ export async function PATCH(
       difficultyMix: body.difficultyMix,
       fingerprint: body.fingerprint,
       acknowledgeCapWarning: body.acknowledgeCapWarning === true,
+      // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — "I understand existing puzzles will
+      // not change". Required only for a shaping edit after generation.
+      acknowledgePostGeneration: body.acknowledgePostGeneration === true,
       reason,
     })
   );

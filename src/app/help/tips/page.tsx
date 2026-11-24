@@ -1,13 +1,15 @@
 import Link from "next/link";
 import SiteHeaderNav from "@/components/SiteHeaderNav";
 import SiteFooter from "@/components/SiteFooter";
+import { dcPageMetadata } from "@/lib/dc-metadata";
 import { loadLiveGames } from "@/lib/game-registry-server";
 import { keyOf } from "@/lib/game-registry";
 
-export const metadata = {
+export const metadata = dcPageMetadata("/help/tips", {
   title: "Tips and Tricks · Faraday Daily Challenge",
-  description: "Strategy notes for each of the daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
-};
+  description:
+    "Strategy notes for each of the daily games — how regulars keep their Intelligence Readiness up and squeeze out the points.",
+});
 
 // Help & Feedback → Tips and Tricks. One strategy card per game format.
 // Editorial copy stays in code (CC-DC-GAME-REGISTRY-1.0 Q5); the LIST and its
@@ -53,7 +55,7 @@ export default async function TipsPage() {
   return (
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav />
-      <main className="mx-auto max-w-2xl px-5 pb-20 pt-10">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-20 pt-10">
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-dark">Help</div>
         <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-forest">Tips &amp; Tricks</h1>
         <p className="mt-4 max-w-[56ch] text-[15px] leading-relaxed text-near-black/80">

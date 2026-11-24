@@ -1,5 +1,6 @@
 // Account self-service backend for the Daily Challenge.
-//   GET  /api/account?token=<session>     → { email, handle, active, notification_preferences }
+//   GET  /api/account?token=<session>     → { email, handle, active, notification_preferences,
+//                                              teamCap, maxTeamSize }
 //   POST /api/account  { token, action }   → action: "leave" | "rejoin" | "update-handle"
 //                                                    | "update-notifications"
 //
@@ -14,6 +15,8 @@
 // Vercel project, the route returns 500 "Account service not configured".
 
 import { normalizeNotificationPreferences } from "@/lib/notification-preferences";
+import { resolveSeasonIdFor } from "@/lib/seasons/resolve";
+import { teamRulesFor } from "@/lib/seasons/team-rules";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://ycadmmngkdhvpcsrcuaq.supabase.co";
@@ -80,12 +83,20 @@ export async function GET(request: Request) {
   const sub = Array.isArray(rows) ? rows[0] : null;
   if (!sub) return Response.json({ error: "Subscriber not found" }, { status: 404 });
 
+  // CC-DC-TEAM-CAP-FROM-CONFIG-1.0 — the team rules for THIS subscriber's
+  // season (CC-LO-CONCURRENT-SEASONS-1.0 decides which one), so the account
+  // screen never has to hardcode 5. Fails soft to the default.
+  const seasonId = await resolveSeasonIdFor(s.headers, id);
+  const teamRules = await teamRulesFor(s.headers, seasonId);
+
   return Response.json({
     email: sub.email,
     handle: sub.handle ?? null,
     active: sub.active !== false, // default-active if the column is absent
     // NULL column (pre-feature subscriber) → defaults; junk → coerced to shape.
     notification_preferences: normalizeNotificationPreferences(sub.notification_preferences),
+    teamCap: teamRules.maxTeamsPerPlayer,
+    maxTeamSize: teamRules.maxTeamSize,
   });
 }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import BrandMark from "@/components/BrandMark";
 import SiteFooter from "@/components/SiteFooter";
+import { Masthead, AppBar } from "@/lib/faraday-masthead/ui/Masthead.tsx";
 
 // Shared layout for the stubbed storefront product pages. Deliberately framed as
 // a preview so a stub is never mistaken for a finished page. Brand tokens from
@@ -17,26 +18,41 @@ type StubPageProps = {
   cta?: { label: string; href: string };
   /** Optional note rendered in the metered/pricing line. */
   meteredNote?: string;
+  /** FDY-445 (CC-BRAND-MASTHEAD-1.0): render the shared Faraday masthead (vendored at
+   *  src/lib/faraday-masthead) instead of the storefront forest bar. `appName` goes in the
+   *  context slot; the mark + wordmark link to `homeHref` (the product's own page). The bar's
+   *  "← All storefronts" link moves into the AppBar with the same target. Opt-in per page. */
+  masthead?: { appName: string; homeHref: string };
 };
 
-export default function StubPage({ title, tagline, status, children, cta, meteredNote }: StubPageProps) {
+export default function StubPage({ title, tagline, status, children, cta, meteredNote, masthead }: StubPageProps) {
   return (
     <div className="min-h-screen bg-warm-white text-near-black font-sans">
-      <div className="h-0.5 bg-gold" />
-      <header className="bg-forest">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-5 py-3">
-          <Link href="/" className="flex items-center gap-3" aria-label="Faraday home">
-            <BrandMark size={20} framed />
-            <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
-          </Link>
-          <Link href="/" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
-            ← All storefronts
-          </Link>
-        </div>
-      </header>
-      <div className="h-0.5 bg-gold" />
+      {masthead ? (
+        <>
+          {/* No sign-in concept on this product yet: "Sign in" points at the site's account page. */}
+          <Masthead appName={masthead.appName} homeHref={masthead.homeHref} signInHref="/account" />
+          <AppBar label={masthead.appName} links={[{ label: "← All storefronts", href: "/" }]} />
+        </>
+      ) : (
+        <>
+          <div className="h-0.5 bg-gold" />
+          <header className="bg-forest">
+            <div className="mx-auto flex max-w-3xl items-center gap-3 px-5 py-3">
+              <Link href="/" className="flex items-center gap-3" aria-label="Faraday home">
+                <BrandMark size={20} framed />
+                <span className="font-serif text-[15px] font-bold tracking-wide text-warm-white">Faraday</span>
+              </Link>
+              <Link href="/" className="ml-auto font-mono text-[11px] text-warm-cream hover:text-gold-light">
+                ← All storefronts
+              </Link>
+            </div>
+          </header>
+          <div className="h-0.5 bg-gold" />
+        </>
+      )}
 
-      <main className="mx-auto max-w-3xl px-5 py-12">
+      <main id="main" className="mx-auto max-w-3xl px-5 py-12">
         {/* Preview banner — keeps the stub honest */}
         <div className="mb-8 flex flex-wrap items-center gap-3 rounded-md border border-gold/40 bg-warm-cream px-4 py-2.5">
           <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-dark">

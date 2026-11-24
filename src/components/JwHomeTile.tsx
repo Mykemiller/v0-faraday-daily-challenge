@@ -1,7 +1,9 @@
 "use client";
 // Client tile for Jurisdiction Watch on the homepage (FAR-250).
 // Fires map_view consumption event with referrer=faraday-intelligence.ai on click.
-import Link from "next/link";
+// Links straight to the live product at jurisdiction-watch.com (Myke, 2026-11-10)
+// — not the in-engine /jurisdiction-watch page, whose map is illustrative.
+import { JW_HOME_URL } from "@/lib/jw-url";
 
 const SUPABASE_URL = "https://ycadmmngkdhvpcsrcuaq.supabase.co";
 const SESSION_KEY = "jw_session_id";
@@ -22,6 +24,8 @@ function logJwTileClick() {
         "Prefer": "return=minimal",
       },
       body: JSON.stringify({ session_id: id, event_type: "map_view", referrer: "faraday-intelligence.ai" }),
+      // The click leaves this origin, so the request must outlive the page.
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // never block navigation
@@ -30,8 +34,9 @@ function logJwTileClick() {
 
 export function JwHomeTile() {
   return (
-    <Link
-      href="/jurisdiction-watch"
+    <a
+      href={JW_HOME_URL}
+      rel="noopener noreferrer"
       onClick={logJwTileClick}
       className="group flex h-full flex-col rounded-xl border border-warm-gray bg-warm-white p-5 transition-colors hover:border-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
     >
@@ -42,7 +47,7 @@ export function JwHomeTile() {
       <p className="mt-2 font-sans leading-relaxed text-near-black/70 text-[13px]">
         Jurisdiction-level posture and permitting risk on a live choropleth.
       </p>
-      <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Open →</span>
-    </Link>
+      <span className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-amber-dark group-hover:text-gold">Enter →</span>
+    </a>
   );
 }

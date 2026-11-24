@@ -1,0 +1,23 @@
+.fm,.fm *,.fm-appbar,.fm-appbar *{box-sizing:border-box}
+.fm{position:relative;width:100%;background:#1C3424;color:#F8F5F0;border-top:2px solid #C4922A;border-bottom:2px solid #C4922A;font-family:'Bricolage Grotesque', system-ui, sans-serif;z-index:40}
+.fm-skip{position:absolute;left:8px;top:-60px;z-index:50;background:#DAB050;color:#141210;font:600 15px 'Bricolage Grotesque', system-ui, sans-serif;padding:12px 16px;border-radius:6px;text-decoration:none;min-height:44px}
+.fm-skip:focus{top:8px}
+.fm-bar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;height:64px;padding:0 16px;max-width:none;margin:0}
+.fm-markl{justify-self:start;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;text-decoration:none}
+.fm-mark{width:34px;height:34px;border-radius:6px;background:#325638;border:1px solid #C4922A;display:grid;place-items:center;font:600 18px/1 'IBM Plex Serif', Georgia, serif;color:#DAB050}
+.fm-word{justify-self:center;display:inline-flex;align-items:center;min-height:44px;padding:0 4px;font:600 22px/1 'IBM Plex Serif', Georgia, serif;letter-spacing:.5px;color:#F8F5F0;text-decoration:none;white-space:nowrap}
+.fm-ctx{justify-self:end;position:relative;min-width:0;max-width:100%;display:flex;align-items:center}
+.fm-avatar{display:none}
+.fm-panel{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0;max-width:100%}
+.fm-app{color:#8CA68A;font:600 13px/1.2 'Bricolage Grotesque', system-ui, sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22ch}
+.fm-user{font:12px/1.2 'IBM Plex Mono', ui-monospace, monospace;color:#F8F5F0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26ch;min-width:0}
+.fm-signin{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#DAB050;font:600 14px 'Bricolage Grotesque', system-ui, sans-serif;text-decoration:underline;text-underline-offset:3px;background:none;border:0;cursor:pointer;white-space:nowrap}
+.fm a:focus-visible,.fm button:focus-visible,.fm-appbar a:focus-visible,.fm-appbar button:focus-visible{outline:3px solid #DAB050;outline-offset:2px;border-radius:4px}
+.fm-appbar a:focus-visible,.fm-appbar button:focus-visible{box-shadow:0 0 0 5px #1C3424}
+@media (max-width:639px){.fm-bar{height:56px;padding:0 8px;gap:8px}.fm-word{font-size:20px}.fm-avatar{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:#325638;border:1px solid #C4922A;color:#DAB050;font:600 16px/1 'IBM Plex Serif', Georgia, serif;cursor:pointer;padding:0}.fm-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);flex-direction:column;align-items:flex-end;gap:8px;min-width:200px;max-width:calc(100vw - 16px);padding:12px;background:#1C3424;border:1px solid #C4922A;border-radius:8px;box-shadow:0 8px 24px rgba(20,18,16,.35)}.fm-ctx[data-open="true"] .fm-panel,.fm-ctx:focus-within .fm-panel{display:flex}.fm-app,.fm-user{max-width:100%}}
+.fm-appbar{width:100%;background:#EEE6DA;color:#141210;border-bottom:1px solid #B2A898;font-family:'Bricolage Grotesque', system-ui, sans-serif}
+.fm-appbar-in{display:flex;align-items:center;gap:4px;min-height:48px;padding:0 12px;overflow-x:auto;scrollbar-width:thin}
+.fm-applink{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:6px;color:#141210;font:600 14px 'Bricolage Grotesque', system-ui, sans-serif;text-decoration:none;white-space:nowrap}
+.fm-applink:hover{background:rgba(28,52,36,.08)}
+.fm-applink[aria-current="page"]{color:#1C3424;box-shadow:inset 0 -3px 0 #C4922A}
+@media (prefers-reduced-motion:no-preference){.fm-skip{transition:top .12s ease}}

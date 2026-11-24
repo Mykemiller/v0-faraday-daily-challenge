@@ -9,10 +9,35 @@ import { ctToday } from "./data";
 import { loadConfigs, pickFocusConfig } from "./seasons";
 import {
   generationFindings, generationWarnings, computeTargets, isStalled,
-  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, seasonDayCount,
+  bankAlarmApplies, bankCoverageWindow, bankMinimumFindings, bankServeDays,
+  seasonDayCount, seasonDates,
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the read side of the off-domain flag.
+  offDomainFlags,
   type Finding, type GenerationInput, type GenRun, type GenSeason, type GenCatalogGame,
+  type DomainFlagRow, type OffDomainFlag,
 } from "./generation-logic";
 import { fetchActiveDomainCodes } from "@/lib/generation/corpus";
+import { failuresFrom, lastFailureFrom, clampMessage } from "@/lib/generation/failure-reasons";
+// CC-LO-GEN-CONFORMANCE-1.0 D3 — "configured vs generated". A pure function
+// over plain rows; this module's only job is to hand it the right columns.
+import { conformance, type ConformanceReport } from "./generation-conformance";
+
+/**
+ * CC-DC-GEN-FAILURE-VISIBILITY-1.0 D5 — the run row as the PANEL sees it.
+ *
+ * `phase_cursor` is deliberately dropped and replaced by three whitelisted
+ * projections. The commissioner needs to know WHY a run failed, and nothing
+ * more of the cursor should reach a browser: a jsonb blob passed through
+ * wholesale is how a future field ends up rendered by accident.
+ */
+export type GenRunView = Omit<GenRun, "phase_cursor"> & {
+  /** reason key → count, accumulated across worker slices */
+  failures: Record<string, number>;
+  /** the most recent failure: key + message only, never content */
+  lastFailure: { key: string; message: string; at: string } | null;
+  /** the failed_short summary the worker already wrote */
+  error: string | null;
+};
 
 export type GenerationStatus = {
   season: (GenSeason & { name: string; slug: string }) | null;
@@ -23,7 +48,7 @@ export type GenerationStatus = {
   pilotFindings: Finding[];
   fullFindings: Finding[];
   warnings: Finding[];
-  runs: GenRun[];
+  runs: GenRunView[];
   stalledRunId: string | null;
   bankAlarms: Finding[];
   /** Draft rows of the latest pilot run, for the review table. */
@@ -34,13 +59,49 @@ export type GenerationStatus = {
   latestPilotRunStatus: string | null;
   draftCount: number;
   unapprovedDates: string[];
+  /** CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — unapproved drafts the model itself
+   *  reported as outside their day's sector. Date + game + a structural
+   *  reason; never a name, an answer or any other puzzle content. */
+  offDomain: OffDomainFlag[];
+  /**
+   * CC-LO-GEN-CONFORMANCE-1.0 D3 — configured vs generated, for a season that
+   * has actually generated something. `null` before the first run wrote a row:
+   * comparing a bank that does not exist yet against its configuration would
+   * report 100% short on every dimension, which is noise, not a finding.
+   */
+  conformance: ConformanceReport | null;
 };
+
+/**
+ * CC-LO-GEN-CONFORMANCE-1.0 D3 — a whole-season read, paged.
+ *
+ * A 7-game, 365-day season is 2,555 bank rows, and PostgREST caps any single
+ * response at the project's `max-rows`. A silently truncated page would be read
+ * by the conformance table as a coverage FAILURE for rows that are sitting
+ * right there, so the page size is re-derived from the first response rather
+ * than assumed. `path` must already carry a deterministic `order=`.
+ */
+async function qPaged<T>(s: Svc, path: string, page = 1000): Promise<T[]> {
+  const out: T[] = [];
+  let step = page;
+  for (let offset = 0; out.length < 50_000; offset += step) {
+    const rows = await q<T>(s, `${path}&limit=${step}&offset=${offset}`);
+    out.push(...rows);
+    if (!rows.length) break;
+    // A first page shorter than asked for is either the whole table or the
+    // server's cap; either way it is the real page size from here on.
+    if (offset === 0 && rows.length < step) step = rows.length;
+    if (rows.length < step) break;
+  }
+  return out;
+}
 
 export async function getGenerationStatus(s: Svc, seasonId: string): Promise<GenerationStatus> {
   const empty: GenerationStatus = {
     season: null, configId: null, dayCount: null, targets: [], totalTarget: 0,
     pilotFindings: [], fullFindings: [], warnings: [], runs: [], stalledRunId: null,
     bankAlarms: [], pilotPreview: [], latestPilotRunStatus: null, draftCount: 0, unapprovedDates: [],
+    offDomain: [], conformance: null,
   };
 
   const seasons = await q<GenSeason & { name: string; slug: string }>(
@@ -55,9 +116,15 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const configId = focus?.id ?? null;
 
   const [slate, catalog, themeMix, difficultyMix, runs, corpusSectors] = await Promise.all([
+    // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D3 — the floor/ceiling come down with
+    // the slate: the checklist cannot say what the realized mix will be, or
+    // that a window is empty, without them.
     configId
-      ? q<{ game_id: string; is_enabled: boolean; puzzle_count: number | null }>(
-          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count`)
+      ? q<GenerationInput["slate"][number]>(
+          // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — and the three calendar columns
+          // with them: without appears_on_days and the per-game window the
+          // checklist cannot say how many puzzles a game actually needs.
+          s, `season_games?season_config_id=eq.${configId}&select=game_id,is_enabled,puzzle_count,difficulty_floor,difficulty_ceiling,appears_on_days,starts_on,ends_on`)
       : Promise.resolve([]),
     q<GenCatalogGame>(s, `game_catalog?select=id,game_key,display_name,lifecycle_state,runtime_key`),
     configId
@@ -70,9 +137,13 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
       : Promise.resolve([]),
     q<GenRun>(
       s,
-      `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,season_id,run_kind,status,target_count,written_count,failed_count,started_at,completed_at,superseded_at,last_heartbeat_at&order=started_at.desc&limit=10`
+      `dc_puzzle_generation_runs?season_id=eq.${seasonId}&select=id,season_id,run_kind,status,target_count,written_count,failed_count,started_at,completed_at,superseded_at,last_heartbeat_at,phase_cursor&order=started_at.desc&limit=10`
     ),
-    q<{ sector_code: string }>(s, `dc_daily_theme?season_id=is.null&select=sector_code`),
+    // CC-DC-GEN-THEME-ALLOCATION-1.0 D7 — theater_id + sector_code only. The
+    // checklist needs to know which (theater, sector) pairs the corpus can
+    // serve; it never needs a theme's title, blurb or threads to say so.
+    q<{ theater_id: string; sector_code: string }>(
+      s, `dc_daily_theme?season_id=is.null&select=theater_id,sector_code`),
   ]);
 
   // Condition 7's D-code set: live Domain Registry, fail-soft to the corpus-
@@ -80,10 +151,45 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
   const liveCodes = await fetchActiveDomainCodes();
   const activeDomainCodes = liveCodes ?? [...new Set(corpusSectors.map((r) => r.sector_code))];
 
+  // ...and the same rows counted per (theater, sector) — the shape condition
+  // 7's quota-fillability pre-flight reads (D7).
+  const pairCounts = new Map<string, { theater_id: string; sector_code: string | null; count: number }>();
+  for (const r of corpusSectors) {
+    const key = `${r.theater_id}|${r.sector_code ?? ""}`;
+    const hit = pairCounts.get(key);
+    if (hit) hit.count += 1;
+    else pairCounts.set(key, { theater_id: r.theater_id, sector_code: r.sector_code ?? null, count: 1 });
+  }
+
   const inflightRuns = runs.filter((r) => !r.completed_at && !r.superseded_at);
   const input: GenerationInput = {
-    season, slate, catalog, themeMix, difficultyMix, activeDomainCodes, inflightRuns,
+    season, slate, catalog, themeMix, difficultyMix, activeDomainCodes,
+    corpusThemeCounts: [...pairCounts.values()], inflightRuns,
+    // CC-DC-GEN-DIFFICULTY-ALLOCATION-1.0 D3 — the curve the generator will
+    // actually place the bands along.
+    difficultyCurve: focus?.difficulty_curve ?? null,
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the season's play days and its per-day
+    // cap. `play_days_of_week` decides how many puzzles every target in this
+    // panel is; `games_per_day` is validated against the calendar (D2) and
+    // never used to choose which games run.
+    playDaysOfWeek: focus?.play_days_of_week ?? null,
+    gamesPerDay: focus?.games_per_day ?? null,
+    // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — validated against the bank's three
+    // hint tiers; never used to pick anything.
+    maxHintsPerGame: focus?.max_hints_per_game ?? null,
   };
+
+  // D5: project the cursor down to the three failure facts; the blob itself
+  // never leaves the server.
+  const runViews: GenRunView[] = runs.map(({ phase_cursor, ...r }) => {
+    const pc = (phase_cursor && typeof phase_cursor === "object" ? phase_cursor : {}) as Record<string, unknown>;
+    return {
+      ...r,
+      failures: failuresFrom(phase_cursor),
+      lastFailure: lastFailureFrom(phase_cursor),
+      error: typeof pc.error === "string" ? clampMessage(pc.error) : null,
+    };
+  });
 
   const targets = computeTargets(input);
   const now = new Date().toISOString();
@@ -124,11 +230,55 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
       )
     : [];
 
-  const drafts = await q<{ go_live_date: string }>(
+  // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D4 — the SAME draft query answers the
+  // approve count and the off-domain list, and its projection is exactly four
+  // columns: go_live_date, puzzle_type, validation_status, validation_errors.
+  // No puzzle_content, no hints, no answer_key — there is nothing here to leak.
+  const drafts = await q<DomainFlagRow>(
     s,
-    `dc_puzzle_bank_staging?season_id=eq.${seasonId}&published=eq.Unpublished&select=go_live_date`
+    `dc_puzzle_bank_staging?season_id=eq.${seasonId}&published=eq.Unpublished` +
+      `&select=go_live_date,puzzle_type,validation_status,validation_errors`
   );
   const unapprovedDates = [...new Set(drafts.map((r) => r.go_live_date))].sort();
+
+  // CC-LO-GEN-CONFORMANCE-1.0 D3 — configured vs generated, but only once a
+  // run has actually written something: before that there is no bank to
+  // compare and every dimension would read 100% short.
+  //
+  // The two reads below are the ENTIRE data cost of this feature, and their
+  // projections are three and four columns respectively. puzzle_content,
+  // hints, answer_key and answer_explanation are not among them and must never
+  // be: nothing on this panel needs a puzzle's answer to say whether the bank
+  // matches its configuration.
+  const hasGeneratedRows = runs.some((r) => (r.written_count ?? 0) > 0);
+  let conformanceReport: ConformanceReport | null = null;
+  if (hasGeneratedRows && season.starts_on && season.ends_on) {
+    const [themeRows, bankRows] = await Promise.all([
+      qPaged<{ theme_date: string; theater_id: string | null; sector_code: string | null; thread_codes: string[] | null }>(
+        s, `dc_daily_theme?season_id=eq.${seasonId}&select=theme_date,theater_id,sector_code,thread_codes&order=theme_date.asc`),
+      qPaged<{ puzzle_type: string | null; go_live_date: string | null; difficulty: string | null }>(
+        s, `dc_puzzle_bank_staging?season_id=eq.${seasonId}&select=puzzle_type,go_live_date,difficulty&order=go_live_date.asc,puzzle_type.asc`),
+    ]);
+    conformanceReport = conformance({
+      themeMix,
+      difficultyMix,
+      slate: slate.map((g) => {
+        const game = catalog.find((c) => c.id === g.game_id) ?? null;
+        return {
+          runtime_key: game?.runtime_key ?? null,
+          floor: g.difficulty_floor ?? null,
+          ceiling: g.difficulty_ceiling ?? null,
+          enabled: !!g.is_enabled,
+        };
+      }),
+      themeRows: themeRows.map((r) => ({
+        date: r.theme_date, theater_id: r.theater_id,
+        sector_code: r.sector_code, thread_codes: r.thread_codes,
+      })),
+      bankRows,
+      seasonDates: seasonDates(season.starts_on, season.ends_on),
+    });
+  }
 
   return {
     season,
@@ -139,12 +289,48 @@ export async function getGenerationStatus(s: Svc, seasonId: string): Promise<Gen
     pilotFindings: generationFindings(input, false),
     fullFindings: generationFindings(input, true),
     warnings: generationWarnings(input),
-    runs,
+    runs: runViews,
     stalledRunId: stalled?.id ?? null,
-    bankAlarms: bankAlarmApplies(season) ? bankMinimumFindings(configuredKeys, coverage, window.required) : [],
+    // CC-DC-GEN-SCHEDULE-FIELDS-1.0 — the bar is per game: a Mon–Fri season
+    // must not alarm for the weekend it never serves.
+    bankAlarms: bankAlarmApplies(season)
+      ? bankMinimumFindings(configuredKeys, coverage, window.required, bankServeDays(input, window.from, window.to))
+      : [],
     pilotPreview,
     latestPilotRunStatus: latestPilot?.status ?? null,
     draftCount: drafts.length,
     unapprovedDates,
+    offDomain: offDomainFlags(drafts),
+    conformance: conformanceReport,
+  };
+}
+
+/**
+ * CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — how much of a season's bank is already
+ * committed, as two numbers.
+ *
+ * `approved` is everything that cleared review (Published, Live, Retired);
+ * `served` is the subset players have already seen (Live, Retired). Drafts are
+ * excluded on purpose: an unapproved row is not something a config edit would
+ * be "too late" for.
+ *
+ * The projection is ONE column — `published`. No name, no clue, no answer and
+ * no date leaves the server for this banner; it reports a count and nothing
+ * else, which is all the commissioner is being told.
+ */
+export type BankCommitment = { approved: number; served: number };
+
+const APPROVED_STATES = ["Published", "Live", "Retired"];
+const SERVED_STATES = ["Live", "Retired"];
+
+export async function bankCommitment(s: Svc, seasonId: string): Promise<BankCommitment> {
+  const rows = await qPaged<{ published: string | null }>(
+    s,
+    `dc_puzzle_bank_staging?season_id=eq.${seasonId}` +
+      `&published=in.(${APPROVED_STATES.join(",")})&select=published&order=id.asc`
+  );
+  return {
+    approved: rows.length,
+    served: rows.filter((r) => r.published && SERVED_STATES.includes(r.published)).length,
   };
 }

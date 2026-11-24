@@ -20,7 +20,7 @@ import {
   Provenance, Section, TextArea, TextInput,
 } from "./fields";
 import {
-  derivedFreeAgency, slugify, validateWindow, windowSummary,
+  derivedFreeAgency, rosterLockWarning, slugify, validateWindow, windowSummary,
   FREE_AGENCY_OFFSET_DAYS, FREE_AGENCY_NOTICE_OFFSET_DAYS,
   seedTradingWindows, validateTradingWindows, mergeTradingWindows,
   seasonDayRangeLabel, TOO_SHORT_MESSAGE,
@@ -112,6 +112,11 @@ export default function SeasonWizard({
 
   /** Shown as read-only — the DB computes these from ends_on. */
   const freeAgency = useMemo(() => derivedFreeAgency(endsOn), [endsOn]);
+
+  /** The roster lock outranks the trading windows, so a lock on or before
+   *  `free_agency_start` cancels free agency outright. A warning, not a gate —
+   *  `step2Ok` deliberately ignores it. */
+  const lockWarning = useMemo(() => rosterLockWarning(rosterLock, endsOn), [rosterLock, endsOn]);
 
   /** Re-derived on every season-date change. Untouched fields read straight
    *  through to this, which is what makes the silent re-anchor work. */
@@ -312,6 +317,12 @@ export default function SeasonWizard({
                   {FREE_AGENCY_OFFSET_DAYS} days before it). They move automatically when you change
                   the end date and cannot be set by hand.
                 </div>
+
+                {lockWarning ? (
+                  <div style={{ marginTop: 12 }}>
+                    <Callout tone="warning">{lockWarning}</Callout>
+                  </div>
+                ) : null}
               </div>
 
               {windowErrors.length ? (

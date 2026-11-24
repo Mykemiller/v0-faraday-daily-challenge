@@ -9,6 +9,8 @@
 
 import { DAY_LABELS, ALL_DAYS, isHundred, round2 } from "@/lib/league-office/season-config-logic";
 
+import { enforcementChip, enforcementOf } from "@/lib/league-office/config-enforcement";
+
 export const GOLD = "#c4922a";
 export const FOREST = "#1c3424";
 export const INK = "#141210";
@@ -63,6 +65,7 @@ export function Field({
   width,
   error,
   aside,
+  enforcement,
 }: {
   label: string;
   hint?: string;
@@ -74,6 +77,12 @@ export function Field({
   /** Rendered on the label row, right-aligned: the provenance chip and its
    *  reset link (see `Provenance` below). */
   aside?: React.ReactNode;
+  /** CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4) — the column this input writes.
+   *  The chip and its tooltip come from CONFIG_ENFORCEMENT; an enforced field
+   *  (or an unrecognised name) renders nothing, so passing it is always safe.
+   *  The input itself stays editable and the value still saves: this says what
+   *  the setting DOES today, it does not take the setting away. */
+  enforcement?: string;
 }) {
   return (
     <label style={{ display: "block", minWidth: 0, width }}>
@@ -90,8 +99,11 @@ export function Field({
       >
         {label}
       </span>
-      {aside ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, marginTop: -3 }}>{aside}</span>
+      {aside || enforcement ? (
+        <span style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, marginTop: -3, flexWrap: "wrap" }}>
+          {aside}
+          {enforcement ? <EnforcementChip field={enforcement} /> : null}
+        </span>
       ) : null}
       {children}
       {error ? (
@@ -104,6 +116,39 @@ export function Field({
         </span>
       ) : null}
     </label>
+  );
+}
+
+/** CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4) — "this is saved, but it is not a
+ *  rule yet". Deliberately quiet: same pill geometry as `Provenance`, amber
+ *  for partly-enforced and plain grey for not-enforced, with the `note` as the
+ *  native title tooltip so the explanation costs no layout. Renders nothing
+ *  for an enforced field, which is most of the slate and all of the roster
+ *  rules — a chip on every field would say nothing at all. */
+export function EnforcementChip({ field }: { field: string }) {
+  const label = enforcementChip(field);
+  if (!label) return null;
+  const entry = enforcementOf(field);
+  const partial = entry?.status === "partial";
+  return (
+    <span
+      className="font-mono"
+      title={entry?.note ?? undefined}
+      style={{
+        fontSize: 9.5,
+        letterSpacing: ".06em",
+        textTransform: "uppercase",
+        padding: "2px 6px",
+        borderRadius: 999,
+        border: `1px solid ${partial ? "rgba(196,146,42,.45)" : "var(--color-cream-border)"}`,
+        background: partial ? "rgba(196,146,42,.12)" : "#fff",
+        color: partial ? "#94560a" : FAINT,
+        cursor: "help",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -367,13 +412,18 @@ export function Toggle({
   onChange,
   label,
   disabled,
+  enforcement,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   disabled?: boolean;
+  /** The column this toggle writes — see `Field`'s `enforcement`. Rendered
+   *  OUTSIDE the button, because a chip with its own tooltip inside a switch
+   *  would be unreachable to a pointer and announced as part of the label. */
+  enforcement?: string;
 }) {
-  return (
+  const toggle = (
     <button
       type="button"
       role="switch"
@@ -419,6 +469,13 @@ export function Toggle({
       </span>
       <span style={{ fontSize: 13, color: INK }}>{label}</span>
     </button>
+  );
+  if (!enforcement || !enforcementChip(enforcement)) return toggle;
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      {toggle}
+      <EnforcementChip field={enforcement} />
+    </span>
   );
 }
 

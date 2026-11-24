@@ -8,6 +8,9 @@ import { runGenerationSlice } from "@/lib/generation/worker";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+// CC-DC-GEN-BATCH-HARDENING-1.0 D4: the slice's budget is 230s, not 250s, so
+// the 300s function limit keeps ~70s of headroom for a batch already in flight.
+// The worker's own guard (elapsed + EMA batch duration) is what spends it.
 
 export async function POST() {
   const staff = await requireStaff();
@@ -16,7 +19,7 @@ export async function POST() {
     return Response.json({ ok: false, message: `Not authorized (${staff.reason}).` }, { status: code });
   }
   try {
-    const report = await runGenerationSlice(staff.s, { budgetMs: 250_000 });
+    const report = await runGenerationSlice(staff.s, { budgetMs: 230_000 });
     return Response.json({ ok: true, report });
   } catch (err) {
     console.error(JSON.stringify({ at: "lo-generation-worker", error: String(err) }));

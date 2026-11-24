@@ -68,7 +68,7 @@ export default async function DashboardPage({
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 22 }}>
-        <KpiCard label="Active Subscribers" value={d.activeSubscribers.toLocaleString()} foot="opted-in players" href="/league-office/subscribers" />
+        <KpiCard label="Active Subscribers" value={d.activeSubscribers.toLocaleString()} foot="opted-in players" href="https://faraday-stuff.com/#admin" />
         <KpiCard label="Playing Today" value={d.playingToday.toLocaleString()} foot={`${pct(d.playingToday, d.activeSubscribers)} of active`} />
         <KpiCard label="Teams" value={d.teams.toLocaleString()} foot={`${d.pendingRequests} pending requests`} href="/league-office/teams" />
         <KpiCard label="Pending Requests" value={d.pendingRequests.toLocaleString()} foot="membership approvals" href="/league-office/teams" />

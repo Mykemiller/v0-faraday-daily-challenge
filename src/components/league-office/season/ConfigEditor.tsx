@@ -31,11 +31,22 @@ import type {
 } from "@/lib/league-office/seasons";
 import {
   curvePoints, DIFFICULTY_BANDS, DIFFICULTY_CURVES, diffConfigs, editability,
+  effectiveTypeMix,
   evenSplit, fieldLabel, formatValue, isHundred, LEADERBOARD_VISIBILITIES,
   localFindings, normalizeDifficultyMix, normalizeThemeMix, promoteIntent, round2, summarizeFindings,
   sumPct, TEAM_SCORE_METHODS,
   scopeFromRows,
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D1/D3 — the settings the generator read
+  // once, and the pure diff that says whether this edit touches any of them.
+  shapingFieldsChanged, summarizeShapingFields,
 } from "@/lib/league-office/season-config-logic";
+// CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4/D5) — field-by-field "is this a rule
+// yet?". The chips themselves live in fields.tsx (Field/Toggle `enforcement`);
+// this import is for the slate header and the save-time summary.
+import {
+  enforcementOf,
+} from "@/lib/league-office/config-enforcement";
+import { RAW_SCORE_MAX } from "@/lib/scoring/season-scoring.js";
 
 // ── local row shapes (client-side working copies) ────────────────────────────
 
@@ -84,16 +95,28 @@ const SECTIONS = [
   { id: "sec-i", label: "Advanced" },
 ];
 
+/** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — what the banner states. `null` for a
+ *  season that has not generated: there is nothing to be too late for. */
+export type PostGenerationSummary = {
+  generatedAt: string;
+  /** Puzzles that cleared review (Published + Live + Retired). */
+  approved: number;
+  /** The subset players have already seen (Live + Retired). */
+  served: number;
+};
+
 export default function ConfigEditor({
   bundle,
   scopeOptions,
   taxonomy,
   incumbent,
+  postGeneration = null,
 }: {
   bundle: ConfigBundle;
   scopeOptions: ScopeOptions;
   taxonomy: ThemeTheater[];
   incumbent: SeasonConfigRow | null;
+  postGeneration?: PostGenerationSummary | null;
 }) {
   const router = useRouter();
   const seasonLocked = !!bundle.season?.locked_at;
@@ -137,6 +160,11 @@ export default function ConfigEditor({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<null | "save" | "promote" | "cancel">(null);
   const [pendingCapAck, setPendingCapAck] = useState(false);
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — set when the API refuses an
+  // unacknowledged post-generation shaping edit. The client computes the same
+  // diff below, so this is the belt to that braces: a 409 can only happen if
+  // the two ever disagree, and the dialog still recovers.
+  const [pendingPostGenAck, setPendingPostGenAck] = useState(false);
 
   const touch = useCallback(() => setDirty(true), []);
   const setCfg = useCallback(
@@ -160,6 +188,31 @@ export default function ConfigEditor({
   const baseDifficulty = difficultyMix.filter((d) => !d.applies_to_game_id);
   const difficultyTotal = sumPct(baseDifficulty.map((d) => d.target_pct));
 
+  // CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — the slate's read-only "Effective mix"
+  // column. The commissioner sets a season mix in section E and a floor per
+  // game in section C, and until now nothing said the second one rewrites the
+  // first: on the Football slate the configured 14/30/56 comes out of the
+  // generator as 3/20/77. This is the same effectiveTypeMix() the worker
+  // allocates with, so the preview cannot drift from the run.
+  const effectiveMixFor = (g: GameRow): { label: string; empty: boolean } => {
+    const rows = effectiveTypeMix({
+      seasonMix: baseDifficulty,
+      perGameRows: difficultyMix.filter((d) => d.applies_to_game_id === g.game_id),
+      floor: g.difficulty_floor,
+      ceiling: g.difficulty_ceiling,
+    });
+    if (!rows) return { label: "no band", empty: true };
+    const byBand = new Map(rows.map((r) => [r.difficulty_band, r.target_pct]));
+    // A band the window drops renders as an em dash, not as 0 — "not generated
+    // at all" and "generated 0.4% of the time" are different facts.
+    return {
+      label: DIFFICULTY_BANDS.map((b) =>
+        byBand.has(b) ? String(Math.round(byBand.get(b) as number)) : "—"
+      ).join(" / "),
+      empty: false,
+    };
+  };
+
   const findings = useMemo(
     () =>
       localFindings({
@@ -167,6 +220,9 @@ export default function ConfigEditor({
         themeMix,
         difficultyMix,
         gamesPerDay: config.games_per_day == null ? null : Number(config.games_per_day),
+        // CC-DC-HINTS-FROM-CONFIG-1.0 D1 — `max_hints_exceeds_bank`.
+        maxHintsPerGame:
+          config.max_hints_per_game == null ? null : Number(config.max_hints_per_game),
         teamScoreMethod: String(config.team_score_method ?? "sum"),
         teamScoreTopN: config.team_score_top_n == null ? null : Number(config.team_score_top_n),
       }),
@@ -175,6 +231,34 @@ export default function ConfigEditor({
   const errorCount = findings.filter((f) => f.severity === "error").length;
 
   const intent = promoteIntent(String(config.effective_from ?? ""));
+
+  // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — which generation-shaping settings this
+  // draft has moved since it was loaded. Computed from the SAME pure function
+  // the writer enforces with, so the checkbox appears before the first save
+  // attempt rather than after a round-trip refusal. Empty on a season that has
+  // not generated — the question does not arise.
+  const shapingChanged = useMemo(
+    () =>
+      postGeneration
+        ? shapingFieldsChanged(
+            {
+              config: bundle.config as unknown as Record<string, unknown>,
+              games: bundle.games as unknown as Record<string, unknown>[],
+              themeMix: bundle.themeMix as unknown as Record<string, unknown>[],
+              difficultyMix: bundle.difficultyMix as unknown as Record<string, unknown>[],
+            },
+            {
+              config,
+              games: games as unknown as Record<string, unknown>[],
+              themeMix: themeMix as unknown as Record<string, unknown>[],
+              difficultyMix: difficultyMix as unknown as Record<string, unknown>[],
+            }
+          )
+        : [],
+    [postGeneration, bundle, config, games, themeMix, difficultyMix]
+  );
+  const needsPostGenAck = !!postGeneration && (shapingChanged.length > 0 || pendingPostGenAck);
+  const POST_GEN_ACK = "I understand existing puzzles will not change";
 
   // ── save ───────────────────────────────────────────────────────────────────
   // CC-LO-MIX-NORMALIZE-1.0: the writer rescales every mix group to exactly
@@ -189,7 +273,11 @@ export default function ConfigEditor({
     return { theme, diff };
   };
 
-  const save = async (reason: string, acknowledgeCapWarning = false) => {
+  const save = async (
+    reason: string,
+    acknowledgeCapWarning = false,
+    acknowledgePostGeneration = false
+  ) => {
     setBusy(true);
     try {
       const { theme, diff } = settledMixes();
@@ -198,12 +286,21 @@ export default function ConfigEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config, games, themeMix: theme, difficultyMix: diff,
-          fingerprint, reason, acknowledgeCapWarning,
+          fingerprint, reason, acknowledgeCapWarning, acknowledgePostGeneration,
         }),
       });
       const j = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — the writer saw a shaping change
+        // the client did not. Re-open with the checkbox rather than losing the
+        // edit.
+        if (j?.postGenerationWarning) {
+          setPendingPostGenAck(true);
+          toast(j.message);
+          setDialog("save");
+          return;
+        }
         // A cap reduction needs an explicit acknowledgement — re-open the dialog
         // with the count so the commissioner decides. Memberships are never
         // auto-removed.
@@ -221,6 +318,7 @@ export default function ConfigEditor({
       if (j.fingerprint) setFingerprint(j.fingerprint);
       setDirty(false);
       setPendingCapAck(false);
+      setPendingPostGenAck(false);
       setDialog(null);
       toast(j.message ?? "Draft saved.");
       router.refresh();
@@ -280,6 +378,10 @@ export default function ConfigEditor({
           body: JSON.stringify({
             config, games, themeMix: theme, difficultyMix: diff,
             fingerprint, reason, acknowledgeCapWarning: true,
+            // CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — promoting a dirty draft
+            // saves it first, so the same acknowledgement applies; the promote
+            // dialog below carries the checkbox when it is needed.
+            acknowledgePostGeneration: true,
           }),
         });
         const sj = await res.json().catch(() => ({}));
@@ -365,6 +467,21 @@ export default function ConfigEditor({
       </div>
       <div className="double-rule" />
 
+      {/* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D2 — persistent, above everything the
+          commissioner is about to edit. The counts are the point: "595
+          approved" is what makes "these will not change" concrete. */}
+      {postGeneration ? (
+        <div style={{ marginTop: 14 }}>
+          <Callout tone="warning">
+            <strong>This season&rsquo;s puzzles were generated on {formatDay(postGeneration.generatedAt)}</strong>{" "}
+            ({postGeneration.approved} approved, {postGeneration.served} already served).
+            Changes to slate, theme, difficulty or schedule settings will not change existing
+            puzzles — they shape the next generation run. To replace puzzles that already exist,
+            use <strong>Regenerate from date</strong> on the season&rsquo;s generation panel.
+          </Callout>
+        </div>
+      ) : null}
+
       {readOnly ? (
         <div style={{ marginTop: 14 }}>
           <Callout tone={seasonLocked ? "danger" : "locked"}>
@@ -441,7 +558,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("effective_from", v ? new Date(v).toISOString() : null)}
                   />
                 </Field>
-                <Field label="Effective to" hint="Usually left empty — the next version supersedes this one.">
+                <Field label="Effective to" hint="Usually left empty — the next version supersedes this one." enforcement="effective_to">
                   <TextInput
                     type="datetime-local"
                     disabled={readOnly}
@@ -449,7 +566,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("effective_to", v ? new Date(v).toISOString() : null)}
                   />
                 </Field>
-                <Field label="Label">
+                <Field label="Label" enforcement="label">
                   <TextInput
                     disabled={readOnly}
                     value={String(config.label ?? "")}
@@ -459,7 +576,7 @@ export default function ConfigEditor({
                 </Field>
               </Grid>
               <div style={{ marginTop: 14 }}>
-                <Field label="Notes">
+                <Field label="Notes" enforcement="notes">
                   <TextArea
                     disabled={readOnly}
                     value={String(config.notes ?? "")}
@@ -517,6 +634,7 @@ export default function ConfigEditor({
                 <Field
                   label="Games per day"
                   hint={`Must not exceed the ${enabledCount} enabled game${enabledCount === 1 ? "" : "s"}.`}
+                  enforcement="games_per_day"
                 >
                   <NumberInput
                     disabled={readOnly}
@@ -527,7 +645,7 @@ export default function ConfigEditor({
                     placeholder="all"
                   />
                 </Field>
-                <Field label="Play days of week" hint="Master mask — a game may narrow it further, never widen it.">
+                <Field label="Play days of week" hint="Master mask — a game may narrow it further, never widen it." enforcement="play_days_of_week">
                   <DayMask
                     disabled={readOnly}
                     value={(config.play_days_of_week as number[]) ?? null}
@@ -545,6 +663,7 @@ export default function ConfigEditor({
                       row={g}
                       index={i}
                       game={catalogById.get(g.game_id)}
+                      effectiveMix={effectiveMixFor(g)}
                       disabled={readOnly}
                       onChange={(next) => {
                         setGames((rows) => rows.map((r, ri) => (ri === i ? next : r)));
@@ -723,7 +842,7 @@ export default function ConfigEditor({
             {/* ── E. Difficulty ───────────────────────────────────────────── */}
             <Section id="sec-e" title="Difficulty">
               <Grid>
-                <Field label="Difficulty curve">
+                <Field label="Difficulty curve" enforcement="difficulty_curve">
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ flex: 1 }}>
                       <Select
@@ -741,7 +860,7 @@ export default function ConfigEditor({
                     </span>
                   </div>
                 </Field>
-                <Field label="Target solve rate">
+                <Field label="Target solve rate" enforcement="target_solve_rate_pct">
                   <NumberInput
                     disabled={readOnly}
                     value={config.target_solve_rate_pct as number | null}
@@ -865,6 +984,7 @@ export default function ConfigEditor({
                 <Field
                   label="Max teams per subscriber"
                   hint="Lowering this warns with the number of subscribers already over the new limit. No membership is ever removed automatically."
+                  enforcement="max_teams_per_subscriber"
                 >
                   <Stepper
                     disabled={readOnly}
@@ -874,7 +994,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("max_teams_per_subscriber", v)}
                   />
                 </Field>
-                <Field label="Min team size">
+                <Field label="Min team size" enforcement="min_team_size">
                   <NumberInput
                     disabled={readOnly}
                     min={1}
@@ -882,7 +1002,7 @@ export default function ConfigEditor({
                     onChange={(v) => setCfg("min_team_size", v ?? 1)}
                   />
                 </Field>
-                <Field label="Max team size" hint="Empty = unlimited.">
+                <Field label="Max team size" hint="Empty = unlimited." enforcement="max_team_size">
                   <NumberInput
                     disabled={readOnly}
                     min={1}
@@ -897,31 +1017,34 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.allow_free_agency === true}
                   onChange={(v) => setCfg("allow_free_agency", v)}
+                  enforcement="allow_free_agency"
                   label="Allow free agency"
                 />
                 <Toggle
                   disabled={readOnly}
                   checked={config.allow_late_join === true}
                   onChange={(v) => setCfg("allow_late_join", v)}
+                  enforcement="allow_late_join"
                   label="Allow late join"
                 />
                 <Toggle
                   disabled={readOnly}
                   checked={config.allow_mid_season_team_switch === true}
                   onChange={(v) => setCfg("allow_mid_season_team_switch", v)}
+                  enforcement="allow_mid_season_team_switch"
                   label="Allow mid-season team switch"
                 />
               </div>
 
               <div style={{ marginTop: 16 }}>
                 <Grid cols={3}>
-                  <Field label="Registration opens">
+                  <Field label="Registration opens" enforcement="registration_opens_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.registration_opens_on)} onChange={(v) => setCfg("registration_opens_on", v || null)} />
                   </Field>
-                  <Field label="Registration closes">
+                  <Field label="Registration closes" enforcement="registration_closes_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.registration_closes_on)} onChange={(v) => setCfg("registration_closes_on", v || null)} />
                   </Field>
-                  <Field label="Roster lock">
+                  <Field label="Roster lock" enforcement="roster_lock_on">
                     <TextInput type="date" disabled={readOnly} value={dateVal(config.roster_lock_on)} onChange={(v) => setCfg("roster_lock_on", v || null)} />
                   </Field>
                 </Grid>
@@ -931,13 +1054,13 @@ export default function ConfigEditor({
             {/* ── G. Scoring ──────────────────────────────────────────────── */}
             <Section id="sec-g" title="Scoring">
               <Grid cols={3}>
-                <Field label="Scoring profile">
+                <Field label="Scoring profile" enforcement="scoring_profile">
                   <TextInput disabled={readOnly} value={String(config.scoring_profile ?? "standard")} onChange={(v) => setCfg("scoring_profile", v)} />
                 </Field>
-                <Field label="Signals per correct">
+                <Field label="Signals per correct" enforcement="signals_per_correct">
                   <NumberInput disabled={readOnly} min={0} value={config.signals_per_correct as number} onChange={(v) => setCfg("signals_per_correct", v ?? 0)} />
                 </Field>
-                <Field label="Drop lowest N days">
+                <Field label="Drop lowest N days" enforcement="drop_lowest_n_days">
                   <NumberInput disabled={readOnly} min={0} value={config.drop_lowest_n_days as number} onChange={(v) => setCfg("drop_lowest_n_days", v ?? 0)} />
                 </Field>
               </Grid>
@@ -947,13 +1070,14 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.streak_bonus_enabled === true}
                   onChange={(v) => setCfg("streak_bonus_enabled", v)}
+                  enforcement="streak_bonus_enabled"
                   label="Streak bonus enabled"
                 />
               </div>
 
               <div style={{ marginTop: 14 }}>
                 <Grid cols={3}>
-                  <Field label="Team score method">
+                  <Field label="Team score method" enforcement="team_score_method">
                     <Select
                       disabled={readOnly}
                       value={String(config.team_score_method ?? "sum")}
@@ -962,7 +1086,7 @@ export default function ConfigEditor({
                     />
                   </Field>
                   {config.team_score_method === "top_n" ? (
-                    <Field label="Top N" hint="Required when the method is Top N.">
+                    <Field label="Top N" hint="Required when the method is Top N." enforcement="team_score_top_n">
                       <NumberInput
                         disabled={readOnly}
                         min={1}
@@ -971,7 +1095,7 @@ export default function ConfigEditor({
                       />
                     </Field>
                   ) : null}
-                  <Field label="Late submission grace">
+                  <Field label="Late submission grace" enforcement="late_submission_grace_hours">
                     <NumberInput
                       disabled={readOnly}
                       min={0}
@@ -988,14 +1112,15 @@ export default function ConfigEditor({
                   disabled={readOnly}
                   checked={config.hints_enabled === true}
                   onChange={(v) => setCfg("hints_enabled", v)}
+                  enforcement="hints_enabled"
                   label="Hints enabled"
                 />
                 <div style={{ marginTop: 12 }}>
                   <Grid>
-                    <Field label="Max hints per game">
+                    <Field label="Max hints per game" enforcement="max_hints_per_game">
                       <NumberInput disabled={readOnly || config.hints_enabled !== true} min={0} value={config.max_hints_per_game as number} onChange={(v) => setCfg("max_hints_per_game", v ?? 0)} />
                     </Field>
-                    <Field label="Hint penalty">
+                    <Field label="Hint penalty" enforcement="hint_penalty_pct">
                       <NumberInput disabled={readOnly || config.hints_enabled !== true} min={0} max={100} step={0.5} value={config.hint_penalty_pct as number} onChange={(v) => setCfg("hint_penalty_pct", v ?? 0)} suffix="%" />
                     </Field>
                   </Grid>
@@ -1009,11 +1134,12 @@ export default function ConfigEditor({
                 disabled={readOnly}
                 checked={config.publish_leaderboard === true}
                 onChange={(v) => setCfg("publish_leaderboard", v)}
+                enforcement="publish_leaderboard"
                 label="Publish leaderboard"
               />
               <div style={{ marginTop: 14 }}>
                 <Grid>
-                  <Field label="Leaderboard visibility">
+                  <Field label="Leaderboard visibility" enforcement="leaderboard_visibility">
                     <Select
                       disabled={readOnly || config.publish_leaderboard !== true}
                       value={String(config.leaderboard_visibility ?? "public")}
@@ -1021,7 +1147,7 @@ export default function ConfigEditor({
                       options={LEADERBOARD_VISIBILITIES.map((v) => ({ value: v, label: cap(v) }))}
                     />
                   </Field>
-                  <Field label="Publish standings at" hint="Empty = as soon as the season opens.">
+                  <Field label="Publish standings at" hint="Empty = as soon as the season opens." enforcement="publish_standings_at">
                     <TextInput
                       type="datetime-local"
                       disabled={readOnly}
@@ -1112,10 +1238,14 @@ export default function ConfigEditor({
             ? "Some subscribers already hold more teams than the new cap. Saving does NOT remove any membership — it only applies from here on."
             : "Saves this version's configuration. It does not take effect until the version is promoted."
         }
+        details={shapingChanged.length ? <PostGenNotice fields={shapingChanged} /> : null}
         confirmLabel={pendingCapAck ? "Save anyway" : "Save draft"}
         destructive={pendingCapAck}
-        onCancel={() => { setDialog(null); setPendingCapAck(false); }}
-        onConfirm={(reason) => save(reason, pendingCapAck)}
+        /* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — reuses the OPTIONAL `acknowledge`
+           gate CC-LO-GEN-CONFORMANCE-1.0 D4 already added to ReasonDialog. */
+        acknowledge={needsPostGenAck ? POST_GEN_ACK : null}
+        onCancel={() => { setDialog(null); setPendingCapAck(false); setPendingPostGenAck(false); }}
+        onConfirm={(reason) => save(reason, pendingCapAck, needsPostGenAck)}
       />
 
       <ReasonDialog
@@ -1136,8 +1266,18 @@ export default function ConfigEditor({
             </>
           )
         }
-        details={<PromoteDiff incumbent={incumbent} next={config} />}
+        details={
+          <>
+            {/* CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — promote saves the dirty
+                draft first, so a shaping edit is acknowledged here too. */}
+            {dirty && shapingChanged.length > 0 ? (
+              <PostGenNotice fields={shapingChanged} />
+            ) : null}
+            <PromoteDiff incumbent={incumbent} next={config} />
+          </>
+        }
         confirmLabel={intent.action === "schedule" ? "Schedule" : "Promote now"}
+        acknowledge={dirty && shapingChanged.length > 0 ? POST_GEN_ACK : null}
         onCancel={() => setDialog(null)}
         onConfirm={promote}
       />
@@ -1197,7 +1337,10 @@ export default function ConfigEditor({
 // The game column gets a real minimum so the name never collapses to an ellipsis
 // (it used to share a 1.4fr slot that the fixed columns squeezed to ~28px inside
 // the 900px min-width — that is why names rendered as "T..").
-const SLATE_COLS = "34px 30px minmax(230px, 1.8fr) 90px 78px 84px 108px 108px 150px 118px";
+// CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — "Effective mix" sits immediately
+// after Ceiling, because it is the consequence of Floor and Ceiling and the
+// commissioner should read them left to right as cause then effect.
+const SLATE_COLS = "34px 30px minmax(230px, 1.8fr) 90px 78px 84px 108px 116px 108px 150px 118px";
 
 function SlateHeader() {
   return (
@@ -1220,23 +1363,47 @@ function SlateHeader() {
       <div />
       <div>On</div>
       <div>Game</div>
-      <div style={{ textAlign: "right" }}>Weight</div>
+      {/* CC-LO-CONFIG-ENFORCEMENT-STATUS-1.0 (D4) — the slate's two columns
+          that read as rules but are not. A chip per cell would be seven
+          identical chips per column; the header carries it once, with the same
+          `note` tooltip the config fields use. */}
+      <div style={{ textAlign: "right" }} title={enforcementOf("season_games.weight")?.note}>
+        Weight <SlateNotEnforcedMark />
+      </div>
       <div style={{ textAlign: "right" }}>Points</div>
       <div>Floor</div>
       <div>Ceiling</div>
+      <div title="Foundational / Practitioner / Expert — the mix this game is actually generated against">Effective mix</div>
       <div>Days</div>
       <div>Window</div>
-      <div>Order</div>
+      <div title={enforcementOf("season_games.sort_order")?.note}>
+        Order <SlateNotEnforcedMark />
+      </div>
     </div>
   );
 }
 
+/** A degree-sign-sized "not a rule yet" marker for a slate COLUMN. The slate
+ *  header is 9.5px mono in a 11-column grid — a full "Not enforced yet" pill
+ *  would not fit and would push the table into a horizontal scroll. The
+ *  tooltip on the header cell carries the explanation. */
+function SlateNotEnforcedMark() {
+  return (
+    <span aria-label="not enforced yet" style={{ color: "#b08b3e", cursor: "help" }}>
+      °
+    </span>
+  );
+}
+
 function SlateRow({
-  row, index, game, disabled, onChange, onMove, onDropRow, isFirst, isLast,
+  row, index, game, effectiveMix, disabled, onChange, onMove, onDropRow, isFirst, isLast,
 }: {
   row: GameRow;
   index: number;
   game: GameCatalogRow | undefined;
+  /** CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — read-only, computed by the parent
+   *  from the live difficulty mix with the generator's own helper. */
+  effectiveMix: { label: string; empty: boolean };
   disabled?: boolean;
   onChange: (next: GameRow) => void;
   onMove: (dir: -1 | 1) => void;
@@ -1345,9 +1512,38 @@ function SlateRow({
       </div>
 
       <div><NumberInput disabled={disabled} step={0.001} min={0} value={row.weight} onChange={(v) => set({ weight: v ?? 0 })} /></div>
-      <div><NumberInput disabled={disabled} min={0} value={row.points_override} onChange={(v) => set({ points_override: v })} placeholder={String(game?.default_points ?? "")} /></div>
+      {/* min 1, not 0: a 0 override is accepted by the column and silently
+          zeroes EVERY completion for this game, which looks like a scoring
+          outage rather than a setting. Empty = no override = the platform
+          default. The placeholder is that default (RAW_SCORE_MAX), not
+          game_catalog.default_points — the catalog says 100 for all seven
+          games but the runtime awards 150, and the placeholder has to name
+          the number a player would actually get. */}
+      <div><NumberInput disabled={disabled} min={1} value={row.points_override} onChange={(v) => set({ points_override: v })} placeholder={String(RAW_SCORE_MAX)} /></div>
       <div><Select disabled={disabled} value={row.difficulty_floor ?? ""} onChange={(v) => set({ difficulty_floor: v || null })} options={bands} /></div>
       <div><Select disabled={disabled} value={row.difficulty_ceiling ?? ""} onChange={(v) => set({ difficulty_ceiling: v || null })} options={bands} /></div>
+
+      {/* CC-DC-GEN-DIFFICULTY-PERGAME-1.0 D4 — what this game will actually be
+          generated against, once its override rows and its floor/ceiling have
+          been applied to the season mix. Read-only: it is a consequence of the
+          two selects to its left and of section E, never an input of its own. */}
+      <div
+        className="font-mono"
+        title={
+          effectiveMix.empty
+            ? "The floor is deeper than the ceiling — no band is left to generate."
+            : "Foundational / Practitioner / Expert, after this game's floor, ceiling and overrides"
+        }
+        style={{
+          fontSize: 11,
+          letterSpacing: ".02em",
+          color: effectiveMix.empty ? "#a4462a" : row.is_enabled ? MUTED : FAINT,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {effectiveMix.label}
+      </div>
+
       <div><DayMask disabled={disabled} value={row.appears_on_days} onChange={(v) => set({ appears_on_days: v })} /></div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1648,6 +1844,38 @@ function toLocalInput(v: unknown): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** CC-LO-POSTGEN-CONFIG-GUARD-1.0 D3 — the dialog's "and here is exactly what
+ *  you moved" block. Named fields, because "some settings" is not a warning a
+ *  commissioner can act on. */
+function PostGenNotice({ fields }: { fields: string[] }) {
+  if (!fields.length) return null;
+  return (
+    <div
+      style={{
+        fontSize: 12.5,
+        lineHeight: 1.55,
+        color: "#7c4708",
+        background: "rgba(148,86,10,.10)",
+        border: "1px solid rgba(148,86,10,.28)",
+        borderRadius: 8,
+        padding: "10px 13px",
+      }}
+    >
+      <strong>Generation-shaping settings changed:</strong> {summarizeShapingFields(fields)}.
+      <div style={{ marginTop: 6 }}>
+        Puzzles already generated for this season keep the values they were made with. Use{" "}
+        <strong>Regenerate from date</strong> on the generation panel to replace future puzzles.
+      </div>
+    </div>
+  );
+}
+
+/** "2026-10-05" from a timestamptz, or the raw string if it is not one. */
+function formatDay(v: string): string {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? v : d.toISOString().slice(0, 10);
 }
 
 function formatExact(v: unknown): string {

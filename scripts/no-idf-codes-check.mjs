@@ -8,7 +8,8 @@
 // Scanning strategy: we read each source file and STRIP the two constructs that
 // legitimately contain the pattern without being subscriber copy —
 //   1. comments (// … and /* … */), where code references like "D3/D4" live, and
-//   2. data: URIs (base64 blobs), whose random payloads incidentally match —
+//   2. data: URIs (base64 blobs), whose random payloads incidentally match,
+//   3. ISO-8601 time fragments ("T12:00:00Z") — a time, never a code —
 // then test what remains (string constants + JSX text). This keeps the check
 // honest: reintroduce `Domain D2` in real copy and it fails; a code comment or an
 // icon data-URI does not.
@@ -97,6 +98,9 @@ function stripNonCopy(src) {
       line
         .replace(/(^|[^:])\/\/.*$/, (_m, p1) => p1) // line comment, but keep https://
         .replace(/data:[^\s"'`)]+/g, "") // strip data: URIs (base64 blobs)
+        // ISO-8601 time fragments ("T12:00:00Z", "T00:00:00") — a time, never a
+        // Theme code: a real code is never followed by ":dd". (FDY-273)
+        .replace(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z?/g, "")
     )
     .join("\n");
 }

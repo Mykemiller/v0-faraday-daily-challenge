@@ -19,15 +19,21 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { sbInsert, sbSelect, sbUpdate, anthropicJson, GEN_MODEL, airtableGet } from "./lib/clients.mjs";
+import { sbInsert, sbSelect, sbUpdate, anthropicMessage, GEN_MODEL, airtableGet } from "./lib/clients.mjs";
+// CC-DC-GEN-BATCH-HARDENING-1.0 D5 — the CLI and the deployed worker share ONE
+// implementation of the per-type size + truncation-split logic (the module is
+// pure and imports nothing, so it resolves across the scripts/src boundary).
+import { runBatchWithSplit, startingBatchSize } from "../../src/lib/generation/batching.js";
 import { systemPrompt, userPrompt } from "./lib/prompts.mjs";
 import {
   validateContent, answerKeyFrom, checkHints, copyViolations,
   contentHash, subjectFingerprint, parseModelJson,
+  deriveValidation, readDomainFit,
 } from "./lib/puzzle-schema.mjs";
 import { liveGameTypes } from "./lib/game-roster.mjs";
 import { buildCorpus, buildSubjectPool, CORPUS_PATH } from "./lib/corpus.mjs";
 import { resolveRunStatus, isTerminal } from "./lib/run-bookkeeping.mjs";
+import { difficultyFor as bandForSlot, resolveRowDifficulty } from "./lib/difficulty.mjs";
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -58,10 +64,12 @@ function parseArray(raw) {
   return out;
 }
 
-// difficulty bag per FAR-287 default 40/40/20 (deterministic per day index)
+// difficulty bag per FAR-287 default 40/40/20 (deterministic per day index).
+// CC-DC-GEN-DIFFICULTY-CANON-1.0: the bands themselves come from
+// ./lib/difficulty.mjs — the staging CHECK only accepts the canonical three.
+// The 40/40/20 default reproduces the old easy/medium/hard slot mapping exactly.
 function difficultyFor(dayIdx, typeIdx) {
-  const r = ((dayIdx * 7 + typeIdx) % 10);
-  return r < 4 ? "easy" : r < 8 ? "medium" : "hard";
+  return bandForSlot([], dayIdx * 7 + typeIdx);
 }
 
 async function existingBankFingerprints() {
@@ -151,23 +159,30 @@ async function main() {
       const subject = pool.length ? pool[(di + types.indexOf(type)) % pool.length] : day.sector_name;
       items.push({ day, di, subject,
         theme: { theater_name: day.theater_name, sector_name: day.sector_name, thread_names: day.thread_names,
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D1 — the sector's one-line scope.
+          sector_scope: day.theme_blurb ?? null,
           tier_name: (corpus.tier_names || {})[day.jpas_tier_code] || day.jpas_tier_code },
         difficulty: difficultyFor(di, types.indexOf(type)),
         threadScope: day.thread_names.join("; ") });
     });
 
-    for (let i = 0; i < items.length; i += BATCH) {
-      const batch = items.slice(i, i + BATCH);
-      let arr = [];
-      try {
-        const raw = await anthropicJson({ system: systemPrompt(type), user: userPrompt(type, batch), maxTokens: 4096 });
-        arr = parseArray(raw);
-      } catch (err) { batch.forEach((it) => { failed++; failures.push({ type, date: it.day.theme_date, error: `model: ${err.message}` }); }); continue; }
+    const startSize = startingBatchSize(type, BATCH);
 
-      for (let k = 0; k < batch.length; k++) {
-        const it = batch[k]; const el = arr[k];
-        const content = el?.puzzle, hints = el?.hints || [], expl = el?.answer_explanation || null;
+    for (let i = 0; i < items.length; i += startSize) {
+      const batch = items.slice(i, i + startSize);
+      const batchRun = await runBatchWithSplit(batch, {
+        call: async (sub) => {
+          const res = await anthropicMessage({ system: systemPrompt(type), user: userPrompt(type, sub) });
+          return { objects: parseArray(res.text), stopReason: res.stopReason, ms: res.ms };
+        },
+        log: (event) => console.warn(`\n[batch] ${JSON.stringify({ type, ...event })}`),
+      });
+
+      for (const outcome of batchRun.outcomes) {
+        const it = outcome.item; const el = outcome.object;
         const fail = (msg) => { failed++; failures.push({ type, date: it.day.theme_date, error: msg }); };
+        if (outcome.failure) { fail(`${outcome.failure.reason}: ${outcome.failure.message}`); continue; }
+        const content = el?.puzzle, hints = el?.hints || [], expl = el?.answer_explanation || null;
         if (!content) { fail("no content parsed"); continue; }
         const v = validateContent(type, content); if (!v.ok) { fail("schema: " + v.errors.join("; ")); continue; }
         const answerKey = answerKeyFrom(type, content);
@@ -179,6 +194,7 @@ async function main() {
         const hash = contentHash(content, answerKey);
         if (seenHash.has(hash)) { fail("content_hash collision"); continue; }
         fpSet.add(fp); seenHash.add(hash);
+        const fitVerdict = deriveValidation({ ...readDomainFit(el), answerKey });
 
         const row = {
           theme_date: it.day.theme_date, puzzle_type: type,
@@ -188,16 +204,21 @@ async function main() {
           answer_key: answerKey, answer_explanation: expl,
           domain: it.day.sector_code, sub_domain: (it.day.thread_codes || [])[0] || null,
           theater_id: it.day.theater_id, jpas_tier_code: it.day.jpas_tier_code,
-          difficulty: el.difficulty || it.difficulty, subject_fingerprint: fp,
+          // CC-DC-GEN-DIFFICULTY-CANON-1.0 D1/D2: season-assigned band wins;
+          // the model's self-report is audit-only in difficulty_raw.
+          ...resolveRowDifficulty(it.difficulty, el?.difficulty), subject_fingerprint: fp,
           source_refs: { subject: it.subject, thread_codes: it.day.thread_codes },
           content_hash: hash, generation_batch_id: runId, generator_model: GEN_MODEL,
-          validation_status: "passed",
+          // CC-DC-GEN-DOMAIN-FIDELITY-1.0 D3 — same verdict as the worker's,
+          // from the same pure function. `domain` above stays the day's sector.
+          validation_status: fitVerdict.validation_status,
+          validation_errors: fitVerdict.validation_errors,
         };
         if (DRY) { if (samples.length < 7) samples.push(row); written++; }
         else { try { await sbInsert("dc_puzzle_bank_staging", [row], "on_conflict=content_hash"); written++; }
                catch (err) { fail("db: " + err.message); } }
       }
-      process.stdout.write(`\r${type}: ${Math.min(i + BATCH, items.length)}/${items.length} (written ${written}, failed ${failed})   `);
+      process.stdout.write(`\r${type}: ${Math.min(i + startSize, items.length)}/${items.length} (written ${written}, failed ${failed})   `);
       if (++sinceCheckpoint >= 5) { sinceCheckpoint = 0; await checkpoint(); }
     }
     process.stdout.write("\n");

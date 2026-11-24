@@ -40,8 +40,6 @@ import {
 const MARK_READ_DELAY_MS = 1500;
 const DOCK_ANIM_MS = 200;
 
-const C = { forest: "#1C3424", gold: "#C4922A" } as const;
-
 // ── Injected styles (one copy per document, shared by both mastheads) ────────
 // The trigger/dropdown reuse the existing .dc-navwrap/.dc-trigger/.dc-dd
 // classes (both mastheads already inject those); everything dock-specific
@@ -50,8 +48,10 @@ const DOCK_STYLE_ID = "dc-msgdock-styles";
 const DOCK_CSS = `
   .dc-msgdock { display:flex; align-items:center; }
   .dc-msgdock .dc-trigger { position:relative; }
-  .dc-msgdock-dot { position:absolute; top:1px; right:-3px; width:6px; height:6px;
-    border-radius:50%; background:${C.gold}; }
+  /* FDY-445: the trigger now sits on the AppBar's surface-warm (#EEE6DA), where gold is 2.3:1;
+     deep amber #94560A is 4.7:1 (WCAG 1.4.11 non-text 3:1). Position matches the 44px trigger. */
+  .dc-msgdock-dot { position:absolute; top:6px; right:8px; width:7px; height:7px;
+    border-radius:50%; background:#94560A; }
   .dc-msgdock-panel { position:absolute; top:100%; right:0; width:420px; max-width:100vw;
     max-height:70vh; overflow-y:auto; background:#fff;
     border:1px solid rgba(28,52,36,0.18); border-top:none; border-radius:0 0 10px 10px;
@@ -63,16 +63,13 @@ const DOCK_CSS = `
   @keyframes dcDockUp { from { transform:translateY(0); opacity:1; }
     to { transform:translateY(-14px); opacity:0; } }
   @media (max-width:639px){ .dc-msgdock-panel { left:0; right:0; width:auto; border-radius:0; } }
-  /* The 6th trigger squeezes the wordmark on narrow phones ("DAILY CHALLENGE"
-     wraps, masthead grows). When the dock is mounted (signed-in only), tighten
-     the icon row so the header keeps its one-line height. Sibling-scoped so
-     signed-out spacing is untouched. */
-  @media (max-width:430px){ .dc-msgdock ~ .dc-iconrow { gap:12px !important; } }
+  /* (FDY-445: the old ≤430px icon-row squeeze rule is gone — the wordmark moved to the shared
+     masthead, and the AppBar row of 44px triggers fits at 320px on its own.) */
   @media (prefers-reduced-motion: reduce){
     .dc-msgdock-panel, .dc-msgdock-panel.closing { animation:none; }
   }
   .dc-msgdock-hint { display:block; font-size:9px; letter-spacing:0.04em;
-    color:rgba(238,230,218,0.4); margin-top:2px; }
+    color:#8CA68A; margin-top:2px; }
 `;
 
 function useDockStyles() {

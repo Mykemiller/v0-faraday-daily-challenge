@@ -253,7 +253,7 @@ export default function NotificationsPage() {
     return (
       <div className="min-h-screen bg-warm-white">
         <SiteHeaderNav current="notifications" />
-        <main className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
+        <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8 animate-pulse space-y-3">
           {[1, 2].map((i) => (
             <div key={i} className="h-24 rounded-lg bg-warm-cream" />
           ))}
@@ -268,7 +268,7 @@ export default function NotificationsPage() {
     return (
       <div className="min-h-screen bg-warm-white font-sans text-near-black">
         <SiteHeaderNav current="notifications" authed={false} />
-        <main className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+        <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-10">
           <h1 className="font-serif text-3xl font-bold text-forest">Daily Challenge Alerts</h1>
           <p className="mb-8 mt-1 text-sm text-near-black/60">
             Sign in to choose what you want to hear about, and how.
@@ -307,7 +307,7 @@ export default function NotificationsPage() {
     <div className="min-h-screen bg-warm-white font-sans text-near-black">
       <SiteHeaderNav current="notifications" authed handle={handle} onSignOut={signOut} />
 
-      <main className="mx-auto max-w-2xl px-5 pb-16 pt-8">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="font-serif text-3xl font-bold text-forest">Daily Challenge Alerts</h1>
           <span
