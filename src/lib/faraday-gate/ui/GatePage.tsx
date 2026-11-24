@@ -23,6 +23,7 @@ export interface GatePageProps {
   view: GateView;           // request | expired | waitlist | unavailable
   email?: string | null;    // signed-in email, if any
   apiBase?: string;         // default /api/faraday-gate
+  homeHref?: string;        // where the masthead's mark + wordmark link (the app's own home); default "/" (1.2.0)
   termsUrl?: string;
   privacyUrl?: string;
 }
@@ -40,7 +41,7 @@ const input: CSSProperties = {
 const label: CSSProperties = { display: "block", fontFamily: BODY, fontSize: 14, fontWeight: 600, color: T.ink, margin: "12px 0 6px" };
 
 export default function GatePage(props: GatePageProps) {
-  const { app, appName, version, copy, view, email, apiBase = "/api/faraday-gate", termsUrl = "/terms", privacyUrl = "/privacy" } = props;
+  const { app, appName, version, copy, view, email, apiBase = "/api/faraday-gate", homeHref = "/", termsUrl = "/terms", privacyUrl = "/privacy" } = props;
   const text = displayCopy(copy, appName);
   const [panel, setPanel] = useState<Panel>(null);
   const [addr, setAddr] = useState(email || "");
@@ -95,7 +96,7 @@ export default function GatePage(props: GatePageProps) {
     <div style={{ minHeight: "100vh", background: T.surface, color: T.ink, fontFamily: BODY }}>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600&family=IBM+Plex+Mono&family=IBM+Plex+Serif:wght@500;600&display=swap" />
       <style>{`.fg-btn:focus-visible,.fg-in:focus-visible,.fg-link:focus-visible{outline:3px solid ${T.goldLight};outline-offset:2px}`}</style>
-      <Masthead appName={appName} email={email} onSignIn={() => { setPanel("signin"); setStatus(null); }} skipTo="fg-main" />
+      <Masthead appName={appName} homeHref={homeHref} email={email} onSignIn={() => { setPanel("signin"); setStatus(null); }} skipTo="fg-main" />
 
       <main id="fg-main" style={{ maxWidth: 640, margin: "0 auto", padding: "32px 16px 48px" }}>
         <h1 style={{ fontFamily: SERIF, fontSize: 30, lineHeight: 1.2, margin: "0 0 12px", color: T.forest }}>{heading}</h1>

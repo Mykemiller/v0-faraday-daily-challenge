@@ -1,11 +1,12 @@
 "use client";
-// faraday-masthead · ui/Masthead.tsx (FDY-444). The shared Faraday masthead + AppBar for React 18 and 19.
+// faraday-masthead · ui/Masthead.tsx (FDY-444; 1.1.0 FDY-460). The shared Faraday masthead + AppBar for React 18 and 19.
 // Emits the SAME tree as core.renderMastheadHtml / renderAppBarHtml (test/render.test.mjs compares them byte for byte).
 // SSR-safe: no window/document access during render; the narrow-screen menu state lives in useState and its
 // document listeners attach in an effect. No runtime dependency beyond React.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  DEFAULT_SKIP_TARGET, FONTS_HREF, MASTHEAD_CSS, MASTHEAD_VERSION, initialOf, type AppBarLink,
+  DEFAULT_SKIP_TARGET, FONTS_HREF, MASTHEAD_CLOSE_EVENT, MASTHEAD_CSS, MASTHEAD_VERSION, appBarClass, initialOf,
+  type AppBarLink, type AppBarOverflow,
 } from "../core.ts";
 
 export interface MastheadProps {
@@ -19,8 +20,9 @@ export interface MastheadProps {
   signInHref?: string;
   /** When given, "Sign in" is a button that calls this instead of a link (e.g. the gate opens its sign-in panel). */
   onSignIn?: () => void;
-  /** Replaces the whole sign-in control (e.g. an app's own account menu). Ignored when `email` is set. */
-  signIn?: ReactNode;
+  /** Replaces the whole sign-in control (e.g. an app's own account menu). Ignored when `email` is set. Pass a function
+   *  to get `close`, which shuts the narrow-screen menu (links and buttons inside the menu already close it on click). */
+  signIn?: ReactNode | ((close: () => void) => ReactNode);
   /** Extra compact items placed before the app name (Daily Challenge: handle + score chips; Workbench: Owner). */
   context?: ReactNode;
   /** id of the main content element the skip link targets. Default "main". */
@@ -47,22 +49,30 @@ export function Masthead(props: MastheadProps) {
     skipTo = DEFAULT_SKIP_TARGET, includeStyles = true, loadFonts = false,
   } = props;
   const [open, setOpen] = useState(false);
+  // After mount, data-fm-js tells the CSS that state (not :focus-within) drives the menu. Absent during SSR, so the
+  // server markup stays byte-identical to core.renderMastheadHtml.
+  const [hydrated, setHydrated] = useState(false);
   const ctxRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => { setHydrated(true); }, []);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); btnRef.current?.focus(); } };
     const onDoc = (e: MouseEvent) => { if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setOpen(false); };
+    const onClose = () => setOpen(false);
     document.addEventListener("keydown", onKey);
     document.addEventListener("click", onDoc);
-    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("click", onDoc); };
+    document.addEventListener(MASTHEAD_CLOSE_EVENT, onClose);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("click", onDoc); document.removeEventListener(MASTHEAD_CLOSE_EVENT, onClose); };
   }, [open]);
 
   const who = email
     ? <span className="fm-user" title={email}>{email}</span>
     : signIn
-      ? signIn
+      ? (typeof signIn === "function" ? signIn(close) : signIn)
       : onSignIn
         ? <button type="button" className="fm-signin" onClick={onSignIn}>Sign in</button>
         : <a className="fm-signin" href={signInHref}>Sign in</a>;
@@ -75,9 +85,15 @@ export function Masthead(props: MastheadProps) {
         <div className="fm-bar">
           <a className="fm-markl" href={homeHref} tabIndex={-1} aria-hidden="true"><span className="fm-mark">F</span></a>
           <a className="fm-word" href={homeHref} aria-label="Faraday home">Faraday</a>
-          <div className="fm-ctx" data-open={open ? "true" : "false"} ref={ctxRef}>
+          <div
+            className="fm-ctx" data-open={open ? "true" : "false"} data-fm-js={hydrated ? "" : undefined} ref={ctxRef}
+            onBlur={(e) => { const to = e.relatedTarget as Node | null; if (to && !e.currentTarget.contains(to)) setOpen(false); }}
+          >
             <button type="button" className="fm-avatar" aria-expanded={open ? "true" : "false"} aria-controls="fm-panel" aria-label="Open menu" ref={btnRef} onClick={() => setOpen((v) => !v)}>{initialOf(email, appName)}</button>
-            <div className="fm-panel" id="fm-panel">{context}<span className="fm-app">{appName}</span>{who}</div>
+            <div
+              className="fm-panel" id="fm-panel"
+              onClickCapture={(e) => { const hit = (e.target as Element | null)?.closest?.("a,button"); if (hit && e.currentTarget.contains(hit)) setOpen(false); }}
+            >{context}<span className="fm-app">{appName}</span>{who}</div>
           </div>
         </div>
       </header>
@@ -91,12 +107,14 @@ export interface AppBarProps {
   links?: AppBarLink[];
   /** Anything else the app's navigation needs (dropdowns, buttons). Rendered after `links`. */
   children?: ReactNode;
+  /** "scroll" (default) or "visible": no horizontal scroller (dropdowns are not clipped), items wrap. Adds `fm-appbar--menus`. */
+  overflow?: AppBarOverflow;
 }
 
 /** The app's own navigation, directly under the masthead: surface-warm, ink text, 48 px. */
-export function AppBar({ label, links = [], children }: AppBarProps) {
+export function AppBar({ label, links = [], children, overflow }: AppBarProps) {
   return (
-    <nav className="fm-appbar" aria-label={label}>
+    <nav className={appBarClass(overflow)} aria-label={label}>
       <div className="fm-appbar-in">
         {links.map((l) => (
           <a key={`${l.href}|${l.label}`} className="fm-applink" href={l.href} aria-current={l.current ? "page" : undefined}>{l.label}</a>

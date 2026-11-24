@@ -18,6 +18,7 @@ export default async function IntelligentAlertLayout({ children }: { children: R
       <GatePage
         app={INTELLIGENT_ALERT_APP}
         appName={INTELLIGENT_ALERT_APP_NAME}
+        homeHref="/intelligent-alert"
         copy={INTELLIGENT_ALERT_GATE_COPY}
         view={gate.view}
         email={gate.email}
